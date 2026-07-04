@@ -1,0 +1,11 @@
+2026-07-04 18:56:07,840 | INFO     | main | Starting KN-CompanyScraper
+2026-07-04 18:56:07,840 | INFO     | scraper.scheduler | Scheduler starting. Running every 60 minutes.
+2026-07-04 18:56:08,315 | INFO     | scraper.db | Started scrape_run id=1
+2026-07-04 18:56:09,599 | INFO     | scraper.mfn_scraper | Loading feed: https://mfn.se/all/s/nordic?limit=435
+2026-07-04 18:56:10,971 | INFO     | scraper.mfn_scraper | Found 435 feed items
+2026-07-04 18:56:11,576 | INFO     | scraper.mfn_scraper | Matched: Norsk Titanium (norsk-titanium) -> /ob/a/norsk-titanium/norsk-titanium-as-extraordinary-general-meeting-held-and-resolution-to-issue-tranche-2-shares-fe00e383
+2026-07-04 18:56:11,585 | INFO     | scraper.mfn_scraper | Scraping detail page: https://mfn.se/ob/a/norsk-titanium/norsk-titanium-as-extraordinary-general-meeting-held-and-resolution-to-issue-tranche-2-shares-fe00e383
+2026-07-04 18:56:12,337 | INFO     | scraper.service | Scraped 1 articles
+2026-07-04 18:56:12,370 | ERROR    | scraper.service | Failed processing https://mfn.se/ob/a/norsk-titanium/norsk-titanium-as-extraordinary-general-meeting-held-and-resolution-to-issue-tranche-2-shares-fe00e383: value too long for type character varying(10)
+
+2026-07-04 18:56:12,384 | INFO     | scraper.service | Scrape cycle finished with status=partial, 1 errors

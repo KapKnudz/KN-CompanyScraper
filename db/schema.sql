@@ -93,6 +93,41 @@ CREATE TABLE public.company_profiles (
 
 
 --
+-- Name: news_releases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.news_releases (
+    id integer NOT NULL,
+    company_id integer,
+    slug text NOT NULL,
+    url text NOT NULL,
+    title text,
+    body text,
+    scraped_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: news_releases_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.news_releases_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: news_releases_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.news_releases_id_seq OWNED BY public.news_releases.id;
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -152,6 +187,13 @@ ALTER TABLE ONLY public.companies ALTER COLUMN id SET DEFAULT nextval('public.co
 
 
 --
+-- Name: news_releases id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.news_releases ALTER COLUMN id SET DEFAULT nextval('public.news_releases_id_seq'::regclass);
+
+
+--
 -- Name: scrape_runs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -191,6 +233,22 @@ ALTER TABLE ONLY public.company_profiles
 
 
 --
+-- Name: news_releases news_releases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.news_releases
+    ADD CONSTRAINT news_releases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: news_releases news_releases_url_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.news_releases
+    ADD CONSTRAINT news_releases_url_key UNIQUE (url);
+
+
+--
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -215,11 +273,26 @@ ALTER TABLE ONLY public.watchlist
 
 
 --
+-- Name: idx_news_releases_slug; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_news_releases_slug ON public.news_releases USING btree (slug);
+
+
+--
 -- Name: company_profiles company_profiles_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.company_profiles
     ADD CONSTRAINT company_profiles_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: news_releases news_releases_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.news_releases
+    ADD CONSTRAINT news_releases_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
 
 
 --
@@ -242,4 +315,5 @@ ALTER TABLE ONLY public.watchlist
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
-    ('20260702163712');
+    ('20260702163712'),
+    ('20260704145835');
