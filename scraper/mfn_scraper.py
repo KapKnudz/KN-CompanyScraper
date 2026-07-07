@@ -18,8 +18,8 @@ class MfnScraper:
     FEED_URL = "https://mfn.se/all/s/nordic?limit=435"
     BASE_URL = "https://mfn.se"
 
-    def __init__(self, companies_to_track: list[str], headless: bool = True):
-        self.companies_to_track = companies_to_track
+    def __init__(self, company: Company, headless: bool = True):
+        self.company = company
         self.headless = headless
 
     def get_matched_articles(self) -> list[ScrapedArticle]:
@@ -47,7 +47,7 @@ class MfnScraper:
         matched = []
         for link_el in author_links:
             author_slug = link_el.get_attribute("author")
-            if author_slug not in self.companies_to_track:
+            if author_slug != self.company.mfn_slug:
                 continue
 
             company_name = link_el.inner_text().strip()

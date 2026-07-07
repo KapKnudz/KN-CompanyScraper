@@ -8,4 +8,4 @@ if __name__ == "__main__":
     try:
         scheduler.start()
     except KeyboardInterrupt:
-        logger.info("Shutting down gracefully (Ctrl+C received)")
+        logger.info("Shutting down gracaefully (Ctrl+C received)")

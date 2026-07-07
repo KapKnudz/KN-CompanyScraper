@@ -54,7 +54,8 @@ CREATE TABLE public.companies (
     name text NOT NULL,
     ticker character varying(10),
     borsdata_id integer,
-    last_updated timestamp with time zone DEFAULT now()
+    last_updated timestamp with time zone DEFAULT now(),
+    mfn_slug text
 );
 
 
@@ -209,6 +210,14 @@ ALTER TABLE ONLY public.companies
 
 
 --
+-- Name: companies companies_mfn_slug_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.companies
+    ADD CONSTRAINT companies_mfn_slug_key UNIQUE (mfn_slug);
+
+
+--
 -- Name: companies companies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -316,4 +325,5 @@ ALTER TABLE ONLY public.watchlist
 
 INSERT INTO public.schema_migrations (version) VALUES
     ('20260702163712'),
-    ('20260704145835');
+    ('20260704145835'),
+    ('20260706154541');
