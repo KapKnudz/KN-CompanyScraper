@@ -146,7 +146,9 @@ CREATE TABLE public.scrape_runs (
     started_at timestamp with time zone DEFAULT now(),
     finished_at timestamp with time zone,
     status public.scrape_status DEFAULT 'running'::public.scrape_status NOT NULL,
-    errors jsonb
+    errors jsonb,
+    companies_found INTEGER DEFAULT 0,
+    news_added INTEGER DEFAULT 0;
 );
 
 

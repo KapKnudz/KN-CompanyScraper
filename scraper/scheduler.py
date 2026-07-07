@@ -19,9 +19,13 @@ def run_once():
 
     scrape_run_id = scrape_run_repository.start()
 
+    companies_found = 0
+    news_added = 0
+
     try:
 
         companies = repository.get_active_companies()
+        companies_found = len(companies)
 
         jobs = [
             NewsJob(
@@ -32,16 +36,23 @@ def run_once():
 
         for company in companies:
             for job in jobs:
-                job.run(company)
+                result = job.run(company)
+                news_added += result
 
-
-        scrape_run_repository.complete(scrape_run_id)
+        scrape_run_repository.complete(
+            scrape_run_id,
+            "success",
+            companies_found,
+            news_added
+        )
 
     except Exception as e:
 
         scrape_run_repository.fail(
             scrape_run_id,
-            str(e)
+            str(e),
+            companies_found,
+            news_added
         )
 
         raise

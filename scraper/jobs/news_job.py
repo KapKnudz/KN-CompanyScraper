@@ -3,6 +3,7 @@ from scraper.logger import get_logger
 
 logger = get_logger(__name__)
 
+
 class NewsJob:
     def __init__(self, news_repository, notifier):
         self.news_repository = news_repository
@@ -13,6 +14,7 @@ class NewsJob:
 
         scraper = MfnScraper(company)
         articles = scraper.get_matched_articles()
+        inserted = 0
 
         logger.info("Found %d articles", len(articles))
 
@@ -25,4 +27,12 @@ class NewsJob:
             self.news_repository.save(article, company.id)
             self.notifier.notify_new_release(article)
 
-        logger.info("NewsJob finished for %s", company.name)
+            inserted += 1
+
+        logger.info(
+            "NewsJob finished for %s. Added %d new articles",
+            company.name,
+            inserted
+        )
+
+        return inserted
