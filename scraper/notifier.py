@@ -7,7 +7,7 @@ logger = get_logger(__name__)
 
 class Notifier:
 
-    def notify_new_release(article: ScrapedArticle):
+    def notify_new_release(self, article):
         if not config.DISCORD_WEBHOOK_URL:
             logger.warning("No Discord webhook configured, skipping notification")
             return

@@ -153,4 +153,5 @@ class CompanyRepository:
                     """
                 )
 
+
                 return [Company(**row) for row in cur.fetchall()]

@@ -16,6 +16,15 @@ def run_once():
     # The repository methods will handle their own connections
     repository = CompanyRepository()
     companies = repository.get_active_companies()
+    logger.info("Loaded %d companies", len(companies))
+
+    for company in companies:
+        logger.info(
+            "Company: id=%s, name=%s, ticker=%s",
+            company.id,
+            company.name,
+            company.ticker,
+        )
 
     news_repository = NewsRepository()
     notifier = Notifier()
@@ -23,20 +32,21 @@ def run_once():
     jobs = [
         NewsJob(news_repository, notifier),
     ]
+    logger.info("Loaded %d companies", len(companies))
 
     for company in companies:
-        logger.info("Running jobs for %s", company.name)
+        logger.info(
+            "Company: id=%s name=%s",
+            company.id,
+            company.name
+        )
 
         for job in jobs:
-            try:
-                job.run(company)
-            except Exception as e:
-                logger.exception(
-                    "Job %s failed for %s: %s",
-                    job.__class__.__name__,
-                    company.name,
-                    e,
-                )
+            logger.info("Starting %s", job.__class__.__name__)
+            job.run(company)
+            logger.info("Finished %s", job.__class__.__name__)
+
+    logger.info("Finished all companies")
 
 
 def start():
