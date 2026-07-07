@@ -7,47 +7,44 @@ from scraper.jobs.news_job import NewsJob
 from scraper.repositories.company_repository import CompanyRepository
 from scraper.repositories.news_repository import NewsRepository
 from scraper.notifier import Notifier
+from scraper.repositories.scrape_run_repository import ScrapeRunRepository
 
 logger = get_logger(__name__)
-print("Scheduler module loaded")
+repository = CompanyRepository()
+news_repository = NewsRepository()
+scrape_run_repository = ScrapeRunRepository()
+notifier = Notifier()
 
 def run_once():
-    # Create the repository without passing a connection
-    # The repository methods will handle their own connections
-    repository = CompanyRepository()
-    companies = repository.get_active_companies()
-    logger.info("Loaded %d companies", len(companies))
 
-    for company in companies:
-        logger.info(
-            "Company: id=%s, name=%s, ticker=%s",
-            company.id,
-            company.name,
-            company.ticker,
+    scrape_run_id = scrape_run_repository.start()
+
+    try:
+
+        companies = repository.get_active_companies()
+
+        jobs = [
+            NewsJob(
+                news_repository,
+                notifier
+            )
+        ]
+
+        for company in companies:
+            for job in jobs:
+                job.run(company)
+
+
+        scrape_run_repository.complete(scrape_run_id)
+
+    except Exception as e:
+
+        scrape_run_repository.fail(
+            scrape_run_id,
+            str(e)
         )
 
-    news_repository = NewsRepository()
-    notifier = Notifier()
-
-    jobs = [
-        NewsJob(news_repository, notifier),
-    ]
-    logger.info("Loaded %d companies", len(companies))
-
-    for company in companies:
-        logger.info(
-            "Company: id=%s name=%s",
-            company.id,
-            company.name
-        )
-
-        for job in jobs:
-            logger.info("Starting %s", job.__class__.__name__)
-            job.run(company)
-            logger.info("Finished %s", job.__class__.__name__)
-
-    logger.info("Finished all companies")
-
+        raise
 
 def start():
     logger.info(
