@@ -3,9 +3,9 @@ from analysis.valuation.current_valuation import CurrentValuation
 from analysis.valuation.historical_valuation import HistoricalValuation
 
 
-class ValuationAnalysisEngine:
+class ValuationCalculator:
 
-    def analyze(
+    def calculate(
             self,
             current: CurrentValuation,
             historical: HistoricalValuation,
@@ -19,37 +19,37 @@ class ValuationAnalysisEngine:
             ps=current.ps,
             pfcf=current.pfcf,
             peg=current.peg,
-            earnings_yield=self.analyze_earnings_yield(current),
-            free_cash_flow_yield=self.analyze_fcf_yield(current),
-            pe_vs_5y_avg=self.analyze_pe(current, historical),
-            ev_ebit_vs_5y_avg=self.analyze_ev_ebit(current, historical),
-            pb_vs_5y_avg=self.analyze_pb(current, historical),
-            pe_percentile=self.analyze_pe_percentile(current, historical),
-            ev_ebit_percentile=self.analyze_ev_ebit_percentile(current, historical),
+            earnings_yield=self.calculate_earnings_yield(current),
+            free_cash_flow_yield=self.calculate_fcf_yield(current),
+            pe_vs_5y_avg=self.calculate_pe(current, historical),
+            ev_ebit_vs_5y_avg=self.calculate_ev_ebit(current, historical),
+            pb_vs_5y_avg=self.calculate_pb(current, historical),
+            pe_percentile=self.calculate_pe_percentile(current, historical),
+            ev_ebit_percentile=self.calculate_ev_ebit_percentile(current, historical),
         )
 
-    def analyze_earnings_yield(self, current):
+    def calculate_earnings_yield(self, current):
         return self.calculate_ratio(1, current.pe)
 
-    def analyze_fcf_yield(self, current):
+    def calculate_fcf_yield(self, current):
         return self.calculate_ratio(1, current.pfcf)
 
-    def analyze_pe(self, current, historical):
+    def calculate_pe(self, current, historical):
         return self.calculate_ratio(current.pe, historical.avg_pe)
 
-    def analyze_ev_ebit(self, current, historical):
+    def calculate_ev_ebit(self, current, historical):
         return self.calculate_ratio(current.ev_ebit, historical.avg_ev_ebit)
 
-    def analyze_pb(self, current, historical):
+    def calculate_pb(self, current, historical):
         return self.calculate_ratio(current.pb, historical.avg_pb)
 
-    def analyze_pe_percentile(self, current, historical):
+    def calculate_pe_percentile(self, current, historical):
         return self.calculate_percentile(
             current.pe,
             historical.pe_history,
         )
 
-    def analyze_ev_ebit_percentile(self, current, historical):
+    def calculate_ev_ebit_percentile(self, current, historical):
         return self.calculate_percentile(
             current.ev_ebit,
             historical.ev_ebit_history,
