@@ -1,0 +1,16 @@
+class ValuationAnalysisEngine:
+
+    def analyze(self, current, historical):
+        ...
+
+    def analyze_pe(self, current, historical):
+        ...
+
+    def analyze_ev_ebit(self, current, historical):
+        ...
+
+    def analyze_pb(self, current, historical):
+        ...
+
+    def analyze_cashflow(self, current):
+        ...
