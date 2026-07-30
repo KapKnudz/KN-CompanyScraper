@@ -1,0 +1,114 @@
+{
+  "list": [
+    {
+      "insId": 3,
+      "values": [
+        {
+          "misc": false,
+          "ownerName": "Andersson, Erik",
+          "ownerPosition": "CEO",
+          "equityProgram": false,
+          "shares": 15000,
+          "price": 245.50,
+          "amount": 3682500.00,
+          "currency": "SEK",
+          "transactionType": 1,
+          "verificationDate": "2026-06-15T00:00:00Z",
+          "transactionDate": "2026-06-14T00:00:00Z"
+        },
+        {
+          "misc": false,
+          "ownerName": "Andersson, Erik",
+          "ownerPosition": "CEO",
+          "equityProgram": false,
+          "shares": 8000,
+          "price": 260.00,
+          "amount": 2080000.00,
+          "currency": "SEK",
+          "transactionType": 1,
+          "verificationDate": "2026-07-10T00:00:00Z",
+          "transactionDate": "2026-07-09T00:00:00Z"
+        },
+        {
+          "misc": false,
+          "ownerName": "Lindberg, Maria",
+          "ownerPosition": "CFO",
+          "equityProgram": false,
+          "shares": 5000,
+          "price": 270.00,
+          "amount": 1350000.00,
+          "currency": "SEK",
+          "transactionType": 1,
+          "verificationDate": "2026-07-20T00:00:00Z",
+          "transactionDate": "2026-07-19T00:00:00Z"
+        },
+        {
+          "misc": false,
+          "ownerName": "Johansson, Per",
+          "ownerPosition": "Board Member",
+          "equityProgram": false,
+          "shares": 3000,
+          "price": 255.00,
+          "amount": 765000.00,
+          "currency": "SEK",
+          "transactionType": 1,
+          "verificationDate": "2026-06-22T00:00:00Z",
+          "transactionDate": "2026-06-21T00:00:00Z"
+        },
+        {
+          "misc": false,
+          "ownerName": "Nilsson, Karin",
+          "ownerPosition": "VP Sales",
+          "equityProgram": true,
+          "shares": 12000,
+          "price": 280.00,
+          "amount": 3360000.00,
+          "currency": "SEK",
+          "transactionType": 2,
+          "verificationDate": "2026-07-01T00:00:00Z",
+          "transactionDate": "2026-06-30T00:00:00Z"
+        },
+        {
+          "misc": false,
+          "ownerName": "Svensson, Lars",
+          "ownerPosition": "CTO",
+          "equityProgram": false,
+          "shares": 10000,
+          "price": 275.00,
+          "amount": 2750000.00,
+          "currency": "SEK",
+          "transactionType": 1,
+          "verificationDate": "2026-05-10T00:00:00Z",
+          "transactionDate": "2026-05-09T00:00:00Z"
+        },
+        {
+          "misc": false,
+          "ownerName": "Gustafsson, Anna",
+          "ownerPosition": "Board Member",
+          "equityProgram": false,
+          "shares": 4000,
+          "price": 265.00,
+          "amount": 1060000.00,
+          "currency": "SEK",
+          "transactionType": 2,
+          "verificationDate": "2026-06-01T00:00:00Z",
+          "transactionDate": "2026-05-31T00:00:00Z"
+        },
+        {
+          "misc": true,
+          "ownerName": "Ek, Helena",
+          "ownerPosition": "VP HR",
+          "equityProgram": false,
+          "shares": 2000,
+          "price": 258.00,
+          "amount": 516000.00,
+          "currency": "SEK",
+          "transactionType": 1,
+          "verificationDate": "2026-04-15T00:00:00Z",
+          "transactionDate": "2026-04-14T00:00:00Z"
+        }
+      ],
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "kpiId": 2,
+  "group": "last",
+  "calculation": "latest",
+  "value": {
+    "i": 3,
+    "n": 18.50,
+    "s": null
+  },
+  "_all_valuation_kpis": [
+    {
+      "kpiId": 2,
+      "group": "last",
+      "calculation": "latest",
+      "values": [
+        { "i": 3, "n": 18.50, "s": null }
+      ],
+      "_label": "P/E (current)"
+    },
+    {
+      "kpiId": 5,
+      "group": "last",
+      "calculation": "latest",
+      "values": [
+        { "i": 3, "n": 13.20, "s": null }
+      ],
+      "_label": "EV/EBIT (current)"
+    },
+    {
+      "kpiId": 6,
+      "group": "last",
+      "calculation": "latest",
+      "values": [
+        { "i": 3, "n": 10.80, "s": null }
+      ],
+      "_label": "EV/EBITDA (current)"
+    },
+    {
+      "kpiId": 8,
+      "group": "last",
+      "calculation": "latest",
+      "values": [
+        { "i": 3, "n": 3.40, "s": null }
+      ],
+      "_label": "P/B (current)"
+    },
+    {
+      "kpiId": 9,
+      "group": "last",
+      "calculation": "latest",
+      "values": [
+        { "i": 3, "n": 2.10, "s": null }
+      ],
+      "_label": "P/S (current)"
+    },
+    {
+      "kpiId": 254,
+      "group": "last",
+      "calculation": "latest",
+      "values": [
+        { "i": 3, "n": 25.40, "s": null }
+      ],
+      "_label": "P/FCF (current)"
+    },
+    {
+      "kpiId": 231,
+      "group": "last",
+      "calculation": "latest",
+      "values": [
+        { "i": 3, "n": 0.85, "s": null }
+      ],
+      "_label": "PEG Ratio"
+    },
+    {
+      "kpiId": 10,
+      "group": "last",
+      "calculation": "latest",
+      "values": [
+        { "i": 3, "n": 550000000000, "s": null }
+      ],
+      "_label": "Market Cap"
+    },
+    {
+      "kpiId": 11,
+      "group": "last",
+      "calculation": "latest",
+      "values": [
+        { "i": 3, "n": 710000000000, "s": null }
+      ],
+      "_label": "Enterprise Value"
+    },
+    {
+      "kpiId": 12,
+      "group": "last",
+      "calculation": "latest",
+      "values": [
+        { "i": 3, "n": 4.10, "s": null }
+      ],
+      "_label": "Dividend Yield %"
+    }
+  ]
+}
