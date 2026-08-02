@@ -1,0 +1,38 @@
+from kncompanyscraper.scraper.mfn_scraper import MfnScraper, ScrapedArticle
+from kncompanyscraper.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class NewsJob:
+    def __init__(self, news_repository, notifier):
+        self.news_repository = news_repository
+        self.notifier = notifier
+
+    def run(self, company):
+        logger.info("NewsJob started for %s", company.name)
+
+        scraper = MfnScraper(company)
+        articles = scraper.get_matched_articles()
+        inserted = 0
+
+        logger.info("Found %d articles", len(articles))
+
+        for article in articles:
+            logger.info("Processing article %s", article.title)
+
+            if self.news_repository.exists(article.url):
+                continue
+
+            self.news_repository.save(article, company.id)
+            self.notifier.notify_new_release(article)
+
+            inserted += 1
+
+        logger.info(
+            "NewsJob finished for %s. Added %d new articles",
+            company.name,
+            inserted
+        )
+
+        return inserted

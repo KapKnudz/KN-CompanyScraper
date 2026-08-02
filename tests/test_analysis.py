@@ -12,15 +12,15 @@ from dataclasses import dataclass
 
 import pytest
 
-from analysis.financial.financial_mapper import FinancialMapper
-from analysis.financial.financial_calculator import FinancialCalculator
-from analysis.financial.financial_result import FinancialResult, CurrentFinancials, HistoricalFinancials
-from analysis.valuation.valuation_mapper import ValuationMapper
-from analysis.valuation.valuation_calculator import ValuationCalculator
-from analysis.valuation.valuation_result import ValuationResult
-from analysis.valuation.current_valuation import CurrentValuation
-from analysis.valuation.historical_valuation import HistoricalValuation
-from borsdata.report import Report
+from kncompanyscraper.analysis.financial.financial_mapper import FinancialMapper
+from kncompanyscraper.analysis.financial.financial_calculator import FinancialCalculator
+from kncompanyscraper.analysis.financial.financial_result import FinancialResult, CurrentFinancials, HistoricalFinancials
+from kncompanyscraper.analysis.valuation.valuation_mapper import ValuationMapper
+from kncompanyscraper.analysis.valuation.valuation_calculator import ValuationCalculator
+from kncompanyscraper.analysis.valuation.valuation_result import ValuationResult
+from kncompanyscraper.analysis.valuation.current_valuation import CurrentValuation
+from kncompanyscraper.analysis.valuation.historical_valuation import HistoricalValuation
+from kncompanyscraper.borsdata.report import Report
 
 MOCKS_DIR = Path(__file__).resolve().parent / "mocks"
 
@@ -165,6 +165,7 @@ class TestFinancialCalculator:
         current = CurrentFinancials(
             revenue=None, ebit=None, ebitda=None, net_income=None,
             free_cash_flow=None, equity=None, total_assets=None, total_debt=None,
+            operating_profit=None
         )
         historical = HistoricalFinancials(
             revenue_history=[], ebit_history=[], fcf_history=[], net_income_history=[],
@@ -376,9 +377,9 @@ class TestValuationCalculator:
 # These tests verify the mock data shapes are correct and exercise
 # CurrentInsiderActivity / HistoricalInsiderActivity construction.
 
-from analysis.insider.current_insider_activity import CurrentInsiderActivity
-from analysis.insider.historical_insider_activity import HistoricalInsiderActivity
-from analysis.insider.insider_result import InsiderResult
+from kncompanyscraper.analysis.insider.current_insider_activity import CurrentInsiderActivity
+from kncompanyscraper.analysis.insider.historical_insider_activity import HistoricalInsiderActivity
+from kncompanyscraper.analysis.insider.insider_result import InsiderResult
 
 
 class TestInsiderMockData:
