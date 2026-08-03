@@ -8,3 +8,4 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
 SCRAPE_INTERVAL_MINUTES = int(os.getenv("SCRAPE_INTERVAL_MINUTES", "60"))
+BORSDATA_API_KEY = os.getenv("BORSDATA_API_KEY")

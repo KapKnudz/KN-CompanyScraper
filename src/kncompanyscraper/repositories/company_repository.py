@@ -1,5 +1,6 @@
 from kncompanyscraper.models.company import Company
 from kncompanyscraper.database import get_connection
+from kncompanyscraper.models.company_profile import CompanyProfile
 from psycopg2.extras import Json, RealDictCursor
 
 
