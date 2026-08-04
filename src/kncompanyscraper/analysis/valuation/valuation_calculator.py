@@ -1,6 +1,7 @@
 from kncompanyscraper.analysis.valuation.valuation_result import ValuationResult
 from kncompanyscraper.analysis.valuation.current_valuation import CurrentValuation
 from kncompanyscraper.analysis.valuation.historical_valuation import HistoricalValuation
+from kncompanyscraper.analysis.valuation.raw_valuation import RawValuation
 
 
 class ValuationCalculator:
@@ -9,6 +10,7 @@ class ValuationCalculator:
             self,
             current: CurrentValuation,
             historical: HistoricalValuation,
+            raw: RawValuation | None = None,
     ) -> ValuationResult:
 
         return ValuationResult(
@@ -26,6 +28,14 @@ class ValuationCalculator:
             pb_vs_5y_avg=self.calculate_pb(current, historical),
             pe_percentile=self.calculate_pe_percentile(current, historical),
             ev_ebit_percentile=self.calculate_ev_ebit_percentile(current, historical),
+            raw_market_cap=raw.market_cap if raw else None,
+            raw_enterprise_value=raw.enterprise_value if raw else None,
+            raw_earnings_yield=raw.earnings_yield if raw else None,
+            raw_fcf_yield=raw.fcf_yield if raw else None,
+            raw_pe=raw.pe if raw else None,
+            raw_pfcf=raw.pfcf if raw else None,
+            raw_ev_ebit=raw.ev_ebit if raw else None,
+            raw_ev_ebitda=raw.ev_ebitda if raw else None,
         )
 
     def calculate_earnings_yield(self, current):

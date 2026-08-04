@@ -22,3 +22,8 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: live Börsdata API tests (requires BORSDATA_API_KEY env var)",
+]

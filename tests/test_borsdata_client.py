@@ -18,6 +18,8 @@ def load_mock(filename):
 
 
 class FakeResponse:
+    status_code = 200
+
     def __init__(self, payload):
         self._payload = payload
 
@@ -29,6 +31,12 @@ class FakeResponse:
 
 
 class TestBorsdataClient:
+
+    def test_init_raises_when_no_api_key(self, monkeypatch):
+        """BorsdataClient raises ValueError when no API key is provided."""
+        monkeypatch.setattr("kncompanyscraper.borsdata.client.config.BORSDATA_API_KEY", None)
+        with pytest.raises(ValueError, match="BORSDATA_API_KEY is required"):
+            BorsdataClient(api_key=None)
 
     def test_get_kpis_maps_value(self, monkeypatch):
         payload = load_mock("kpi_screener_mock.json")

@@ -82,8 +82,17 @@ class RankingEngine:
 
             quality = score_quality(financial)
             growth = score_growth(financial)
-            val = score_valuation(valuation)
             balance = score_balance_sheet(financial)
+
+            # Pass quality/growth/leverage context into valuation scoring so the
+            # margin-of-safety component can adjust the required-return spread.
+            dte = financial.debt_to_equity if financial else None
+            val = score_valuation(
+                valuation,
+                debt_to_equity=dte,
+                quality_score=quality["score"] if quality else None,
+                growth_score=growth["score"] if growth else None,
+            )
 
             total = (
                 quality["score"] * 0.30
