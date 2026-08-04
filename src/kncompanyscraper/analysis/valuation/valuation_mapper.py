@@ -25,14 +25,22 @@ class ValuationMapper:
         pb_history: list[float],
     ) -> HistoricalValuation:
 
+        def safe_avg(values: list[float]) -> float | None:
+            return sum(values) / len(values) if values else None
+
+        def safe_median(values: list[float]) -> float | None:
+            if not values:
+                return None
+            return sorted(values)[len(values) // 2]
+
         return HistoricalValuation(
             pe_history=pe_history,
             ev_ebit_history=ev_ebit_history,
             pb_history=pb_history,
-            avg_pe=sum(pe_history) / len(pe_history),
-            avg_ev_ebit=sum(ev_ebit_history) / len(ev_ebit_history),
-            avg_pb=sum(pb_history) / len(pb_history),
-            median_pe=sorted(pe_history)[len(pe_history) // 2],
-            median_ev_ebit=sorted(ev_ebit_history)[len(ev_ebit_history) // 2],
-            median_pb=sorted(pb_history)[len(pb_history) // 2],
+            avg_pe=safe_avg(pe_history),
+            avg_ev_ebit=safe_avg(ev_ebit_history),
+            avg_pb=safe_avg(pb_history),
+            median_pe=safe_median(pe_history),
+            median_ev_ebit=safe_median(ev_ebit_history),
+            median_pb=safe_median(pb_history),
         )

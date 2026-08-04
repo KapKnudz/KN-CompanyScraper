@@ -1,22 +1,8 @@
-from contextlib import contextmanager
-import psycopg2
-from kncompanyscraper import config
+from kncompanyscraper.database import get_connection
 from kncompanyscraper.logger import get_logger
 from kncompanyscraper.scraper.mfn_scraper import ScrapedArticle
 
 logger = get_logger(__name__)
-
-@contextmanager
-def get_connection():
-    conn = psycopg2.connect(config.DATABASE_URL)
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 class NewsRepository:
     def exists(self, url: str) -> bool:

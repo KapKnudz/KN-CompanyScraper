@@ -356,8 +356,8 @@ class TestValuationCalculator:
         )
         historical = HistoricalValuation(
             pe_history=[], ev_ebit_history=[], pb_history=[],
-            avg_pe=0.0, avg_ev_ebit=0.0, avg_pb=0.0,
-            median_pe=0.0, median_ev_ebit=0.0, median_pb=0.0,
+            avg_pe=None, avg_ev_ebit=None, avg_pb=None,
+            median_pe=None, median_ev_ebit=None, median_pb=None,
         )
         result = calc.calculate(current, historical)
 
