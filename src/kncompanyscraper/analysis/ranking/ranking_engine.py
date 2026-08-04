@@ -60,7 +60,7 @@ def _compute_candidate_reason(quality: dict, growth: dict, val: dict, balance: d
         return "High-quality company with attractive valuation."
     elif q >= 75 and v < 40:
         return "Strong business, but valuation looks demanding."
-    elif v >= 75 and q < 40:
+    elif v >= 70 and q < 40:
         return "Cheap valuation, but business quality is weak."
     elif q >= 75:
         return "High-quality business with moderate valuation."
