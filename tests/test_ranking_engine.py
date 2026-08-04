@@ -104,6 +104,8 @@ class TestCompanyScore:
         assert cs.negatives == []
         assert cs.missing_data == []
         assert cs.flags == []
+        assert cs.data_quality == "medium"
+        assert cs.candidate_reason is None
 
 
 class TestWatchlistRanking:
@@ -116,6 +118,66 @@ class TestWatchlistRanking:
         ranking = WatchlistRanking(scores=scores)
         assert ranking.top_n(2) == scores[:2]
         assert ranking.top_n(5) == scores
+
+    def test_shortlist_for_agent_top_n_only(self):
+        """Without flags, shortlist_for_agent returns top_n scores."""
+        scores = [
+            CompanyScore(company_id=i, ticker=f"T{i}", name=f"T{i}", total_score=100 - i)
+            for i in range(1, 51)
+        ]
+        ranking = WatchlistRanking(scores=scores)
+        result = ranking.shortlist_for_agent(top_n=10, include_flags=False)
+        assert len(result) == 10
+        assert result == scores[:10]
+
+    def test_shortlist_for_agent_includes_flagged(self):
+        """Companies with important flags beyond top_n are included."""
+        scores = [
+            CompanyScore(company_id=i, ticker=f"T{i}", name=f"T{i}", total_score=100 - i)
+            for i in range(1, 51)
+        ]
+        # Give company at position 35 a cheap_quality flag
+        scores[34].flags = ["cheap_quality"]
+
+        ranking = WatchlistRanking(scores=scores)
+        result = ranking.shortlist_for_agent(top_n=10, max_total=30)
+
+        assert scores[34] in result
+        assert len(result) <= 30
+
+    def test_shortlist_for_agent_respects_max_total(self):
+        """shortlist_for_agent respects max_total limit."""
+        scores = [
+            CompanyScore(company_id=i, ticker=f"T{i}", name=f"T{i}", total_score=100 - i)
+            for i in range(1, 101)
+        ]
+        # Give many companies cheap_quality flags
+        for s in scores[25:50]:
+            s.flags = ["cheap_quality"]
+
+        ranking = WatchlistRanking(scores=scores)
+        result = ranking.shortlist_for_agent(top_n=10, max_total=30)
+
+        assert len(result) <= 30
+
+    def test_shortlist_for_agent_ignores_non_important_flags(self):
+        """Companies with only non-important flags are not included beyond top_n."""
+        scores = [
+            CompanyScore(company_id=i, ticker=f"T{i}", name=f"T{i}", total_score=100 - i)
+            for i in range(1, 51)
+        ]
+        scores[34].flags = ["some_random_flag"]
+
+        ranking = WatchlistRanking(scores=scores)
+        result = ranking.shortlist_for_agent(top_n=10)
+
+        assert scores[34] not in result
+        assert len(result) == 10
+
+    def test_shortlist_for_agent_empty(self):
+        ranking = WatchlistRanking(scores=[])
+        result = ranking.shortlist_for_agent(top_n=10)
+        assert result == []
 
 
 class TestScoringBounded:
@@ -338,6 +400,20 @@ class TestEdgeCases:
         assert cs.balance_sheet_score == 0.0
         assert any("negative equity" in n for n in cs.negatives)
 
+    def test_zero_debt_scores_excellent(self):
+        """D/E = 0 (no debt) should score 100 on balance sheet."""
+        financial = make_strong_financial()
+        financial.debt_to_equity = 0.0
+
+        company = make_company(1, "TST", "Test")
+        results = {1: {"financial": financial, "valuation": make_cheap_valuation()}}
+        engine = RankingEngine()
+        ranking = engine.rank([company], results)
+        cs = ranking.scores[0]
+
+        assert cs.balance_sheet_score == 100.0
+        assert any("no debt" in p for p in cs.positives)
+
     def test_all_metrics_none_scores_zero(self):
         """When every metric in a category is None, that category scores 0."""
         financial = FinancialResult(
@@ -366,6 +442,119 @@ class TestEdgeCases:
 # ---------------------------------------------------------------------------
 # Demo: print the ranking table (matches "Definition of done" output format)
 # ---------------------------------------------------------------------------
+
+class TestFlags:
+    def test_cheap_quality_flag(self):
+        """Strong quality + strong valuation → cheap_quality flag."""
+        company = make_company(1, "S", "Strong")
+        results = {1: {"financial": make_strong_financial(), "valuation": make_cheap_valuation()}}
+        engine = RankingEngine()
+        ranking = engine.rank([company], results)
+        cs = ranking.scores[0]
+        assert "cheap_quality" in cs.flags
+
+    def test_balance_sheet_risk_flag(self):
+        """Weak balance sheet → balance_sheet_risk flag."""
+        financial = make_weak_financial()  # D/E = 2.5
+        company = make_company(1, "W", "Weak")
+        results = {1: {"financial": financial, "valuation": make_cheap_valuation()}}
+        engine = RankingEngine()
+        ranking = engine.rank([company], results)
+        cs = ranking.scores[0]
+        assert "balance_sheet_risk" in cs.flags
+
+    def test_negative_growth_flag(self):
+        """Weak growth → negative_growth flag."""
+        financial = make_weak_financial()  # negative revenue growth
+        company = make_company(1, "W", "Weak")
+        results = {1: {"financial": financial, "valuation": make_cheap_valuation()}}
+        engine = RankingEngine()
+        ranking = engine.rank([company], results)
+        cs = ranking.scores[0]
+        assert "negative_growth" in cs.flags
+
+    def test_cheap_but_weak_growth_flag(self):
+        """Weak growth + strong valuation → cheap_but_weak_growth flag."""
+        financial = make_weak_financial()  # weak growth
+        company = make_company(1, "W", "Weak")
+        results = {1: {"financial": financial, "valuation": make_cheap_valuation()}}
+        engine = RankingEngine()
+        ranking = engine.rank([company], results)
+        cs = ranking.scores[0]
+        assert "cheap_but_weak_growth" in cs.flags
+
+
+class TestDataQuality:
+    def test_high_data_quality_with_complete_data(self):
+        """All data present → high data quality."""
+        company = make_company(1, "S", "Strong")
+        results = {1: {"financial": make_strong_financial(), "valuation": make_cheap_valuation()}}
+        engine = RankingEngine()
+        ranking = engine.rank([company], results)
+        cs = ranking.scores[0]
+        assert cs.data_quality == "high"
+
+    def test_low_data_quality_with_many_missing(self):
+        """Many missing metrics → low data quality."""
+        financial = FinancialResult(
+            operating_margin=None,
+            net_margin=None,
+            fcf_margin=None,
+            revenue_growth=None,
+            ebit_growth=None,
+            net_income_growth=None,
+            roe=None,
+            roa=None,
+            debt_to_equity=None,
+        )
+        company = make_company(1, "TST", "Test")
+        results = {1: {"financial": financial, "valuation": make_cheap_valuation()}}
+        engine = RankingEngine()
+        ranking = engine.rank([company], results)
+        cs = ranking.scores[0]
+        assert cs.data_quality == "low"
+        assert "low_data_quality" in cs.flags
+
+    def test_medium_data_quality_with_some_missing(self):
+        """A few missing metrics → medium data quality."""
+        company = make_company(1, "TST", "Test")
+        # Missing valuation, which adds "valuation data not available"
+        results = {1: {"financial": make_strong_financial()}}
+        engine = RankingEngine()
+        ranking = engine.rank([company], results)
+        cs = ranking.scores[0]
+        # 1 missing item → medium
+        assert cs.data_quality == "medium"
+
+
+class TestCandidateReason:
+    def test_high_quality_attractive_valuation(self):
+        """Strong quality + strong valuation → attractive valuation reason."""
+        company = make_company(1, "S", "Strong")
+        results = {1: {"financial": make_strong_financial(), "valuation": make_cheap_valuation()}}
+        engine = RankingEngine()
+        ranking = engine.rank([company], results)
+        cs = ranking.scores[0]
+        assert "attractive valuation" in cs.candidate_reason
+
+    def test_demanding_valuation(self):
+        """Strong quality + weak valuation → demanding valuation reason."""
+        company = make_company(1, "S", "Strong")
+        results = {1: {"financial": make_strong_financial(), "valuation": make_expensive_valuation()}}
+        engine = RankingEngine()
+        ranking = engine.rank([company], results)
+        cs = ranking.scores[0]
+        assert "demanding" in cs.candidate_reason.lower()
+
+    def test_weak_quality_cheap_valuation(self):
+        """Weak quality + strong valuation → cheap valuation, weak quality."""
+        company = make_company(1, "W", "Weak")
+        results = {1: {"financial": make_weak_financial(), "valuation": make_cheap_valuation()}}
+        engine = RankingEngine()
+        ranking = engine.rank([company], results)
+        cs = ranking.scores[0]
+        assert "Cheap valuation" in cs.candidate_reason
+
 
 class TestDemoOutput:
     """Demonstrate the ranking output format with hand-built companies."""

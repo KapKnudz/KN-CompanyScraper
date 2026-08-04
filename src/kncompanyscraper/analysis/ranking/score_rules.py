@@ -208,10 +208,14 @@ def score_balance_sheet(financial: FinancialResult | None) -> dict:
     dte = financial.debt_to_equity
     if dte is None:
         missing.append("Debt/equity not available")
-    elif dte <= 0:
-        # Negative equity = insolvent, worst case
+    elif dte < 0:
+        # Negative equity — insolvent or invalid data
         metrics.append(0.0)
-        negatives.append(f"D/E {dte:.1f}x — negative equity")
+        negatives.append(f"D/E {dte:.1f}x — negative equity or invalid")
+    elif dte == 0:
+        # No debt — excellent
+        metrics.append(100.0)
+        positives.append("D/E 0.0x — no debt")
     else:
         s = _inverted_linear_score(dte, 0.0, 2.0)
         metrics.append(s)
