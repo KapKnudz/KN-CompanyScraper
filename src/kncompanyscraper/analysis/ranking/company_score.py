@@ -42,6 +42,8 @@ class WatchlistRanking:
         if include_flags:
             important_flags = {
                 "cheap_quality",
+                "fcf_quality",
+                "cheap_but_weak_growth",
                 "insider_buying_support",
                 "major_recent_news",
                 "ceo_outlook_positive",
