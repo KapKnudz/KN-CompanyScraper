@@ -1,39 +1,109 @@
-from kncompanyscraper.borsdata.client import BorsdataClient
+from datetime import date
+
+from psycopg2.extras import Json, RealDictCursor
+
 from kncompanyscraper.borsdata.report import Report
-import psycopg2
+from kncompanyscraper.database import get_connection
+
 
 class FinancialRepository:
-    def __init__(self, client: BorsdataClient, db_connection_string: str):
-        self.client = client
-        self.db_connection_string = db_connection_string
 
-    def _execute(self, query: str, params: tuple = None):
-        """Helper method to execute SQL queries."""
-        with psycopg2.connect(self.db_connection_string) as conn:
-            with conn.cursor() as cur:
-                cur.execute(query, params)
-                conn.commit()
-
-    def get_latest_report(self, instrument_id: int) -> Report | None:
-        reports = self.client.get_reports(instrument_id)
-        if not reports:
-            return None
-        return reports[0]
-
-    def get_historical_reports(self, instrument_id: int) -> list[Report]:
-        reports = self.client.get_reports(instrument_id)
-        if not reports or len(reports) < 2:
-            return []
-        return reports[1:]
-
-    def save_report(self, company_id: int, period_type: str, period_end: str, data: dict) -> None:
-        """
-        Save financial report to PostgreSQL. Uses ON CONFLICT to avoid duplicates.
-        """
+    def save_reports(self, company_id: int, period_type: str, reports: list[Report]) -> None:
         query = """
-            INSERT INTO financials (company_id, period_type, period_end, data)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO financials (
+                company_id, period_type, period_end, revenue, operating_profit,
+                ebit, ebitda, net_income, debt, equity, free_cash_flow,
+                shares_outstanding, total_assets, report_year, report_period,
+                currency, raw_payload, fetched_at
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, NOW()
+            )
             ON CONFLICT (company_id, period_type, period_end)
-            DO UPDATE SET data = EXCLUDED.data;
+            DO UPDATE SET
+                revenue = EXCLUDED.revenue,
+                operating_profit = EXCLUDED.operating_profit,
+                ebit = EXCLUDED.ebit,
+                ebitda = EXCLUDED.ebitda,
+                net_income = EXCLUDED.net_income,
+                debt = EXCLUDED.debt,
+                equity = EXCLUDED.equity,
+                free_cash_flow = EXCLUDED.free_cash_flow,
+                shares_outstanding = EXCLUDED.shares_outstanding,
+                total_assets = EXCLUDED.total_assets,
+                report_year = EXCLUDED.report_year,
+                report_period = EXCLUDED.report_period,
+                currency = EXCLUDED.currency,
+                raw_payload = EXCLUDED.raw_payload,
+                fetched_at = NOW()
         """
-        self._execute(query, (company_id, period_type, period_end, data))
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                for report in reports:
+                    period_end = report.period_end or date(report.year, 12, 31)
+                    cur.execute(
+                        query,
+                        (
+                            company_id, period_type, period_end, report.revenue,
+                            report.operating_profit, report.ebit, report.ebitda,
+                            report.net_income, report.total_debt, report.equity,
+                            report.free_cash_flow, report.shares_outstanding,
+                            report.total_assets, report.year, report.period,
+                            report.currency, Json(report.raw_payload),
+                        ),
+                    )
+
+    def get_latest_report(self, company_id: int, period_type: str = "year") -> Report | None:
+        reports = self._get_reports(company_id, period_type, limit=1)
+        return reports[0] if reports else None
+
+    def get_historical_reports(self, company_id: int, period_type: str = "year") -> list[Report]:
+        reports = self._get_reports(company_id, period_type)
+        return list(reversed(reports[1:]))
+
+    def _get_reports(
+        self,
+        company_id: int,
+        period_type: str,
+        limit: int | None = None,
+    ) -> list[Report]:
+        query = """
+            SELECT revenue, operating_profit, ebit, ebitda, net_income,
+                   free_cash_flow, equity, total_assets, debt,
+                   shares_outstanding, report_year, report_period, period_end,
+                   currency, raw_payload
+            FROM financials
+            WHERE company_id = %s AND period_type = %s
+            ORDER BY period_end DESC
+        """
+        params: list = [company_id, period_type]
+        if limit is not None:
+            query += " LIMIT %s"
+            params.append(limit)
+
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, tuple(params))
+                rows = cur.fetchall()
+
+        return [
+            Report(
+                revenue=float(row["revenue"] or 0),
+                operating_profit=float(row["operating_profit"] or 0),
+                ebit=float(row["ebit"] or 0),
+                ebitda=float(row["ebitda"] or 0),
+                net_income=float(row["net_income"] or 0),
+                free_cash_flow=float(row["free_cash_flow"] or 0),
+                equity=float(row["equity"] or 0),
+                total_assets=float(row["total_assets"] or 0),
+                total_debt=float(row["debt"] or 0),
+                shares_outstanding=float(row["shares_outstanding"] or 0),
+                year=row["report_year"],
+                period=row["report_period"],
+                period_end=row["period_end"],
+                currency=row["currency"],
+                raw_payload=row["raw_payload"],
+            )
+            for row in rows
+        ]
