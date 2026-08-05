@@ -22,11 +22,14 @@ class FakeFinancialRepository:
 
     def __init__(self, reports):
         self.reports = reports
+        self.requested_company_ids = []
 
-    def get_latest_report(self, instrument_id):
+    def get_latest_report(self, company_id):
+        self.requested_company_ids.append(company_id)
         return self.reports[-1] if self.reports else None
 
-    def get_historical_reports(self, instrument_id):
+    def get_historical_reports(self, company_id):
+        self.requested_company_ids.append(company_id)
         return self.reports[:-1]
 
 
@@ -55,6 +58,7 @@ class TestFinancialSkill:
         assert result.net_margin == pytest.approx(55_000_000 / 550_000_000, rel=1e-6)
         assert result.revenue_growth == pytest.approx(30_000_000 / 520_000_000, rel=1e-6)
         assert result.roe == pytest.approx(55_000_000 / 180_000_000, rel=1e-6)
+        assert repository.requested_company_ids == [company.id, company.id]
 
     def test_run_returns_none_when_no_reports(self):
         repository = FakeFinancialRepository([])

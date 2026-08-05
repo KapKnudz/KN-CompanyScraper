@@ -29,6 +29,14 @@ Tracks companies, scrapes financial/news data, stores results in PostgreSQL, and
 python -m kncompanyscraper.main
 ```
 
+Fetch and persist Börsdata inputs for the active watchlist, then rank exclusively
+from the stored PostgreSQL data:
+
+```
+python -m kncompanyscraper.main sync-borsdata
+python -m kncompanyscraper.main rank-watchlist
+```
+
 ## Development
 
 Run tests:

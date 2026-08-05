@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 
 
 @dataclass
@@ -17,3 +18,9 @@ class Report:
     total_debt: float
 
     shares_outstanding: float
+
+    year: int | None = None
+    period: int | None = None
+    period_end: date | None = None
+    currency: str | None = None
+    raw_payload: dict | None = None

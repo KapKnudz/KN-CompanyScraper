@@ -83,6 +83,15 @@ class BorsdataClient:
             total_assets=r.get("total_Assets") or 0,
             total_debt=r.get("net_Debt") or 0,
             shares_outstanding=r.get("number_Of_Shares") or 0,
+            year=r.get("year"),
+            period=r.get("period"),
+            period_end=(
+                date.fromisoformat(r["report_End_Date"][:10])
+                if r.get("report_End_Date")
+                else None
+            ),
+            currency=r.get("currency"),
+            raw_payload=r,
         )
 
     def _get(self, path, params=None):

@@ -1,37 +1,102 @@
-from kncompanyscraper.borsdata.kpi_ids import KpiIds
+from psycopg2.extras import RealDictCursor
+
+from kncompanyscraper.borsdata.kpi_history import KpiHistory
 from kncompanyscraper.borsdata.valuation_snapshot import ValuationSnapshot
+from kncompanyscraper.borsdata.kpi_ids import KpiIds
+from kncompanyscraper.database import get_connection
 
 
 class ValuationRepository:
 
-    def __init__(self, client):
-        self.client = client
+    CURRENT_KPIS = (
+        KpiIds.MARKET_CAP,
+        KpiIds.ENTERPRISE_VALUE,
+        KpiIds.PE,
+        KpiIds.EV_EBIT,
+        KpiIds.EV_EBITDA,
+        KpiIds.PB,
+        KpiIds.PS,
+        KpiIds.PFCF,
+        KpiIds.PEG,
+        KpiIds.DIVIDEND_YIELD,
+    )
+    HISTORICAL_KPIS = (KpiIds.PE, KpiIds.EV_EBIT, KpiIds.PB)
 
-    def get_current(self, instrument_id) -> ValuationSnapshot:
+    def save_snapshot(self, company_id: int, kpi_id: int, value: float | None) -> None:
+        query = """
+            INSERT INTO kpi_snapshots (company_id, kpi_id, value, fetched_at)
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT (company_id, kpi_id)
+            DO UPDATE SET value = EXCLUDED.value, fetched_at = NOW()
+        """
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (company_id, kpi_id, value))
+
+    def save_history(
+        self,
+        company_id: int,
+        history: KpiHistory,
+        period_type: str = "year",
+        price_type: str = "mean",
+    ) -> None:
+        query = """
+            INSERT INTO kpi_history (
+                company_id, kpi_id, period_type, price_type, year, value, fetched_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (company_id, kpi_id, period_type, price_type, year)
+            DO UPDATE SET value = EXCLUDED.value, fetched_at = NOW()
+        """
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                for point in history.values:
+                    cur.execute(
+                        query,
+                        (company_id, history.kpi_id, period_type, price_type, point.year, point.value),
+                    )
+
+    def get_current(self, company_id: int) -> ValuationSnapshot:
+        values = self._snapshot_values(company_id)
         return ValuationSnapshot(
-            market_cap=self._value(instrument_id, KpiIds.MARKET_CAP),
-            enterprise_value=self._value(instrument_id, KpiIds.ENTERPRISE_VALUE),
-            pe=self._value(instrument_id, KpiIds.PE),
-            ev_ebit=self._value(instrument_id, KpiIds.EV_EBIT),
-            ev_ebitda=self._value(instrument_id, KpiIds.EV_EBITDA),
-            pb=self._value(instrument_id, KpiIds.PB),
-            ps=self._value(instrument_id, KpiIds.PS),
-            pfcf=self._value(instrument_id, KpiIds.PFCF),
-            peg=self._value(instrument_id, KpiIds.PEG),
-            dividend_yield=self._value(instrument_id, KpiIds.DIVIDEND_YIELD),
+            market_cap=values.get(KpiIds.MARKET_CAP),
+            enterprise_value=values.get(KpiIds.ENTERPRISE_VALUE),
+            pe=values.get(KpiIds.PE),
+            ev_ebit=values.get(KpiIds.EV_EBIT),
+            ev_ebitda=values.get(KpiIds.EV_EBITDA),
+            pb=values.get(KpiIds.PB),
+            ps=values.get(KpiIds.PS),
+            pfcf=values.get(KpiIds.PFCF),
+            peg=values.get(KpiIds.PEG),
+            dividend_yield=values.get(KpiIds.DIVIDEND_YIELD),
         )
 
-    def get_historical(self, instrument_id) -> tuple[list[float], list[float], list[float]]:
-        return (
-            self._history(instrument_id, KpiIds.PE),
-            self._history(instrument_id, KpiIds.EV_EBIT),
-            self._history(instrument_id, KpiIds.PB),
-        )
+    def get_historical(self, company_id: int) -> tuple[list[float], list[float], list[float]]:
+        return tuple(self._history(company_id, kpi_id) for kpi_id in self.HISTORICAL_KPIS)
 
-    def _value(self, instrument_id, kpi_id) -> float | None:
-        kpi = self.client.get_kpis(instrument_id, kpi_id)
-        return kpi.value if kpi else None
+    def _snapshot_values(self, company_id: int) -> dict[int, float | None]:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT kpi_id, value FROM kpi_snapshots WHERE company_id = %s",
+                    (company_id,),
+                )
+                return {
+                    row["kpi_id"]: float(row["value"]) if row["value"] is not None else None
+                    for row in cur.fetchall()
+                }
 
-    def _history(self, instrument_id, kpi_id) -> list[float]:
-        history = self.client.get_kpi_history(instrument_id, kpi_id)
-        return [point.value for point in history.values] if history else []
+    def _history(self, company_id: int, kpi_id: int) -> list[float]:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT value
+                    FROM kpi_history
+                    WHERE company_id = %s AND kpi_id = %s
+                      AND period_type = 'year' AND price_type = 'mean'
+                    ORDER BY year
+                    """,
+                    (company_id, kpi_id),
+                )
+                return [float(row[0]) for row in cur.fetchall()]

@@ -16,8 +16,8 @@ class ValuationSkill(Skill):
         return "valuation"
 
     def run(self, company):
-        current_raw = self.valuation_repository.get_current(company.borsdata_id)
-        pe_hist, ev_ebit_hist, pb_hist = self.valuation_repository.get_historical(company.borsdata_id)
+        current_raw = self.valuation_repository.get_current(company.id)
+        pe_hist, ev_ebit_hist, pb_hist = self.valuation_repository.get_historical(company.id)
 
         current = self.mapper.to_current(current_raw)
         historical = self.mapper.to_historical(pe_hist, ev_ebit_hist, pb_hist)

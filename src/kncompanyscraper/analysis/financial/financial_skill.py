@@ -16,11 +16,11 @@ class FinancialSkill(Skill):
         return "financial"
 
     def run(self, company):
-        latest = self.financial_repository.get_latest_report(company.borsdata_id)
+        latest = self.financial_repository.get_latest_report(company.id)
         if latest is None:
             return None
 
-        historical_reports = self.financial_repository.get_historical_reports(company.borsdata_id)
+        historical_reports = self.financial_repository.get_historical_reports(company.id)
 
         current = self.mapper.to_current(latest)
         historical = self.mapper.to_historical(historical_reports)

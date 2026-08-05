@@ -8,23 +8,18 @@ logger = get_logger("main")
 
 
 def _cmd_rank_watchlist():
-    """Run the deterministic watchlist ranking and print the results."""
+    """Run the deterministic watchlist ranking from persisted PostgreSQL data."""
     from kncompanyscraper.repositories.company_repository import CompanyRepository
     from kncompanyscraper.repositories.financial_repository import FinancialRepository
     from kncompanyscraper.repositories.valuation_repository import ValuationRepository
-    from kncompanyscraper.borsdata.client import BorsdataClient
     from kncompanyscraper.analysis.financial.financial_skill import FinancialSkill
     from kncompanyscraper.analysis.valuation.valuation_skill import ValuationSkill
     from kncompanyscraper.analysis.base.analysisengine import AnalysisEngine
     from kncompanyscraper.analysis.ranking.ranking_engine import RankingEngine
     from kncompanyscraper.analysis.watchlist.watchlist_analysis_service import WatchlistAnalysisService
-    from kncompanyscraper import config
-
-    client = BorsdataClient()
-
     company_repo = CompanyRepository()
-    financial_repo = FinancialRepository(client, config.DATABASE_URL)
-    valuation_repo = ValuationRepository(client)
+    financial_repo = FinancialRepository()
+    valuation_repo = ValuationRepository()
 
     financial_skill = FinancialSkill(financial_repo)
     valuation_skill = ValuationSkill(valuation_repo)
@@ -69,16 +64,42 @@ def _cmd_rank_watchlist():
     print(f"Agent shortlist size:   {len(shortlist)}")
 
 
+def _cmd_sync_borsdata():
+    """Fetch Börsdata inputs and persist them before any analysis is run."""
+    from kncompanyscraper.borsdata.client import BorsdataClient
+    from kncompanyscraper.borsdata.ingestion import BorsdataIngestionService
+    from kncompanyscraper.repositories.company_repository import CompanyRepository
+    from kncompanyscraper.repositories.financial_repository import FinancialRepository
+    from kncompanyscraper.repositories.valuation_repository import ValuationRepository
+
+    company_repo = CompanyRepository()
+    companies = company_repo.get_active_companies()
+    if not companies:
+        print("No active companies found in watchlist.")
+        return
+
+    service = BorsdataIngestionService(
+        BorsdataClient(),
+        FinancialRepository(),
+        ValuationRepository(),
+    )
+    synced = service.sync_companies(companies)
+    print(f"Synced Börsdata inputs for {synced} companies.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="KN Company Scraper")
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("rank-watchlist", help="Run deterministic watchlist ranking")
+    subparsers.add_parser("sync-borsdata", help="Persist Börsdata inputs for the active watchlist")
 
     args = parser.parse_args()
 
     if args.command == "rank-watchlist":
         _cmd_rank_watchlist()
+    elif args.command == "sync-borsdata":
+        _cmd_sync_borsdata()
     else:
         # Default: start the scheduler
         logger.info("Starting KN-CompanyScraper")

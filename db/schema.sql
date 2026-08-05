@@ -16,20 +16,6 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: schema; Type: SCHEMA; Schema: -; Owner: -
---
-
-CREATE SCHEMA schema;
-
-
---
--- Name: schema.sql; Type: SCHEMA; Schema: -; Owner: -
---
-
-CREATE SCHEMA "schema.sql";
-
-
---
 -- Name: scrape_status; Type: TYPE; Schema: public; Owner: -
 --
 
@@ -233,7 +219,15 @@ CREATE TABLE public.financials (
     eps numeric(10,2),
     dividend_per_share numeric(10,2),
     shares_outstanding integer,
-    created_at timestamp with time zone DEFAULT now()
+    created_at timestamp with time zone DEFAULT now(),
+    operating_profit numeric(15,2),
+    ebitda numeric(15,2),
+    total_assets numeric(15,2),
+    report_year integer,
+    report_period integer,
+    currency character varying(3),
+    raw_payload jsonb,
+    fetched_at timestamp with time zone DEFAULT now()
 );
 
 
@@ -330,6 +324,33 @@ CREATE SEQUENCE public.jobs_id_seq
 --
 
 ALTER SEQUENCE public.jobs_id_seq OWNED BY public.jobs.id;
+
+
+--
+-- Name: kpi_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.kpi_history (
+    company_id integer NOT NULL,
+    kpi_id integer NOT NULL,
+    period_type character varying(20) NOT NULL,
+    price_type character varying(20) NOT NULL,
+    year integer NOT NULL,
+    value numeric NOT NULL,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: kpi_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.kpi_snapshots (
+    company_id integer NOT NULL,
+    kpi_id integer NOT NULL,
+    value numeric,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
 
 --
@@ -431,7 +452,8 @@ CREATE TABLE public.valuations (
     expected_cagr numeric(5,2),
     margin_of_safety numeric(5,2),
     calculated_at timestamp with time zone DEFAULT now(),
-    assumptions jsonb
+    assumptions jsonb,
+    calculated_date date
 );
 
 
@@ -627,6 +649,22 @@ ALTER TABLE ONLY public.jobs
 
 
 --
+-- Name: kpi_history kpi_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.kpi_history
+    ADD CONSTRAINT kpi_history_pkey PRIMARY KEY (company_id, kpi_id, period_type, price_type, year);
+
+
+--
+-- Name: kpi_snapshots kpi_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.kpi_snapshots
+    ADD CONSTRAINT kpi_snapshots_pkey PRIMARY KEY (company_id, kpi_id);
+
+
+--
 -- Name: news_releases news_releases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -752,6 +790,13 @@ CREATE INDEX idx_jobs_company_id ON public.jobs USING btree (company_id);
 
 
 --
+-- Name: idx_kpi_history_company_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_kpi_history_company_id ON public.kpi_history USING btree (company_id);
+
+
+--
 -- Name: idx_news_releases_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -798,6 +843,13 @@ CREATE INDEX idx_scrape_runs_status ON public.scrape_runs USING btree (status);
 --
 
 CREATE INDEX idx_valuations_company_id ON public.valuations USING btree (company_id);
+
+
+--
+-- Name: idx_valuations_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_valuations_unique ON public.valuations USING btree (company_id, valuation_type, calculated_date);
 
 
 --
@@ -864,6 +916,22 @@ ALTER TABLE ONLY public.jobs
 
 
 --
+-- Name: kpi_history kpi_history_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.kpi_history
+    ADD CONSTRAINT kpi_history_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: kpi_snapshots kpi_snapshots_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.kpi_snapshots
+    ADD CONSTRAINT kpi_snapshots_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
 -- Name: news_releases news_releases_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -902,4 +970,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260702163712'),
     ('20260704145835'),
     ('20260706154541'),
-    ('20260707145744');
+    ('20260707145744'),
+    ('20260805120000'),
+    ('20260805123000');
