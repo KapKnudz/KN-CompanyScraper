@@ -166,7 +166,12 @@ class BorsdataClient:
                     response.status_code, path, self.MAX_RETRIES,
                 )
 
-            response.raise_for_status()
+            if response.status_code >= 400:
+                # requests includes the full query string in HTTPError messages.
+                # Börsdata authenticates via query parameter, so strip it before
+                # raising to keep the API key out of logs and tracebacks.
+                response.url = url
+                response.raise_for_status()
             logger.debug("Börsdata %s → 200", path)
             return response.json()
 

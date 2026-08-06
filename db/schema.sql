@@ -108,7 +108,7 @@ ALTER SEQUENCE public.annual_reports_id_seq OWNED BY public.annual_reports.id;
 CREATE TABLE public.companies (
     id integer NOT NULL,
     name text NOT NULL,
-    ticker character varying(10),
+    ticker character varying(20),
     borsdata_id integer,
     last_updated timestamp with time zone DEFAULT now(),
     mfn_slug text,
@@ -1009,4 +1009,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260707145744'),
     ('20260805120000'),
     ('20260805123000'),
-    ('20260806120000');
+    ('20260806120000'),
+    ('20260806143500');

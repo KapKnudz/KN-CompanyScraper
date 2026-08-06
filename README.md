@@ -37,10 +37,16 @@ Map active companies to Börsdata instruments, fetch and persist their inputs,
 then rank exclusively from the stored PostgreSQL data:
 
 ```
+python -m kncompanyscraper.main import-watchlist --csv /path/to/watchlist.csv
 python -m kncompanyscraper.main map-borsdata
 python -m kncompanyscraper.main sync-borsdata
 python -m kncompanyscraper.main rank-watchlist
 ```
+
+The watchlist importer expects a UTF-8, semicolon-delimited file with the
+header `Id;Name;Ticker`. It upserts by Börsdata ID (falling back to ticker),
+activates every imported company, and leaves companies not present in the file
+unchanged. Running it again is safe and updates the existing rows.
 
 Export model-ready prompts for the current shortlist without calling a model:
 
