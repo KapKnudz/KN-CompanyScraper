@@ -3,6 +3,8 @@ from kncompanyscraper.database import get_connection
 from kncompanyscraper.models.company_profile import CompanyProfile
 from psycopg2.extras import Json, RealDictCursor
 
+from kncompanyscraper.watchlist_import import WatchlistCompany
+
 
 class CompanyRepository:
 
@@ -189,3 +191,69 @@ class CompanyRepository:
                     """,
                     (borsdata_id, currency, company_id),
                 )
+
+    def upsert_watchlist_companies(
+        self,
+        companies: list[WatchlistCompany],
+    ) -> tuple[int, int]:
+        created = 0
+        updated = 0
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                for company in companies:
+                    cur.execute(
+                        "SELECT id FROM companies WHERE borsdata_id = %s",
+                        (company.borsdata_id,),
+                    )
+                    row = cur.fetchone()
+
+                    if row is None:
+                        cur.execute(
+                            "SELECT id FROM companies WHERE ticker = %s",
+                            (company.ticker,),
+                        )
+                        row = cur.fetchone()
+
+                    if row is None:
+                        cur.execute(
+                            """
+                            INSERT INTO companies (name, ticker, borsdata_id, currency)
+                            VALUES (%s, %s, %s, NULL)
+                            RETURNING id
+                            """,
+                            (company.name, company.ticker, company.borsdata_id),
+                        )
+                        company_id = cur.fetchone()[0]
+                        created += 1
+                    else:
+                        company_id = row[0]
+                        cur.execute(
+                            """
+                            UPDATE companies
+                            SET name = %s,
+                                ticker = %s,
+                                borsdata_id = %s,
+                                last_updated = NOW()
+                            WHERE id = %s
+                            """,
+                            (
+                                company.name,
+                                company.ticker,
+                                company.borsdata_id,
+                                company_id,
+                            ),
+                        )
+                        updated += 1
+
+                    cur.execute(
+                        """
+                        INSERT INTO watchlist (company_id, active)
+                        VALUES (%s, TRUE)
+                        ON CONFLICT (company_id)
+                        DO UPDATE SET active = TRUE
+                        """,
+                        (company_id,),
+                    )
+
+        return created, updated

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+import requests
 
 from kncompanyscraper.borsdata.client import BorsdataClient
 from kncompanyscraper.borsdata.kpi import Kpi
@@ -132,3 +133,19 @@ class TestBorsdataClient:
         assert len(result) == 5
         assert all(isinstance(p, StockPrice) for p in result)
         assert result[0].close == pytest.approx(278.0)
+
+    def test_http_error_does_not_expose_api_key(self, monkeypatch):
+        response = requests.Response()
+        response.status_code = 400
+        response.reason = "Bad Request"
+        response.url = "https://apiservice.borsdata.se/example?authKey=secret"
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: response,
+        )
+
+        with pytest.raises(requests.HTTPError) as exc_info:
+            BorsdataClient(api_key="secret")._get("/example")
+
+        assert "secret" not in str(exc_info.value)
+        assert "https://apiservice.borsdata.se/example" in str(exc_info.value)

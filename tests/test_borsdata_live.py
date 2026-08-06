@@ -8,6 +8,7 @@ Run with:  pytest -m integration -v
 import os
 
 import pytest
+import requests
 
 from kncompanyscraper.borsdata.client import BorsdataClient
 from kncompanyscraper.borsdata.kpi import Kpi
@@ -43,7 +44,8 @@ TEST_INSTRUMENT_ID = 3
 # ---------------------------------------------------------------------------
 
 class TestClientInit:
-    def test_raises_when_api_key_is_none(self):
+    def test_raises_when_api_key_is_none(self, monkeypatch):
+        monkeypatch.setattr("kncompanyscraper.borsdata.client.config.BORSDATA_API_KEY", None)
         with pytest.raises(ValueError, match="BORSDATA_API_KEY is required"):
             BorsdataClient(api_key=None)
 
@@ -64,10 +66,11 @@ class TestLiveKpis:
             assert isinstance(result, Kpi)
             assert result.value > 0
 
-    def test_get_kpis_nonexistent_returns_none(self, client):
-        result = client.get_kpis(TEST_INSTRUMENT_ID, 99999)
-        # Börsdata returns null for unknown KPI IDs
-        assert result is None or isinstance(result, Kpi)
+    def test_get_kpis_nonexistent_returns_bad_request(self, client):
+        with pytest.raises(requests.HTTPError) as exc_info:
+            client.get_kpis(TEST_INSTRUMENT_ID, 99999)
+
+        assert exc_info.value.response.status_code == 400
 
 
 @pytest.mark.integration
@@ -80,10 +83,11 @@ class TestLiveKpiHistory:
             for point in result.values:
                 assert point.value > 0
 
-    def test_get_kpi_history_unknown_kpi_returns_empty(self, client):
-        result = client.get_kpi_history(TEST_INSTRUMENT_ID, 99999, max_count=5)
-        assert isinstance(result, KpiHistory)
-        assert result.values == []
+    def test_get_kpi_history_unknown_kpi_returns_bad_request(self, client):
+        with pytest.raises(requests.HTTPError) as exc_info:
+            client.get_kpi_history(TEST_INSTRUMENT_ID, 99999, max_count=5)
+
+        assert exc_info.value.response.status_code == 400
 
 
 # ---------------------------------------------------------------------------

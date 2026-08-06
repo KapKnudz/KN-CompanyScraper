@@ -106,6 +106,22 @@ def _cmd_map_borsdata():
         print(f"Unresolved: {', '.join(result.unresolved)}")
 
 
+def _cmd_import_watchlist(csv_path: Path):
+    """Import a semicolon-delimited Börsdata watchlist into PostgreSQL."""
+    from kncompanyscraper.repositories.company_repository import CompanyRepository
+    from kncompanyscraper.watchlist_import import WatchlistImportService
+
+    try:
+        result = WatchlistImportService(CompanyRepository()).import_file(csv_path)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+
+    print(
+        f"Imported {result.imported} watchlist companies "
+        f"({result.created} created, {result.updated} updated)."
+    )
+
+
 def _cmd_export_agent_prompts(output_dir: Path):
     """Export model-ready prompts for the deterministic shortlist."""
     from kncompanyscraper.analysis.agent.agent_context_builder import AgentContextBuilder
@@ -159,6 +175,11 @@ def main():
     subparsers.add_parser("rank-watchlist", help="Run deterministic watchlist ranking")
     subparsers.add_parser("sync-borsdata", help="Persist Börsdata inputs for the active watchlist")
     subparsers.add_parser("map-borsdata", help="Map watchlist companies to Börsdata instruments")
+    import_parser = subparsers.add_parser(
+        "import-watchlist",
+        help="Import and activate companies from a Börsdata watchlist CSV",
+    )
+    import_parser.add_argument("--csv", required=True, type=Path)
     export_parser = subparsers.add_parser(
         "export-agent-prompts",
         help="Export prompts for the agent shortlist without calling a model",
@@ -183,6 +204,8 @@ def main():
         _cmd_sync_borsdata()
     elif args.command == "map-borsdata":
         _cmd_map_borsdata()
+    elif args.command == "import-watchlist":
+        _cmd_import_watchlist(args.csv)
     elif args.command == "export-agent-prompts":
         _cmd_export_agent_prompts(args.output_dir)
     elif args.command == "analyze-shortlist":
