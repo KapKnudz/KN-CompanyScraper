@@ -56,7 +56,7 @@ def test_latest_report_is_loaded_by_local_company_id():
             "revenue": 100,
             "operating_profit": 20,
             "ebit": 20,
-            "ebitda": 25,
+            "ebitda": None,
             "net_income": 15,
             "free_cash_flow": 12,
             "equity": 50,
@@ -82,3 +82,4 @@ def test_latest_report_is_loaded_by_local_company_id():
     assert params == (7, "year", 1)
     assert report.year == 2025
     assert report.total_debt == 10
+    assert report.ebitda is None

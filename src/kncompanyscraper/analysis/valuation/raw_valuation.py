@@ -47,6 +47,13 @@ def compute_raw_valuation(
     if stock_price is None or report is None:
         return RawValuation()
 
+    if (
+        stock_price.currency
+        and report.currency
+        and stock_price.currency.upper() != report.currency.upper()
+    ):
+        return RawValuation()
+
     price = stock_price.close
     shares = report.shares_outstanding
 

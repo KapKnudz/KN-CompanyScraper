@@ -111,6 +111,20 @@ class TestWatchlistAnalysisService:
         assert ranking.scores[0].ticker == "AQ"
         assert ranking.scores[1].company_id == 2
 
+    def test_analyze_watchlist_exposes_results_for_agent_context(self):
+        companies = [make_company(1, "AQ", "AQ Group")]
+        results = {1: {"financial": None, "valuation": None}}
+        service = WatchlistAnalysisService(
+            StubCompanyRepository(companies),
+            StubAnalysisEngine(results),
+            RankingEngine(),
+        )
+
+        run = service.analyze_watchlist()
+
+        assert run.results_by_company == results
+        assert run.ranking.scores[0].company_id == 1
+
     def test_rank_watchlist_results_keyed_by_company_id(self):
         """Each company in the ranking matches a company that was analyzed."""
         companies = [make_company(10, "T1", "Test1"), make_company(20, "T2", "Test2")]

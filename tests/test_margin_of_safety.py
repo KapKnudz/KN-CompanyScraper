@@ -184,6 +184,17 @@ class TestWeightedValuationScoring:
         # Raw yields are higher → score should be higher
         assert result_raw["score"] > result_kpi["score"]
 
+    def test_zero_raw_yields_do_not_fall_back_to_kpi_yields(self):
+        kpi_only = _cheap_valuation(earnings_yield=0.10, free_cash_flow_yield=0.08)
+        with_zero_raw = _cheap_valuation(
+            earnings_yield=0.10,
+            free_cash_flow_yield=0.08,
+            raw_earnings_yield=0.0,
+            raw_fcf_yield=0.0,
+        )
+
+        assert score_valuation(with_zero_raw)["score"] < score_valuation(kpi_only)["score"]
+
     def test_all_metrics_none_scores_zero(self):
         empty = ValuationResult(
             pe=None, ev_ebit=None, ev_ebitda=None,

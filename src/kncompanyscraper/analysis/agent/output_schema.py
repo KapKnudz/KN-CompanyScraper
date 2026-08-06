@@ -102,3 +102,33 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     "thesis_break_conditions": ["string"],
     "missing_information": ["string"],
 }
+
+
+def stock_analysis_json_schema() -> dict:
+    return _contract_to_json_schema(STOCK_ANALYSIS_OUTPUT_CONTRACT)
+
+
+def _contract_to_json_schema(specification) -> dict:
+    if isinstance(specification, dict):
+        return {
+            "type": "object",
+            "properties": {
+                key: _contract_to_json_schema(value) for key, value in specification.items()
+            },
+            "required": list(specification),
+            "additionalProperties": False,
+        }
+
+    if isinstance(specification, list):
+        return {
+            "type": "array",
+            "items": _contract_to_json_schema(specification[0]),
+        }
+
+    options = specification.split(" | ")
+    primitive_types = {"integer", "number", "string", "null"}
+    if all(option in primitive_types for option in options):
+        types = [option for option in options]
+        return {"type": types[0] if len(types) == 1 else types}
+
+    return {"type": "string", "enum": options}

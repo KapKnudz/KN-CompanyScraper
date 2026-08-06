@@ -21,14 +21,14 @@ class FinancialCalculator:
             debt_to_equity=self.calculate_ratio(current.total_debt, current.equity),
         )
 
-    def calculate_growth(self, current_value: float | None, history: list[float]) -> float | None:
+    def calculate_growth(self, current_value: float | None, history: list[float | None]) -> float | None:
         if current_value is None or not history:
             return None
 
         # Assuming history is ordered chronologically, last item is previous period
         previous_value = history[-1]
 
-        if previous_value == 0:
+        if previous_value in (None, 0):
             return None
 
         return (current_value - previous_value) / abs(previous_value)

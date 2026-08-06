@@ -16,10 +16,10 @@ class CurrentFinancials:
 
 @dataclass
 class HistoricalFinancials:
-    revenue_history: list[float]
-    ebit_history: list[float]
-    fcf_history: list[float]
-    net_income_history: list[float]
+    revenue_history: list[float | None]
+    ebit_history: list[float | None]
+    fcf_history: list[float | None]
+    net_income_history: list[float | None]
 
 
 @dataclass

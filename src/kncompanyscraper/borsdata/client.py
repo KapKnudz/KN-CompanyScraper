@@ -8,6 +8,7 @@ from kncompanyscraper.logger import get_logger
 from kncompanyscraper.borsdata.report import Report
 from kncompanyscraper.borsdata.kpi import Kpi
 from kncompanyscraper.borsdata.kpi_history import KpiHistory, KpiHistoryPoint
+from kncompanyscraper.borsdata.instrument import Instrument
 from kncompanyscraper.borsdata.stock_price import StockPrice
 
 logger = get_logger(__name__)
@@ -37,6 +38,20 @@ class BorsdataClient:
 
         return Kpi(id=kpi_id, name=str(kpi_id), value=n)
 
+    def get_instruments(self) -> list[Instrument]:
+        data = self._get("/v1/instruments")
+        return [
+            Instrument(
+                id=item["insId"],
+                name=item.get("name"),
+                isin=item.get("isin"),
+                ticker=item.get("ticker"),
+                stock_price_currency=item.get("stockPriceCurrency"),
+                report_currency=item.get("reportCurrency"),
+            )
+            for item in data.get("instruments") or []
+        ]
+
     def get_kpi_history(self, instrument_id, kpi_id, report_type="year", price_type="mean", max_count=20):
         data = self._get(
             f"/v1/instruments/{instrument_id}/kpis/{kpi_id}/{report_type}/{price_type}/history",
@@ -59,8 +74,9 @@ class BorsdataClient:
 
         return [self._report_from_json(r) for r in data.get("reports") or []]
 
-    def get_stock_price(self, instrument_id):
-        data = self._get(f"/v1/instruments/{instrument_id}/stockprices")
+    def get_stock_price(self, instrument_id, max_count=None):
+        params = {"maxCount": max_count} if max_count is not None else None
+        data = self._get(f"/v1/instruments/{instrument_id}/stockprices", params)
 
         return [
             StockPrice(date=date.fromisoformat(p["d"][:10]), close=p["c"])
@@ -68,21 +84,17 @@ class BorsdataClient:
         ]
 
     def _report_from_json(self, r):
-        # NOTE: EBITDA is estimated as operating_Income + intangible_Assets because
-        # Börsdata's report endpoint may not expose a direct depreciation/amortisation
-        # field. Verify this against live API responses — if D&A fields exist in the
-        # payload, use operating_Income + depreciation + amortisation instead.
         return Report(
-            revenue=r.get("revenues") or 0,
-            operating_profit=r.get("operating_Income") or 0,
-            ebit=r.get("operating_Income") or 0,
-            ebitda=(r.get("operating_Income") or 0) + (r.get("intangible_Assets") or 0),
-            net_income=r.get("profit_To_Equity_Holders") or 0,
-            free_cash_flow=r.get("free_Cash_Flow") or 0,
-            equity=r.get("total_Equity") or 0,
-            total_assets=r.get("total_Assets") or 0,
-            total_debt=r.get("net_Debt") or 0,
-            shares_outstanding=r.get("number_Of_Shares") or 0,
+            revenue=r.get("revenues"),
+            operating_profit=r.get("operating_Income"),
+            ebit=r.get("operating_Income"),
+            ebitda=None,
+            net_income=r.get("profit_To_Equity_Holders"),
+            free_cash_flow=r.get("free_Cash_Flow"),
+            equity=r.get("total_Equity"),
+            total_assets=r.get("total_Assets"),
+            total_debt=r.get("net_Debt"),
+            shares_outstanding=r.get("number_Of_Shares"),
             year=r.get("year"),
             period=r.get("period"),
             period_end=(

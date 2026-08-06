@@ -80,6 +80,15 @@ class TestComputeRawValuation:
         assert rv.market_cap is None
         assert rv.pe is None
 
+    def test_currency_mismatch_returns_empty(self):
+        price = make_stock_price(100.0)
+        price.currency = "SEK"
+        report = make_report(currency="EUR")
+
+        rv = compute_raw_valuation(price, report)
+        assert rv.market_cap is None
+        assert rv.pe is None
+
     def test_none_report_returns_empty(self):
         rv = compute_raw_valuation(make_stock_price(100.0), None)
         assert rv.market_cap is None

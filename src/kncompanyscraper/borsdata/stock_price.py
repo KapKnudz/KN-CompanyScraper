@@ -7,3 +7,4 @@ class StockPrice:
 
     date: date
     close: float
+    currency: str | None = None

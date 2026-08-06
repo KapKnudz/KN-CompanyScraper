@@ -15,6 +15,9 @@ class BorsdataIngestionService:
         reports = self.client.get_reports(company.borsdata_id, report_type="year")
         self.financial_repository.save_reports(company.id, "year", reports)
 
+        stock_prices = self.client.get_stock_price(company.borsdata_id, max_count=1)
+        self.valuation_repository.save_stock_prices(company.id, stock_prices, company.currency)
+
         for kpi_id in ValuationRepository.CURRENT_KPIS:
             kpi = self.client.get_kpis(company.borsdata_id, kpi_id)
             if kpi is not None:

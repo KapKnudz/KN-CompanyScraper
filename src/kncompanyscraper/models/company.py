@@ -9,3 +9,5 @@ class Company:
     mfn_slug: str | None
     borsdata_id: int | None
     last_updated: datetime | None
+    isin: str | None = None
+    currency: str | None = None

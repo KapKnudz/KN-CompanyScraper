@@ -8,6 +8,7 @@ from kncompanyscraper.borsdata.kpi import Kpi
 from kncompanyscraper.borsdata.kpi_history import KpiHistory
 from kncompanyscraper.borsdata.stock_price import StockPrice
 from kncompanyscraper.borsdata.report import Report
+from kncompanyscraper.borsdata.instrument import Instrument
 
 MOCKS_DIR = Path(__file__).resolve().parent / "mocks"
 
@@ -31,6 +32,30 @@ class FakeResponse:
 
 
 class TestBorsdataClient:
+
+    def test_get_instruments_maps_identity_fields(self, monkeypatch):
+        payload = {
+            "instruments": [
+                {
+                    "insId": 42,
+                    "name": "Testbolaget",
+                    "isin": "SE0000000042",
+                    "ticker": "TEST",
+                    "stockPriceCurrency": "SEK",
+                    "reportCurrency": "SEK",
+                }
+            ]
+        }
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: FakeResponse(payload),
+        )
+
+        result = BorsdataClient(api_key="test").get_instruments()
+
+        assert result == [
+            Instrument(42, "Testbolaget", "SE0000000042", "TEST", "SEK", "SEK")
+        ]
 
     def test_init_raises_when_no_api_key(self, monkeypatch):
         """BorsdataClient raises ValueError when no API key is provided."""
@@ -77,6 +102,22 @@ class TestBorsdataClient:
         assert len(result) == 5
         assert all(isinstance(r, Report) for r in result)
         assert result[-1].revenue == 550_000_000
+
+    def test_report_mapping_preserves_missing_values_without_fabricating_ebitda(self):
+        report = BorsdataClient(api_key="test")._report_from_json(
+            {
+                "year": 2025,
+                "period": 1,
+                "operating_Income": 12.0,
+                "intangible_Assets": 500.0,
+            }
+        )
+
+        assert report.ebit == 12.0
+        assert report.ebitda is None
+        assert report.revenue is None
+        assert report.net_income is None
+        assert report.total_debt is None
 
     def test_get_stock_price_maps_prices(self, monkeypatch):
         payload = load_mock("stock_prices_mock.json")

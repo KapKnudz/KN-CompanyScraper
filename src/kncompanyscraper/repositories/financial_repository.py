@@ -89,16 +89,16 @@ class FinancialRepository:
 
         return [
             Report(
-                revenue=float(row["revenue"] or 0),
-                operating_profit=float(row["operating_profit"] or 0),
-                ebit=float(row["ebit"] or 0),
-                ebitda=float(row["ebitda"] or 0),
-                net_income=float(row["net_income"] or 0),
-                free_cash_flow=float(row["free_cash_flow"] or 0),
-                equity=float(row["equity"] or 0),
-                total_assets=float(row["total_assets"] or 0),
-                total_debt=float(row["debt"] or 0),
-                shares_outstanding=float(row["shares_outstanding"] or 0),
+                revenue=self._to_float(row["revenue"]),
+                operating_profit=self._to_float(row["operating_profit"]),
+                ebit=self._to_float(row["ebit"]),
+                ebitda=self._to_float(row["ebitda"]),
+                net_income=self._to_float(row["net_income"]),
+                free_cash_flow=self._to_float(row["free_cash_flow"]),
+                equity=self._to_float(row["equity"]),
+                total_assets=self._to_float(row["total_assets"]),
+                total_debt=self._to_float(row["debt"]),
+                shares_outstanding=self._to_float(row["shares_outstanding"]),
                 year=row["report_year"],
                 period=row["report_period"],
                 period_end=row["period_end"],
@@ -107,3 +107,7 @@ class FinancialRepository:
             )
             for row in rows
         ]
+
+    @staticmethod
+    def _to_float(value) -> float | None:
+        return float(value) if value is not None else None
