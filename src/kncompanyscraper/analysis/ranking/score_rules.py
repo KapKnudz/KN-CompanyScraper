@@ -208,10 +208,12 @@ def score_valuation(
 
     # Prefer raw-derived yields when available (fresher, from latest close).
     # Fall back to KPI-derived yields otherwise.
-    earnings_yield = valuation.raw_earnings_yield or valuation.earnings_yield
-    fcf_yield = valuation.raw_fcf_yield or valuation.free_cash_flow_yield
-    earnings_yield = getattr(valuation, "raw_earnings_yield", None) or valuation.earnings_yield
-    fcf_yield = getattr(valuation, "raw_fcf_yield", None) or valuation.free_cash_flow_yield
+    raw_earnings_yield = getattr(valuation, "raw_earnings_yield", None)
+    raw_fcf_yield = getattr(valuation, "raw_fcf_yield", None)
+    earnings_yield = (
+        raw_earnings_yield if raw_earnings_yield is not None else valuation.earnings_yield
+    )
+    fcf_yield = raw_fcf_yield if raw_fcf_yield is not None else valuation.free_cash_flow_yield
 
     # --- FCF yield: 0→0, 10%→100  (weight: 30%) ---
     s = _linear_score(fcf_yield, 0.0, 0.10)

@@ -5,19 +5,19 @@ from datetime import date
 @dataclass
 class Report:
 
-    revenue: float
-    operating_profit: float
-    ebit: float
-    ebitda: float
-    net_income: float
+    revenue: float | None
+    operating_profit: float | None
+    ebit: float | None
+    ebitda: float | None
+    net_income: float | None
 
-    free_cash_flow: float
+    free_cash_flow: float | None
 
-    equity: float
-    total_assets: float
-    total_debt: float
+    equity: float | None
+    total_assets: float | None
+    total_debt: float | None
 
-    shares_outstanding: float
+    shares_outstanding: float | None
 
     year: int | None = None
     period: int | None = None

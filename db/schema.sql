@@ -437,6 +437,19 @@ ALTER SEQUENCE public.scrape_runs_id_seq OWNED BY public.scrape_runs.id;
 
 
 --
+-- Name: stock_prices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stock_prices (
+    company_id integer NOT NULL,
+    price_date date NOT NULL,
+    close numeric(18,6) NOT NULL,
+    currency character varying(3),
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: valuations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -697,6 +710,14 @@ ALTER TABLE ONLY public.scrape_runs
 
 
 --
+-- Name: stock_prices stock_prices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_prices
+    ADD CONSTRAINT stock_prices_pkey PRIMARY KEY (company_id, price_date);
+
+
+--
 -- Name: valuations valuations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -839,6 +860,13 @@ CREATE INDEX idx_scrape_runs_status ON public.scrape_runs USING btree (status);
 
 
 --
+-- Name: idx_stock_prices_company_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_stock_prices_company_id ON public.stock_prices USING btree (company_id);
+
+
+--
 -- Name: idx_valuations_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -940,6 +968,14 @@ ALTER TABLE ONLY public.news_releases
 
 
 --
+-- Name: stock_prices stock_prices_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_prices
+    ADD CONSTRAINT stock_prices_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
 -- Name: valuations valuations_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -972,4 +1008,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260706154541'),
     ('20260707145744'),
     ('20260805120000'),
-    ('20260805123000');
+    ('20260805123000'),
+    ('20260806120000');

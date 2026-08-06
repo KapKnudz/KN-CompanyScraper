@@ -155,6 +155,10 @@ class TestFinancialCalculator:
         calc = FinancialCalculator()
         assert calc.calculate_growth(100.0, [0.0]) is None
 
+    def test_calculate_growth_returns_none_for_missing_previous(self):
+        calc = FinancialCalculator()
+        assert calc.calculate_growth(100.0, [None]) is None
+
     def test_calculate_growth_with_negative_previous(self):
         calc = FinancialCalculator()
         # (100 - (-50)) / |-50| = 150/50 = 3.0

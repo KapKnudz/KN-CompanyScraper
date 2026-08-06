@@ -16,6 +16,10 @@ Tracks companies, scrapes financial/news data, stores results in PostgreSQL, and
    - `HEADLESS` — `true` to run Chromium in headless mode
    - `SCRAPE_INTERVAL_MINUTES` — how often to scrape (default: 60)
    - `BORSDATA_API_KEY` — Borsdata API key
+   - `OPENAI_API_KEY` — OpenAI API key used by `analyze-shortlist`
+   - `OPENAI_MODEL` — optional model override (default: `gpt-5.6-sol`)
+   - `OPENAI_REASONING_EFFORT` — optional reasoning effort (default: `medium`)
+   - `OPENAI_MAX_OUTPUT_TOKENS` — per-company output cap (default: `6000`)
 
 3. Set up the database:
    ```
@@ -29,13 +33,30 @@ Tracks companies, scrapes financial/news data, stores results in PostgreSQL, and
 python -m kncompanyscraper.main
 ```
 
-Fetch and persist Börsdata inputs for the active watchlist, then rank exclusively
-from the stored PostgreSQL data:
+Map active companies to Börsdata instruments, fetch and persist their inputs,
+then rank exclusively from the stored PostgreSQL data:
 
 ```
+python -m kncompanyscraper.main map-borsdata
 python -m kncompanyscraper.main sync-borsdata
 python -m kncompanyscraper.main rank-watchlist
 ```
+
+Export model-ready prompts for the current shortlist without calling a model:
+
+```
+python -m kncompanyscraper.main export-agent-prompts --output-dir ./agent-prompts
+```
+
+Call OpenAI for a deliberately bounded number of shortlisted companies,
+validate each structured response, and persist it to PostgreSQL:
+
+```
+python -m kncompanyscraper.main analyze-shortlist --max-candidates 1
+```
+
+This command makes paid API calls. It requires `OPENAI_API_KEY`; the mandatory
+candidate limit prevents accidentally analyzing the entire shortlist.
 
 ## Development
 

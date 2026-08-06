@@ -3,6 +3,7 @@ from psycopg2.extras import RealDictCursor
 from kncompanyscraper.borsdata.kpi_history import KpiHistory
 from kncompanyscraper.borsdata.valuation_snapshot import ValuationSnapshot
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
+from kncompanyscraper.borsdata.stock_price import StockPrice
 from kncompanyscraper.database import get_connection
 
 
@@ -55,6 +56,52 @@ class ValuationRepository:
                         query,
                         (company_id, history.kpi_id, period_type, price_type, point.year, point.value),
                     )
+
+    def save_stock_prices(
+        self,
+        company_id: int,
+        prices: list[StockPrice],
+        currency: str | None = None,
+    ) -> None:
+        query = """
+            INSERT INTO stock_prices (company_id, price_date, close, currency, fetched_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (company_id, price_date)
+            DO UPDATE SET
+                close = EXCLUDED.close,
+                currency = EXCLUDED.currency,
+                fetched_at = NOW()
+        """
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                for price in prices:
+                    cur.execute(
+                        query,
+                        (company_id, price.date, price.close, price.currency or currency),
+                    )
+
+    def get_latest_stock_price(self, company_id: int) -> StockPrice | None:
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT price_date, close, currency
+                    FROM stock_prices
+                    WHERE company_id = %s
+                    ORDER BY price_date DESC
+                    LIMIT 1
+                    """,
+                    (company_id,),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            return None
+        return StockPrice(
+            date=row["price_date"],
+            close=float(row["close"]),
+            currency=row["currency"],
+        )
 
     def get_current(self, company_id: int) -> ValuationSnapshot:
         values = self._snapshot_values(company_id)
