@@ -1,7 +1,7 @@
 import random
 import time
 import requests
-from datetime import date
+from datetime import date, datetime
 
 from kncompanyscraper import config
 from kncompanyscraper.logger import get_logger
@@ -10,6 +10,7 @@ from kncompanyscraper.borsdata.kpi import Kpi
 from kncompanyscraper.borsdata.kpi_history import KpiHistory, KpiHistoryPoint
 from kncompanyscraper.borsdata.instrument import Instrument
 from kncompanyscraper.borsdata.stock_price import StockPrice
+from kncompanyscraper.models.insider_transaction import InsiderTransaction
 
 logger = get_logger(__name__)
 
@@ -48,6 +49,8 @@ class BorsdataClient:
                 ticker=item.get("ticker"),
                 stock_price_currency=item.get("stockPriceCurrency"),
                 report_currency=item.get("reportCurrency"),
+                sector_id=item.get("sectorId"),
+                branch_id=item.get("branchId"),
             )
             for item in data.get("instruments") or []
         ]
@@ -59,7 +62,11 @@ class BorsdataClient:
         )
 
         points = [
-            KpiHistoryPoint(year=point["y"], value=point["v"])
+            KpiHistoryPoint(
+                year=point["y"],
+                value=point["v"],
+                period=point.get("p"),
+            )
             for point in data.get("values") or []
             if point.get("v") is not None
         ]
@@ -83,6 +90,59 @@ class BorsdataClient:
             for p in data.get("stockPricesList") or []
         ]
 
+    def get_insider_transactions(
+        self,
+        instrument_ids: list[int],
+    ) -> dict[int, list[InsiderTransaction]]:
+        if not instrument_ids:
+            return {}
+        if len(instrument_ids) > 50:
+            raise ValueError("Börsdata insider endpoint accepts at most 50 instruments")
+
+        data = self._get(
+            "/v1/holdings/insider",
+            {"instList": ",".join(str(instrument_id) for instrument_id in instrument_ids)},
+        )
+        transactions_by_instrument = {instrument_id: [] for instrument_id in instrument_ids}
+
+        for instrument in data.get("list") or []:
+            instrument_id = instrument.get("insId")
+            if instrument_id not in transactions_by_instrument:
+                continue
+
+            for row in instrument.get("values") or []:
+                transaction_type = {19: "buy", 25: "sell"}.get(row.get("transactionType"))
+                transaction_date = row.get("transactionDate")
+                if (
+                    transaction_type is None
+                    or row.get("misc")
+                    or row.get("equityProgram")
+                    or not transaction_date
+                    or not row.get("ownerName")
+                ):
+                    continue
+
+                transactions_by_instrument[instrument_id].append(
+                    InsiderTransaction(
+                        person_name=row["ownerName"],
+                        person_role=row.get("ownerPosition"),
+                        transaction_type=transaction_type,
+                        shares=abs(row.get("shares") or 0),
+                        price_per_share=abs(row["price"]) if row.get("price") is not None else None,
+                        total_value=abs(row["amount"]) if row.get("amount") is not None else None,
+                        transaction_date=date.fromisoformat(transaction_date[:10]),
+                        source=f"borsdata:{row['transactionType']}",
+                        reported_at=(
+                            datetime.fromisoformat(row["verificationDate"])
+                            if row.get("verificationDate")
+                            else None
+                        ),
+                        currency=row.get("currency"),
+                    )
+                )
+
+        return transactions_by_instrument
+
     def _report_from_json(self, r):
         return Report(
             revenue=r.get("revenues"),
@@ -95,6 +155,8 @@ class BorsdataClient:
             total_assets=r.get("total_Assets"),
             total_debt=r.get("net_Debt"),
             shares_outstanding=r.get("number_Of_Shares"),
+            gross_income=r.get("gross_Income"),
+            operating_cash_flow=r.get("cash_Flow_From_Operating_Activities"),
             year=r.get("year"),
             period=r.get("period"),
             period_end=(

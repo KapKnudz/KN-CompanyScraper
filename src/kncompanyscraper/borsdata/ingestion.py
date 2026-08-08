@@ -1,4 +1,5 @@
 from kncompanyscraper.repositories.valuation_repository import ValuationRepository
+from kncompanyscraper.borsdata.kpi_ids import KpiIds
 
 
 class BorsdataIngestionService:
@@ -12,13 +13,28 @@ class BorsdataIngestionService:
         if company.id is None or company.borsdata_id is None:
             raise ValueError("Company must have both id and borsdata_id before Börsdata sync")
 
-        reports = self.client.get_reports(company.borsdata_id, report_type="year")
-        self.financial_repository.save_reports(company.id, "year", reports)
+        for report_type in ("year", "r12", "quarter"):
+            reports = self.client.get_reports(company.borsdata_id, report_type=report_type)
+            if company.currency:
+                for report in reports:
+                    report.currency = company.currency
+            self.financial_repository.save_reports(company.id, report_type, reports)
 
-        stock_prices = self.client.get_stock_price(company.borsdata_id, max_count=1)
+        stock_prices = self.client.get_stock_price(company.borsdata_id)
         self.valuation_repository.save_stock_prices(company.id, stock_prices, company.currency)
 
         for kpi_id in ValuationRepository.CURRENT_KPIS:
+            kpi = self.client.get_kpis(company.borsdata_id, kpi_id)
+            if kpi is not None:
+                self.valuation_repository.save_snapshot(company.id, kpi_id, kpi.value)
+
+        sector_kpis = ()
+        if company.branch_id == 75:
+            sector_kpis = KpiIds.PROPERTY_KPIS
+        elif company.branch_id in (68, 69, 70):
+            sector_kpis = KpiIds.BANK_KPIS
+
+        for kpi_id in sector_kpis:
             kpi = self.client.get_kpis(company.borsdata_id, kpi_id)
             if kpi is not None:
                 self.valuation_repository.save_snapshot(company.id, kpi_id, kpi.value)

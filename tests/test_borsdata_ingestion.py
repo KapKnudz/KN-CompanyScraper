@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -9,9 +9,10 @@ from kncompanyscraper.borsdata.stock_price import StockPrice
 from datetime import date
 from kncompanyscraper.models.company import Company
 from kncompanyscraper.repositories.valuation_repository import ValuationRepository
+from kncompanyscraper.borsdata.kpi_ids import KpiIds
 
 
-def make_company(company_id=7, borsdata_id=700):
+def make_company(company_id=7, borsdata_id=700, branch_id=None):
     return Company(
         id=company_id,
         name="Test Company",
@@ -19,6 +20,7 @@ def make_company(company_id=7, borsdata_id=700):
         mfn_slug=None,
         borsdata_id=borsdata_id,
         last_updated=None,
+        branch_id=branch_id,
     )
 
 
@@ -26,7 +28,7 @@ def test_sync_company_persists_reports_and_valuation_inputs():
     company = make_company()
     reports = [MagicMock()]
     client = MagicMock()
-    client.get_reports.return_value = reports
+    client.get_reports.side_effect = [reports, [], []]
     stock_prices = [StockPrice(date(2026, 8, 1), 100.0)]
     client.get_stock_price.return_value = stock_prices
     client.get_kpis.side_effect = lambda instrument_id, kpi_id: Kpi(kpi_id, str(kpi_id), 12.5)
@@ -37,12 +39,44 @@ def test_sync_company_persists_reports_and_valuation_inputs():
     service = BorsdataIngestionService(client, financial_repository, valuation_repository)
     service.sync_company(company)
 
-    client.get_reports.assert_called_once_with(700, report_type="year")
-    client.get_stock_price.assert_called_once_with(700, max_count=1)
-    financial_repository.save_reports.assert_called_once_with(7, "year", reports)
+    assert client.get_reports.call_args_list == [
+        call(700, report_type="year"),
+        call(700, report_type="r12"),
+        call(700, report_type="quarter"),
+    ]
+    client.get_stock_price.assert_called_once_with(700)
+    assert financial_repository.save_reports.call_args_list == [
+        call(7, "year", reports),
+        call(7, "r12", []),
+        call(7, "quarter", []),
+    ]
     valuation_repository.save_stock_prices.assert_called_once_with(7, stock_prices, None)
     assert valuation_repository.save_snapshot.call_count == len(ValuationRepository.CURRENT_KPIS)
     assert valuation_repository.save_history.call_count == len(ValuationRepository.HISTORICAL_KPIS)
+
+
+@pytest.mark.parametrize(
+    ("branch_id", "expected_kpis"),
+    [
+        (75, KpiIds.PROPERTY_KPIS),
+        (68, KpiIds.BANK_KPIS),
+        (69, KpiIds.BANK_KPIS),
+        (70, KpiIds.BANK_KPIS),
+    ],
+)
+def test_sync_company_persists_sector_kpis(branch_id, expected_kpis):
+    company = make_company(branch_id=branch_id)
+    client = MagicMock()
+    client.get_reports.return_value = []
+    client.get_stock_price.return_value = []
+    client.get_kpis.side_effect = lambda instrument_id, kpi_id: Kpi(kpi_id, str(kpi_id), 12.5)
+    client.get_kpi_history.side_effect = lambda instrument_id, kpi_id, **kwargs: KpiHistory(kpi_id, [])
+    valuation_repository = MagicMock()
+
+    BorsdataIngestionService(client, MagicMock(), valuation_repository).sync_company(company)
+
+    saved_kpis = [call.args[1] for call in valuation_repository.save_snapshot.call_args_list]
+    assert saved_kpis[-len(expected_kpis):] == list(expected_kpis)
 
 
 def test_sync_company_does_not_overwrite_snapshot_when_api_value_is_missing():
@@ -58,6 +92,27 @@ def test_sync_company_does_not_overwrite_snapshot_when_api_value_is_missing():
     service.sync_company(company)
 
     valuation_repository.save_snapshot.assert_not_called()
+
+
+def test_sync_company_labels_converted_reports_with_listing_currency():
+    company = make_company()
+    company.currency = "SEK"
+    report = MagicMock(currency="USD")
+    client = MagicMock()
+    client.get_reports.side_effect = [[report], [], []]
+    client.get_stock_price.return_value = []
+    client.get_kpis.return_value = None
+    client.get_kpi_history.side_effect = lambda instrument_id, kpi_id, **kwargs: KpiHistory(kpi_id, [])
+    financial_repository = MagicMock()
+
+    BorsdataIngestionService(
+        client,
+        financial_repository,
+        MagicMock(),
+    ).sync_company(company)
+
+    assert report.currency == "SEK"
+    assert financial_repository.save_reports.call_args_list[0].args == (7, "year", [report])
 
 
 @pytest.mark.parametrize(

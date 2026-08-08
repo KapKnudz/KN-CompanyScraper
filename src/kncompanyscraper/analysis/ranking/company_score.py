@@ -22,6 +22,9 @@ class CompanyScore:
 
     data_quality: Literal["high", "medium", "low"] = "medium"
     candidate_reason: str | None = None
+    ranking_model: Literal["general", "bank", "property"] = "general"
+    rank_eligible: bool = True
+    eligibility_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -38,6 +41,7 @@ class WatchlistRanking:
         max_total: int = 30,
     ) -> list[CompanyScore]:
         shortlist = list(self.scores[:top_n])
+        shortlist = [score for score in shortlist if score.rank_eligible]
 
         if include_flags:
             important_flags = {
@@ -51,6 +55,8 @@ class WatchlistRanking:
             }
 
             for score in self.scores[top_n:]:
+                if not score.rank_eligible:
+                    continue
                 if any(flag in important_flags for flag in score.flags):
                     shortlist.append(score)
 

@@ -19,6 +19,9 @@ class Report:
 
     shares_outstanding: float | None
 
+    gross_income: float | None = None
+    operating_cash_flow: float | None = None
+
     year: int | None = None
     period: int | None = None
     period_end: date | None = None

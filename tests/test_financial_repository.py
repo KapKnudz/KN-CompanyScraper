@@ -29,6 +29,8 @@ def make_report(year=2025):
         period_end=date(year, 12, 31),
         currency="SEK",
         raw_payload={"year": year},
+        gross_income=40,
+        operating_cash_flow=18,
     )
 
 
@@ -68,6 +70,8 @@ def test_latest_report_is_loaded_by_local_company_id():
             "period_end": date(2025, 12, 31),
             "currency": "SEK",
             "raw_payload": {"year": 2025},
+            "gross_income": 40,
+            "operating_cash_flow": 18,
         }
     ]
     connection = _mock_connection(cursor)
@@ -83,3 +87,5 @@ def test_latest_report_is_loaded_by_local_company_id():
     assert report.year == 2025
     assert report.total_debt == 10
     assert report.ebitda is None
+    assert report.gross_income == 40
+    assert report.operating_cash_flow == 18

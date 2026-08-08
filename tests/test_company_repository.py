@@ -14,11 +14,13 @@ def test_set_borsdata_identity_updates_id_and_listing_currency():
         "kncompanyscraper.repositories.company_repository.get_connection",
         return_value=connection,
     ):
-        CompanyRepository().set_borsdata_identity(7, 700, "SEK")
+        CompanyRepository().set_borsdata_identity(7, 700, "SEK", 1, 75)
 
     sql, params = cursor.execute.call_args[0]
     assert "SET borsdata_id = %s" in sql
-    assert params == (700, "SEK", 7)
+    assert "sector_id = %s" in sql
+    assert "branch_id = %s" in sql
+    assert params == (700, "SEK", 1, 75, 7)
 
 
 def test_upsert_watchlist_companies_creates_and_activates_new_company():

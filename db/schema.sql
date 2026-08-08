@@ -116,7 +116,9 @@ CREATE TABLE public.companies (
     sector character varying(100),
     industry character varying(100),
     country character varying(50),
-    currency character varying(3) DEFAULT 'SEK'::character varying
+    currency character varying(3) DEFAULT 'SEK'::character varying,
+    sector_id integer,
+    branch_id integer
 );
 
 
@@ -227,7 +229,9 @@ CREATE TABLE public.financials (
     report_period integer,
     currency character varying(3),
     raw_payload jsonb,
-    fetched_at timestamp with time zone DEFAULT now()
+    fetched_at timestamp with time zone DEFAULT now(),
+    gross_income numeric(15,2),
+    operating_cash_flow numeric(15,2)
 );
 
 
@@ -261,12 +265,13 @@ CREATE TABLE public.insider_transactions (
     person_name character varying(255) NOT NULL,
     person_role character varying(100),
     transaction_type character varying(20) NOT NULL,
-    shares integer NOT NULL,
+    shares bigint NOT NULL,
     price_per_share numeric(10,2),
     total_value numeric(15,2),
     transaction_date date NOT NULL,
     reported_at timestamp with time zone DEFAULT now(),
-    source character varying(255)
+    source character varying(255),
+    currency character varying(3)
 );
 
 
@@ -337,6 +342,20 @@ CREATE TABLE public.kpi_history (
     price_type character varying(20) NOT NULL,
     year integer NOT NULL,
     value numeric NOT NULL,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL,
+    report_period integer
+);
+
+
+--
+-- Name: kpi_snapshot_history; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.kpi_snapshot_history (
+    company_id integer NOT NULL,
+    kpi_id integer NOT NULL,
+    observation_date date DEFAULT CURRENT_DATE NOT NULL,
+    value numeric,
     fetched_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -670,6 +689,14 @@ ALTER TABLE ONLY public.kpi_history
 
 
 --
+-- Name: kpi_snapshot_history kpi_snapshot_history_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.kpi_snapshot_history
+    ADD CONSTRAINT kpi_snapshot_history_pkey PRIMARY KEY (company_id, kpi_id, observation_date);
+
+
+--
 -- Name: kpi_snapshots kpi_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -794,6 +821,13 @@ CREATE INDEX idx_financials_company_id ON public.financials USING btree (company
 --
 
 CREATE UNIQUE INDEX idx_financials_unique ON public.financials USING btree (company_id, period_type, period_end);
+
+
+--
+-- Name: idx_insider_transactions_borsdata_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_insider_transactions_borsdata_unique ON public.insider_transactions USING btree (company_id, person_name, transaction_type, shares, price_per_share, transaction_date, reported_at);
 
 
 --
@@ -952,6 +986,14 @@ ALTER TABLE ONLY public.kpi_history
 
 
 --
+-- Name: kpi_snapshot_history kpi_snapshot_history_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.kpi_snapshot_history
+    ADD CONSTRAINT kpi_snapshot_history_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
 -- Name: kpi_snapshots kpi_snapshots_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1010,4 +1052,8 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260805120000'),
     ('20260805123000'),
     ('20260806120000'),
-    ('20260806143500');
+    ('20260806143500'),
+    ('20260807120000'),
+    ('20260807143000'),
+    ('20260808120000'),
+    ('20260808143000');

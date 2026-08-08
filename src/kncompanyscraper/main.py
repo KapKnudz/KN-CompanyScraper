@@ -11,20 +11,36 @@ logger = get_logger("main")
 def _build_watchlist_analysis_service():
     from kncompanyscraper.repositories.company_repository import CompanyRepository
     from kncompanyscraper.repositories.financial_repository import FinancialRepository
+    from kncompanyscraper.repositories.insider_repository import InsiderRepository
     from kncompanyscraper.repositories.valuation_repository import ValuationRepository
     from kncompanyscraper.analysis.financial.financial_skill import FinancialSkill
+    from kncompanyscraper.analysis.insider.insider_skill import InsiderSkill
+    from kncompanyscraper.analysis.sector_kpi_skill import SectorKpiSkill
+    from kncompanyscraper.analysis.fundamental_kpi_skill import FundamentalKpiSkill
     from kncompanyscraper.analysis.valuation.valuation_skill import ValuationSkill
     from kncompanyscraper.analysis.base.analysisengine import AnalysisEngine
     from kncompanyscraper.analysis.ranking.ranking_engine import RankingEngine
     from kncompanyscraper.analysis.watchlist.watchlist_analysis_service import WatchlistAnalysisService
     company_repo = CompanyRepository()
     financial_repo = FinancialRepository()
+    insider_repo = InsiderRepository()
     valuation_repo = ValuationRepository()
 
     financial_skill = FinancialSkill(financial_repo)
+    insider_skill = InsiderSkill(insider_repo)
     valuation_skill = ValuationSkill(valuation_repo, financial_repo)
 
-    analysis_engine = AnalysisEngine([financial_skill, valuation_skill])
+    sector_kpi_skill = SectorKpiSkill(valuation_repo)
+    fundamental_kpi_skill = FundamentalKpiSkill(valuation_repo)
+    analysis_engine = AnalysisEngine(
+        [
+            financial_skill,
+            valuation_skill,
+            insider_skill,
+            sector_kpi_skill,
+            fundamental_kpi_skill,
+        ]
+    )
     ranking_engine = RankingEngine()
 
     return WatchlistAnalysisService(company_repo, analysis_engine, ranking_engine)
@@ -47,12 +63,16 @@ def _cmd_rank_watchlist():
             f"growth={cs.growth_score:>5.1f}  "
             f"valuation={cs.valuation_score:>5.1f}  "
             f"balance={cs.balance_sheet_score:>5.1f}  "
+            f"model={cs.ranking_model:<8}  "
+            f"eligible={'yes' if cs.rank_eligible else 'no ':<3}  "
             f"data={cs.data_quality}"
         )
         if cs.candidate_reason:
             print(f"     Reason: {cs.candidate_reason}")
         if cs.flags:
             print(f"     Flags: {', '.join(cs.flags)}")
+        if cs.eligibility_reasons:
+            print(f"     Incomplete: {', '.join(cs.eligibility_reasons)}")
         if cs.positives:
             for p in cs.positives[:5]:
                 print(f"     + {p}")
@@ -72,8 +92,11 @@ def _cmd_sync_borsdata():
     """Fetch Börsdata inputs and persist them before any analysis is run."""
     from kncompanyscraper.borsdata.client import BorsdataClient
     from kncompanyscraper.borsdata.ingestion import BorsdataIngestionService
+    from kncompanyscraper.borsdata.instrument_mapping import BorsdataInstrumentMappingService
+    from kncompanyscraper.jobs.borsdata_job import BorsdataJob
     from kncompanyscraper.repositories.company_repository import CompanyRepository
     from kncompanyscraper.repositories.financial_repository import FinancialRepository
+    from kncompanyscraper.repositories.job_repository import JobRepository
     from kncompanyscraper.repositories.valuation_repository import ValuationRepository
 
     company_repo = CompanyRepository()
@@ -82,13 +105,47 @@ def _cmd_sync_borsdata():
         print("No active companies found in watchlist.")
         return
 
-    service = BorsdataIngestionService(
-        BorsdataClient(),
-        FinancialRepository(),
-        ValuationRepository(),
+    client = BorsdataClient()
+    BorsdataInstrumentMappingService(client, company_repo).map_companies(companies)
+    companies = company_repo.get_active_companies()
+
+    job = BorsdataJob(
+        BorsdataIngestionService(
+            client,
+            FinancialRepository(),
+            ValuationRepository(),
+        ),
+        JobRepository(),
     )
-    synced = service.sync_companies(companies)
-    print(f"Synced Börsdata inputs for {synced} companies.")
+    result = job.run(companies)
+    print(
+        f"Börsdata sync complete: {result.synced} synced, "
+        f"{result.failed} failed, {result.attempted} attempted."
+    )
+    for failure in result.failures:
+        print(f"  - {failure}")
+
+
+def _cmd_sync_borsdata_insiders():
+    """Fetch and persist Börsdata open-market insider transactions."""
+    from kncompanyscraper.borsdata.client import BorsdataClient
+    from kncompanyscraper.jobs.borsdata_insider_job import BorsdataInsiderJob
+    from kncompanyscraper.repositories.company_repository import CompanyRepository
+    from kncompanyscraper.repositories.insider_repository import InsiderRepository
+    from kncompanyscraper.repositories.job_repository import JobRepository
+
+    companies = CompanyRepository().get_active_companies()
+    result = BorsdataInsiderJob(
+        BorsdataClient(),
+        InsiderRepository(),
+        JobRepository(),
+    ).run(companies)
+    print(
+        f"Börsdata insider sync complete: {result.synced} synced, "
+        f"{result.failed} failed, {result.inserted} transactions inserted."
+    )
+    for failure in result.failures:
+        print(f"  - {failure}")
 
 
 def _cmd_map_borsdata():
@@ -174,6 +231,10 @@ def main():
 
     subparsers.add_parser("rank-watchlist", help="Run deterministic watchlist ranking")
     subparsers.add_parser("sync-borsdata", help="Persist Börsdata inputs for the active watchlist")
+    subparsers.add_parser(
+        "sync-borsdata-insiders",
+        help="Persist Börsdata open-market insider transactions",
+    )
     subparsers.add_parser("map-borsdata", help="Map watchlist companies to Börsdata instruments")
     import_parser = subparsers.add_parser(
         "import-watchlist",
@@ -202,6 +263,8 @@ def main():
         _cmd_rank_watchlist()
     elif args.command == "sync-borsdata":
         _cmd_sync_borsdata()
+    elif args.command == "sync-borsdata-insiders":
+        _cmd_sync_borsdata_insiders()
     elif args.command == "map-borsdata":
         _cmd_map_borsdata()
     elif args.command == "import-watchlist":

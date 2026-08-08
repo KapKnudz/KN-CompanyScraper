@@ -36,6 +36,7 @@ class ValuationCalculator:
             raw_pfcf=raw.pfcf if raw else None,
             raw_ev_ebit=raw.ev_ebit if raw else None,
             raw_ev_ebitda=raw.ev_ebitda if raw else None,
+            dividend_yield=current.dividend_yield,
         )
 
     def calculate_earnings_yield(self, current):

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -16,6 +16,8 @@ def make_transaction(**overrides) -> InsiderTransaction:
         total_value=3682500.00,
         transaction_date=date(2026, 6, 15),
         source="finansinspektionen",
+        reported_at=datetime(2026, 6, 16, 10, 0),
+        currency="SEK",
     )
     defaults.update(overrides)
     return InsiderTransaction(**defaults)
@@ -59,6 +61,8 @@ class TestInsiderRepository:
             3682500.00,
             date(2026, 6, 15),
             "finansinspektionen",
+            datetime(2026, 6, 16, 10, 0),
+            "SEK",
         )
 
     def test_save_handles_nullable_fields(self):
@@ -76,6 +80,8 @@ class TestInsiderRepository:
                 price_per_share=None,
                 total_value=None,
                 source=None,
+                reported_at=None,
+                currency=None,
             )
             repo.save(txn, company_id=1)
 
@@ -84,6 +90,8 @@ class TestInsiderRepository:
         assert params[5] is None  # price_per_share
         assert params[6] is None  # total_value
         assert params[8] is None  # source
+        assert params[9] is None  # reported_at
+        assert params[10] is None  # currency
 
     # --- list_for_company ---
 
@@ -100,6 +108,8 @@ class TestInsiderRepository:
                 "total_value": 3682500.00,
                 "transaction_date": date(2026, 6, 15),
                 "source": "fi",
+                "reported_at": datetime(2026, 6, 16, 10, 0),
+                "currency": "SEK",
             },
         ]
         mock_conn = _mock_connection(mock_cur)
@@ -251,6 +261,8 @@ class TestInsiderRepository:
                 "total_value": Decimal("1005.00"),
                 "transaction_date": date(2026, 1, 1),
                 "source": None,
+                "reported_at": None,
+                "currency": None,
             },
         ]
         mock_conn = _mock_connection(mock_cur)

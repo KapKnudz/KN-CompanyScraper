@@ -11,3 +11,5 @@ class Company:
     last_updated: datetime | None
     isin: str | None = None
     currency: str | None = None
+    sector_id: int | None = None
+    branch_id: int | None = None

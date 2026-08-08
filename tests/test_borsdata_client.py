@@ -44,6 +44,8 @@ class TestBorsdataClient:
                     "ticker": "TEST",
                     "stockPriceCurrency": "SEK",
                     "reportCurrency": "SEK",
+                    "sectorId": 1,
+                    "branchId": 75,
                 }
             ]
         }
@@ -55,7 +57,7 @@ class TestBorsdataClient:
         result = BorsdataClient(api_key="test").get_instruments()
 
         assert result == [
-            Instrument(42, "Testbolaget", "SE0000000042", "TEST", "SEK", "SEK")
+            Instrument(42, "Testbolaget", "SE0000000042", "TEST", "SEK", "SEK", 1, 75)
         ]
 
     def test_init_raises_when_no_api_key(self, monkeypatch):
@@ -89,6 +91,7 @@ class TestBorsdataClient:
 
         assert isinstance(result, KpiHistory)
         assert [p.value for p in result.values] == [12.50, 14.20, 16.80, 15.90, 18.50]
+        assert [p.period for p in result.values] == [1, 1, 1, 1, 1]
 
     def test_get_reports_maps_reports(self, monkeypatch):
         payload = load_mock("reports_mock.json")
@@ -133,6 +136,73 @@ class TestBorsdataClient:
         assert len(result) == 5
         assert all(isinstance(p, StockPrice) for p in result)
         assert result[0].close == pytest.approx(278.0)
+
+    def test_get_insider_transactions_keeps_only_open_market_buys_and_sells(self, monkeypatch):
+        payload = {
+            "list": [
+                {
+                    "insId": 3,
+                    "values": [
+                        {
+                            "misc": False,
+                            "ownerName": "Buyer",
+                            "ownerPosition": "board member",
+                            "equityProgram": False,
+                            "shares": 100,
+                            "price": 25.0,
+                            "amount": 2500.0,
+                            "currency": "SEK",
+                            "transactionType": 19,
+                            "verificationDate": "2026-08-02T10:00:00",
+                            "transactionDate": "2026-08-01T00:00:00",
+                        },
+                        {
+                            "misc": False,
+                            "ownerName": "Seller",
+                            "ownerPosition": "ceo",
+                            "equityProgram": False,
+                            "shares": -50,
+                            "price": 30.0,
+                            "amount": -1500.0,
+                            "currency": "SEK",
+                            "transactionType": 25,
+                            "verificationDate": "2026-08-03T10:00:00",
+                            "transactionDate": "2026-08-02T00:00:00",
+                        },
+                        {
+                            "misc": True,
+                            "ownerName": "Transfer",
+                            "equityProgram": False,
+                            "transactionType": 19,
+                            "transactionDate": "2026-08-01T00:00:00",
+                        },
+                        {
+                            "misc": False,
+                            "ownerName": "Grant",
+                            "equityProgram": True,
+                            "transactionType": 19,
+                            "transactionDate": "2026-08-01T00:00:00",
+                        },
+                    ],
+                }
+            ]
+        }
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: FakeResponse(payload),
+        )
+
+        result = BorsdataClient(api_key="test").get_insider_transactions([3])
+
+        assert [transaction.transaction_type for transaction in result[3]] == ["buy", "sell"]
+        assert result[3][1].shares == 50
+        assert result[3][1].total_value == 1500.0
+        assert result[3][0].currency == "SEK"
+        assert result[3][0].source == "borsdata:19"
+
+    def test_get_insider_transactions_rejects_more_than_fifty_instruments(self):
+        with pytest.raises(ValueError, match="at most 50"):
+            BorsdataClient(api_key="test").get_insider_transactions(list(range(51)))
 
     def test_http_error_does_not_expose_api_key(self, monkeypatch):
         response = requests.Response()

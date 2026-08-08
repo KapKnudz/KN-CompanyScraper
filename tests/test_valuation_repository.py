@@ -1,6 +1,7 @@
 from datetime import date
 from unittest.mock import MagicMock, patch
 
+from kncompanyscraper.borsdata.kpi_history import KpiHistory, KpiHistoryPoint
 from kncompanyscraper.borsdata.stock_price import StockPrice
 from kncompanyscraper.repositories.valuation_repository import ValuationRepository
 
@@ -10,6 +11,22 @@ def _mock_connection(cursor):
     conn.__enter__.return_value = conn
     conn.cursor.return_value.__enter__.return_value = cursor
     return conn
+
+
+def test_save_snapshot_preserves_daily_observation():
+    cursor = MagicMock()
+    connection = _mock_connection(cursor)
+
+    with patch(
+        "kncompanyscraper.repositories.valuation_repository.get_connection",
+        return_value=connection,
+    ):
+        ValuationRepository().save_snapshot(7, 279, 54.6)
+
+    assert cursor.execute.call_count == 2
+    history_sql, history_params = cursor.execute.call_args_list[1].args
+    assert "INSERT INTO kpi_snapshot_history" in history_sql
+    assert history_params == (7, 279, 54.6)
 
 
 def test_save_stock_prices_upserts_company_date_and_currency():
@@ -44,3 +61,19 @@ def test_get_latest_stock_price_maps_database_row():
         result = ValuationRepository().get_latest_stock_price(7)
 
     assert result == StockPrice(date(2026, 8, 1), 125.5, "SEK")
+
+
+def test_save_history_persists_report_period():
+    cursor = MagicMock()
+    connection = _mock_connection(cursor)
+    history = KpiHistory(2, [KpiHistoryPoint(2026, 18.5, period=2)])
+
+    with patch(
+        "kncompanyscraper.repositories.valuation_repository.get_connection",
+        return_value=connection,
+    ):
+        ValuationRepository().save_history(7, history)
+
+    sql, params = cursor.execute.call_args[0]
+    assert "report_period" in sql
+    assert params == (7, 2, "year", "mean", 2026, 2, 18.5)

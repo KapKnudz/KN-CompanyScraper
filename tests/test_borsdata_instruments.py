@@ -47,11 +47,13 @@ def test_match_instrument_does_not_fall_back_when_isin_is_present_but_wrong():
 def test_mapping_service_persists_only_resolved_companies():
     companies = [make_company(ticker="ONE", company_id=1), make_company(ticker="MISSING", company_id=2)]
     client = MagicMock()
-    client.get_instruments.return_value = [Instrument(101, "One", None, "ONE", "SEK")]
+    client.get_instruments.return_value = [
+        Instrument(101, "One", None, "ONE", "SEK", "SEK", 1, 75)
+    ]
     repository = MagicMock()
 
     result = BorsdataInstrumentMappingService(client, repository).map_companies(companies)
 
-    repository.set_borsdata_identity.assert_called_once_with(1, 101, "SEK")
+    repository.set_borsdata_identity.assert_called_once_with(1, 101, "SEK", 1, 75)
     assert result.mapped == 1
     assert result.unresolved == ["Test Company"]

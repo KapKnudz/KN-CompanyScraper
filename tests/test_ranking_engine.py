@@ -33,6 +33,9 @@ def make_strong_financial() -> FinancialResult:
         roe=0.28,
         roa=0.12,
         debt_to_equity=0.25,
+        cash_conversion=1.1,
+        operating_margin_volatility=0.02,
+        positive_fcf_ratio=1.0,
     )
 
 
@@ -48,6 +51,9 @@ def make_weak_financial() -> FinancialResult:
         roe=0.02,
         roa=0.005,
         debt_to_equity=2.5,
+        cash_conversion=0.3,
+        operating_margin_volatility=0.12,
+        positive_fcf_ratio=0.3,
     )
 
 
@@ -178,6 +184,22 @@ class TestWatchlistRanking:
         ranking = WatchlistRanking(scores=[])
         result = ranking.shortlist_for_agent(top_n=10)
         assert result == []
+
+    def test_shortlist_for_agent_excludes_ineligible_companies(self):
+        eligible = CompanyScore(company_id=1, ticker="A", name="A", total_score=50)
+        ineligible = CompanyScore(
+            company_id=2,
+            ticker="B",
+            name="B",
+            total_score=90,
+            rank_eligible=False,
+            flags=["cheap_quality"],
+        )
+        ranking = WatchlistRanking(scores=[ineligible, eligible])
+
+        result = ranking.shortlist_for_agent(top_n=2)
+
+        assert result == [eligible]
 
 
 class TestScoringBounded:
@@ -387,9 +409,11 @@ class TestWeightedTotal:
 
 class TestEdgeCases:
     def test_negative_equity_scores_zero(self):
-        """D/E negative (negative equity) should score 0 on balance sheet."""
+        """Negative equity should score 0 even when the ratio alone is ambiguous."""
         financial = make_strong_financial()
         financial.debt_to_equity = -0.5
+        financial.net_debt = 50.0
+        financial.equity = -100.0
 
         company = make_company(1, "TST", "Test")
         results = {1: {"financial": financial, "valuation": make_cheap_valuation()}}
@@ -398,7 +422,76 @@ class TestEdgeCases:
         cs = ranking.scores[0]
 
         assert cs.balance_sheet_score == 0.0
-        assert any("negative equity" in n for n in cs.negatives)
+        assert any("negative equity" in n.lower() for n in cs.negatives)
+
+    def test_negative_net_debt_with_positive_equity_scores_as_net_cash(self):
+        financial = make_strong_financial()
+        financial.debt_to_equity = -0.5
+        financial.net_debt = -50.0
+        financial.equity = 100.0
+
+        company = make_company(1, "CASH", "Net Cash")
+        score = RankingEngine().rank(
+            [company],
+            {1: {"financial": financial, "valuation": make_cheap_valuation()}},
+        ).scores[0]
+
+        assert score.balance_sheet_score == 100.0
+        assert "balance_sheet_risk" not in score.flags
+        assert any("Net cash" in positive for positive in score.positives)
+
+    def test_extreme_growth_does_not_reach_exactly_one_hundred(self):
+        financial = make_strong_financial()
+        financial.revenue_growth = 2.0
+        financial.ebit_growth = 5.0
+        financial.net_income_growth = 10.0
+
+        company = make_company(1, "FAST", "Fast")
+        score = RankingEngine().rank(
+            [company],
+            {1: {"financial": financial, "valuation": make_cheap_valuation()}},
+        ).scores[0]
+
+        assert 99.0 < score.growth_score < 100.0
+
+    def test_possible_one_off_caps_earnings_growth_and_adds_warning(self):
+        financial = make_strong_financial()
+        financial.revenue_growth = 0.02
+        financial.ebit_growth = 6.69
+        financial.net_income_growth = None
+        financial.net_income_turnaround = True
+        financial.earnings_growth_one_off_risk = True
+
+        company = make_company(1, "ONEOFF", "One Off")
+        score = RankingEngine().rank(
+            [company],
+            {1: {"financial": financial, "valuation": make_cheap_valuation()}},
+        ).scores[0]
+
+        assert score.growth_score < 60.0
+        assert any("possible one-off" in negative for negative in score.negatives)
+        assert "earnings_one_off_risk" in score.flags
+
+    def test_per_share_growth_and_dilution_replace_total_growth(self):
+        financial = make_strong_financial()
+        financial.revenue_growth = 0.50
+        financial.ebit_growth = 0.50
+        financial.net_income_growth = 0.50
+        financial.revenue_per_share_growth = 0.0
+        financial.ebit_per_share_growth = 0.0
+        financial.net_income_per_share_growth = 0.0
+        financial.share_count_growth = 0.20
+        financial.share_dilution = True
+
+        company = make_company(1, "DILUTE", "Dilution")
+        score = RankingEngine().rank(
+            [company],
+            {1: {"financial": financial, "valuation": make_cheap_valuation()}},
+        ).scores[0]
+
+        assert score.growth_score == 0.0
+        assert "share_dilution" in score.flags
+        assert any("dilution" in warning for warning in score.negatives)
 
     def test_zero_debt_scores_excellent(self):
         """D/E = 0 (no debt) should score 100 on balance sheet."""
@@ -515,16 +608,16 @@ class TestDataQuality:
         assert cs.data_quality == "low"
         assert "low_data_quality" in cs.flags
 
-    def test_medium_data_quality_with_some_missing(self):
-        """A few missing metrics → medium data quality."""
+    def test_missing_required_valuation_makes_company_ineligible(self):
         company = make_company(1, "TST", "Test")
-        # Missing valuation, which adds "valuation data not available"
         results = {1: {"financial": make_strong_financial()}}
         engine = RankingEngine()
         ranking = engine.rank([company], results)
         cs = ranking.scores[0]
-        # 1 missing item → medium
-        assert cs.data_quality == "medium"
+        assert cs.data_quality == "low"
+        assert not cs.rank_eligible
+        assert cs.eligibility_reasons == ["valuation data not available"]
+        assert "incomplete_data" in cs.flags
 
 
 class TestCandidateReason:
