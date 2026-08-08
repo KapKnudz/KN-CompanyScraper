@@ -5,6 +5,50 @@ from kncompanyscraper.analysis.ranking.score_rules import (
     score_valuation,
     score_balance_sheet,
 )
+from kncompanyscraper.analysis.ranking.sector_score_rules import (
+    ranking_model_for_branch,
+    score_bank,
+    score_property,
+)
+from kncompanyscraper.borsdata.kpi_ids import KpiIds
+
+
+def _rank_eligibility(ranking_model, financial, valuation, sector_kpis):
+    reasons = []
+    if financial is None:
+        reasons.append("financial data not available")
+
+    if ranking_model == "property":
+        required = {
+            KpiIds.PROPERTY_OCCUPANCY: "occupancy",
+            KpiIds.PROPERTY_INTEREST_COVERAGE: "interest coverage",
+            KpiIds.PROPERTY_LTV: "LTV",
+        }
+        for kpi_id, label in required.items():
+            if sector_kpis.get(kpi_id) is None:
+                reasons.append(f"property {label} not available")
+        if all(
+            sector_kpis.get(kpi_id) is None
+            for kpi_id in (
+                KpiIds.PROPERTY_NAV_DISCOUNT,
+                KpiIds.PROPERTY_PRICE_TO_INCOME,
+            )
+        ):
+            reasons.append("property valuation KPI not available")
+    elif ranking_model == "bank":
+        required = {
+            KpiIds.BANK_COST_INCOME: "cost/income",
+            KpiIds.BANK_CREDIT_LOSSES: "credit losses",
+            KpiIds.BANK_CET1: "CET1",
+            KpiIds.BANK_CAPITAL_ADEQUACY: "capital adequacy",
+        }
+        for kpi_id, label in required.items():
+            if sector_kpis.get(kpi_id) is None:
+                reasons.append(f"bank {label} not available")
+    elif valuation is None:
+        reasons.append("valuation data not available")
+
+    return not reasons, reasons
 
 
 def _compute_flags(quality: dict, growth: dict, val: dict, balance: dict, missing_data: list[str]) -> list[str]:
@@ -16,15 +60,20 @@ def _compute_flags(quality: dict, growth: dict, val: dict, balance: dict, missin
     b = balance["score"]
 
     # Cross-category flags
-    if q >= 75 and v >= 70:
+    quality_available = quality.get("available", True)
+    growth_available = growth.get("available", True)
+    valuation_available = val.get("available", True)
+    balance_available = balance.get("available", True)
+
+    if quality_available and valuation_available and q >= 75 and v >= 70:
         flags.append("cheap_quality")
-    if q >= 75 and v <= 30:
+    if quality_available and valuation_available and q >= 75 and v <= 30:
         flags.append("high_quality_expensive")
-    if g >= 75 and v <= 30:
+    if growth_available and valuation_available and g >= 75 and v <= 30:
         flags.append("strong_growth_expensive")
-    if g < 25 and v >= 70:
+    if growth_available and valuation_available and g < 25 and v >= 70:
         flags.append("cheap_but_weak_growth")
-    if b <= 25:
+    if balance_available and b <= 25:
         flags.append("balance_sheet_risk")
 
     # FCF quality flag
@@ -32,8 +81,11 @@ def _compute_flags(quality: dict, growth: dict, val: dict, balance: dict, missin
         flags.append("fcf_quality")
 
     # Negative growth flag
-    if g < 25:
+    if growth_available and g < 25:
         flags.append("negative_growth")
+
+    if any("possible one-off" in warning for warning in growth["negatives"]):
+        flags.append("earnings_one_off_risk")
 
     # Data quality flag
     if len(missing_data) >= 4:
@@ -79,31 +131,65 @@ class RankingEngine:
             results = results_by_company.get(company.id, {})
             financial = results.get("financial")
             valuation = results.get("valuation")
-
-            quality = score_quality(financial)
-            growth = score_growth(financial)
-            balance = score_balance_sheet(financial)
-
-            # Pass quality/growth/leverage context into valuation scoring so the
-            # margin-of-safety component can adjust the required-return spread.
-            dte = financial.debt_to_equity if financial else None
-            val = score_valuation(
+            sector_kpis = results.get("sector_kpis") or {}
+            fundamental_kpis = results.get("fundamental_kpis")
+            ranking_model = ranking_model_for_branch(company.branch_id)
+            rank_eligible, eligibility_reasons = _rank_eligibility(
+                ranking_model,
+                financial,
                 valuation,
-                debt_to_equity=dte,
-                quality_score=quality["score"] if quality else None,
-                growth_score=growth["score"] if growth else None,
+                sector_kpis,
             )
 
-            total = (
-                quality["score"] * 0.30
-                + growth["score"] * 0.25
-                + val["score"] * 0.30
-                + balance["score"] * 0.15
+            if ranking_model == "property":
+                quality, growth, val, balance = score_property(
+                    financial,
+                    valuation,
+                    sector_kpis,
+                )
+            elif ranking_model == "bank":
+                quality, growth, val, balance = score_bank(
+                    financial,
+                    valuation,
+                    sector_kpis,
+                )
+            else:
+                quality = score_quality(financial, fundamental_kpis)
+                growth = score_growth(financial)
+                balance = score_balance_sheet(financial, fundamental_kpis)
+
+                # Pass quality/growth/leverage context into valuation scoring so the
+                # margin-of-safety component can adjust the required-return spread.
+                dte = financial.debt_to_equity if financial else None
+                val = score_valuation(
+                    valuation,
+                    debt_to_equity=dte,
+                    quality_score=quality["score"] if quality else None,
+                    growth_score=growth["score"] if growth else None,
+                )
+
+            if ranking_model == "property":
+                weights = (0.25, 0.15, 0.30, 0.30)
+            elif ranking_model == "bank":
+                weights = (0.30, 0.20, 0.25, 0.25)
+            else:
+                weights = (0.30, 0.25, 0.30, 0.15)
+            total = sum(
+                score["score"] * weight
+                for score, weight in zip((quality, growth, val, balance), weights)
             )
 
             missing_data = quality["missing"] + growth["missing"] + val["missing"] + balance["missing"]
             flags = _compute_flags(quality, growth, val, balance, missing_data)
+            for category in (quality, growth, val, balance):
+                for flag in category.get("flags", []):
+                    if flag not in flags:
+                        flags.append(flag)
             data_quality = _compute_data_quality(missing_data)
+            if not rank_eligible:
+                data_quality = "low"
+                if "incomplete_data" not in flags:
+                    flags.append("incomplete_data")
             candidate_reason = _compute_candidate_reason(quality, growth, val, balance)
 
             cs = CompanyScore(
@@ -121,8 +207,11 @@ class RankingEngine:
                 flags=flags,
                 data_quality=data_quality,
                 candidate_reason=candidate_reason,
+                ranking_model=ranking_model,
+                rank_eligible=rank_eligible,
+                eligibility_reasons=eligibility_reasons,
             )
             scores.append(cs)
 
-        scores.sort(key=lambda s: s.total_score, reverse=True)
+        scores.sort(key=lambda s: (s.rank_eligible, s.total_score), reverse=True)
         return WatchlistRanking(scores=scores)

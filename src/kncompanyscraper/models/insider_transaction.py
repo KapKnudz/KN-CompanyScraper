@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 
@@ -13,3 +13,5 @@ class InsiderTransaction:
     total_value: Optional[float]
     transaction_date: date
     source: Optional[str] = None
+    reported_at: Optional[datetime] = None
+    currency: Optional[str] = None

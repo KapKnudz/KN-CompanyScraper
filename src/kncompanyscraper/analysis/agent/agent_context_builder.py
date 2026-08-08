@@ -18,6 +18,9 @@ class AgentContextBuilder:
                 company_id=cs.company_id,
                 ticker=cs.ticker,
                 name=cs.name,
+                ranking_model=cs.ranking_model,
+                rank_eligible=cs.rank_eligible,
+                eligibility_reasons=list(cs.eligibility_reasons),
                 total_score=cs.total_score,
                 score_breakdown={
                     "quality": cs.quality_score,
@@ -59,6 +62,9 @@ class AgentContextBuilder:
                 company_id=cs.company_id,
                 ticker=cs.ticker,
                 name=cs.name,
+                ranking_model=cs.ranking_model,
+                rank_eligible=cs.rank_eligible,
+                eligibility_reasons=list(cs.eligibility_reasons),
                 total_score=cs.total_score,
                 score_breakdown={
                     "quality": cs.quality_score,

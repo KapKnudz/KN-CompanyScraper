@@ -6,6 +6,7 @@ class KpiHistoryPoint:
 
     year: int
     value: float
+    period: int | None = None
 
 
 @dataclass

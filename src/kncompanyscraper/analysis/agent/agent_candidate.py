@@ -7,6 +7,9 @@ class AgentCandidate:
     company_id: int
     ticker: str
     name: str
+    ranking_model: str = "general"
+    rank_eligible: bool = True
+    eligibility_reasons: list[str] = field(default_factory=list)
 
     total_score: float = 0.0
     score_breakdown: dict = field(default_factory=dict)

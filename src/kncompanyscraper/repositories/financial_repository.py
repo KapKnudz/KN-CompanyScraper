@@ -14,11 +14,12 @@ class FinancialRepository:
                 company_id, period_type, period_end, revenue, operating_profit,
                 ebit, ebitda, net_income, debt, equity, free_cash_flow,
                 shares_outstanding, total_assets, report_year, report_period,
-                currency, raw_payload, fetched_at
+                currency, raw_payload, gross_income, operating_cash_flow,
+                fetched_at
             )
             VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, NOW()
+                %s, %s, %s, %s, %s, %s, %s, NOW()
             )
             ON CONFLICT (company_id, period_type, period_end)
             DO UPDATE SET
@@ -36,6 +37,8 @@ class FinancialRepository:
                 report_period = EXCLUDED.report_period,
                 currency = EXCLUDED.currency,
                 raw_payload = EXCLUDED.raw_payload,
+                gross_income = EXCLUDED.gross_income,
+                operating_cash_flow = EXCLUDED.operating_cash_flow,
                 fetched_at = NOW()
         """
         with get_connection() as conn:
@@ -51,6 +54,7 @@ class FinancialRepository:
                             report.free_cash_flow, report.shares_outstanding,
                             report.total_assets, report.year, report.period,
                             report.currency, Json(report.raw_payload),
+                            report.gross_income, report.operating_cash_flow,
                         ),
                     )
 
@@ -72,7 +76,7 @@ class FinancialRepository:
             SELECT revenue, operating_profit, ebit, ebitda, net_income,
                    free_cash_flow, equity, total_assets, debt,
                    shares_outstanding, report_year, report_period, period_end,
-                   currency, raw_payload
+                   currency, raw_payload, gross_income, operating_cash_flow
             FROM financials
             WHERE company_id = %s AND period_type = %s
             ORDER BY period_end DESC
@@ -99,6 +103,8 @@ class FinancialRepository:
                 total_assets=self._to_float(row["total_assets"]),
                 total_debt=self._to_float(row["debt"]),
                 shares_outstanding=self._to_float(row["shares_outstanding"]),
+                gross_income=self._to_float(row["gross_income"]),
+                operating_cash_flow=self._to_float(row["operating_cash_flow"]),
                 year=row["report_year"],
                 period=row["report_period"],
                 period_end=row["period_end"],

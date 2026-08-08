@@ -20,11 +20,12 @@ class ValuationRepository:
         KpiIds.PFCF,
         KpiIds.PEG,
         KpiIds.DIVIDEND_YIELD,
+        *KpiIds.GENERAL_FUNDAMENTAL_KPIS,
     )
     HISTORICAL_KPIS = (KpiIds.PE, KpiIds.EV_EBIT, KpiIds.PB)
 
     def save_snapshot(self, company_id: int, kpi_id: int, value: float | None) -> None:
-        query = """
+        current_query = """
             INSERT INTO kpi_snapshots (company_id, kpi_id, value, fetched_at)
             VALUES (%s, %s, %s, NOW())
             ON CONFLICT (company_id, kpi_id)
@@ -32,7 +33,18 @@ class ValuationRepository:
         """
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (company_id, kpi_id, value))
+                cur.execute(current_query, (company_id, kpi_id, value))
+                cur.execute(
+                    """
+                    INSERT INTO kpi_snapshot_history (
+                        company_id, kpi_id, observation_date, value, fetched_at
+                    )
+                    VALUES (%s, %s, CURRENT_DATE, %s, NOW())
+                    ON CONFLICT (company_id, kpi_id, observation_date)
+                    DO UPDATE SET value = EXCLUDED.value, fetched_at = NOW()
+                    """,
+                    (company_id, kpi_id, value),
+                )
 
     def save_history(
         self,
@@ -43,18 +55,30 @@ class ValuationRepository:
     ) -> None:
         query = """
             INSERT INTO kpi_history (
-                company_id, kpi_id, period_type, price_type, year, value, fetched_at
+                company_id, kpi_id, period_type, price_type, year,
+                report_period, value, fetched_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (company_id, kpi_id, period_type, price_type, year)
-            DO UPDATE SET value = EXCLUDED.value, fetched_at = NOW()
+            DO UPDATE SET
+                report_period = EXCLUDED.report_period,
+                value = EXCLUDED.value,
+                fetched_at = NOW()
         """
         with get_connection() as conn:
             with conn.cursor() as cur:
                 for point in history.values:
                     cur.execute(
                         query,
-                        (company_id, history.kpi_id, period_type, price_type, point.year, point.value),
+                        (
+                            company_id,
+                            history.kpi_id,
+                            period_type,
+                            price_type,
+                            point.year,
+                            point.period,
+                            point.value,
+                        ),
                     )
 
     def save_stock_prices(
@@ -117,6 +141,27 @@ class ValuationRepository:
             peg=values.get(KpiIds.PEG),
             dividend_yield=values.get(KpiIds.DIVIDEND_YIELD),
         )
+
+    def get_sector_current(self, company_id: int, branch_id: int | None) -> dict[int, float | None]:
+        if branch_id == 75:
+            allowed = set(KpiIds.PROPERTY_KPIS)
+        elif branch_id in (68, 69, 70):
+            allowed = set(KpiIds.BANK_KPIS)
+        else:
+            return {}
+        return {
+            kpi_id: value
+            for kpi_id, value in self._snapshot_values(company_id).items()
+            if kpi_id in allowed
+        }
+
+    def get_general_fundamentals(self, company_id: int) -> dict[int, float | None]:
+        allowed = set(KpiIds.GENERAL_FUNDAMENTAL_KPIS)
+        return {
+            kpi_id: value
+            for kpi_id, value in self._snapshot_values(company_id).items()
+            if kpi_id in allowed
+        }
 
     def get_historical(self, company_id: int) -> tuple[list[float], list[float], list[float]]:
         return tuple(self._history(company_id, kpi_id) for kpi_id in self.HISTORICAL_KPIS)

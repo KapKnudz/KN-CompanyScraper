@@ -33,6 +33,8 @@ class BorsdataInstrumentMappingService:
                 company.id,
                 instrument.id,
                 instrument.stock_price_currency,
+                instrument.sector_id,
+                instrument.branch_id,
             )
             mapped += 1
 

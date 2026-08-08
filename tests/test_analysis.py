@@ -126,13 +126,11 @@ class TestFinancialCalculator:
         assert result.net_margin == pytest.approx(55_000_000 / 550_000_000, rel=1e-6)
         assert result.fcf_margin == pytest.approx(35_000_000 / 550_000_000, rel=1e-6)
 
-        # --- Growth (YoY: 2025→2026) ---
-        # revenue: (550M - 520M) / 520M = 0.05769...
-        assert result.revenue_growth == pytest.approx(30_000_000 / 520_000_000, rel=1e-6)
-        # ebit: (70M - 65M) / 65M = 0.07692...
-        assert result.ebit_growth == pytest.approx(5_000_000 / 65_000_000, rel=1e-6)
-        # net_income: (55M - 50M) / 50M = 0.1
-        assert result.net_income_growth == pytest.approx(5_000_000 / 50_000_000, rel=1e-6)
+        # --- Growth (three-year CAGR) ---
+        assert result.revenue_growth == pytest.approx((550_000_000 / 450_000_000) ** (1 / 3) - 1)
+        assert result.ebit_growth == pytest.approx((70_000_000 / 58_000_000) ** (1 / 3) - 1)
+        assert result.net_income_growth == pytest.approx((55_000_000 / 43_000_000) ** (1 / 3) - 1)
+        assert result.revenue_growth_years == 3
 
         # --- Returns ---
         assert result.roe == pytest.approx(55_000_000 / 180_000_000, rel=1e-6)
@@ -161,8 +159,8 @@ class TestFinancialCalculator:
 
     def test_calculate_growth_with_negative_previous(self):
         calc = FinancialCalculator()
-        # (100 - (-50)) / |-50| = 150/50 = 3.0
-        assert calc.calculate_growth(100.0, [-50.0]) == pytest.approx(3.0, rel=1e-6)
+        assert calc.calculate_growth(100.0, [-50.0]) is None
+        assert calc.is_turnaround(100.0, [-50.0]) is True
 
     def test_all_none_when_current_is_empty(self):
         calc = FinancialCalculator()
@@ -518,6 +516,8 @@ class TestFullPipeline:
         assert result.revenue_growth is not None
         assert result.ebit_growth is not None
         assert result.net_income_growth is not None
+        assert result.revenue_per_share_growth == pytest.approx(result.revenue_growth)
+        assert result.share_count_growth == pytest.approx(0.0)
         assert result.roe is not None
         assert result.roa is not None
         assert result.debt_to_equity is not None
@@ -526,6 +526,78 @@ class TestFullPipeline:
         assert result.revenue_growth > 0
         assert result.ebit_growth > 0
         assert result.net_income_growth > 0
+
+    def test_per_share_growth_removes_growth_created_only_by_dilution(self):
+        current = CurrentFinancials(
+            revenue=200,
+            operating_profit=20,
+            ebit=20,
+            ebitda=None,
+            net_income=10,
+            free_cash_flow=10,
+            equity=100,
+            total_assets=200,
+            total_debt=20,
+            shares_outstanding=200,
+        )
+        historical = HistoricalFinancials(
+            revenue_history=[100, 100, 100],
+            ebit_history=[10, 10, 10],
+            fcf_history=[5, 5, 5],
+            net_income_history=[5, 5, 5],
+            equity_history=[50, 50, 50],
+            shares_history=[100, 100, 100],
+            operating_profit_history=[10, 10, 10],
+        )
+
+        result = FinancialCalculator().calculate(current, historical)
+
+        assert result.revenue_growth > 0
+        assert result.revenue_per_share_growth == pytest.approx(0.0)
+        assert result.share_count_growth > 0.05
+        assert result.share_dilution is True
+
+    def test_cash_quality_margin_stability_and_recent_quarter_are_calculated(self):
+        current = CurrentFinancials(
+            revenue=120,
+            operating_profit=24,
+            ebit=24,
+            ebitda=None,
+            net_income=12,
+            free_cash_flow=10,
+            equity=60,
+            total_assets=120,
+            total_debt=10,
+            shares_outstanding=100,
+            gross_income=60,
+            operating_cash_flow=15,
+        )
+        historical = HistoricalFinancials(
+            revenue_history=[90, 100, 110],
+            ebit_history=[18, 20, 22],
+            fcf_history=[8, 9, 10],
+            net_income_history=[9, 10, 11],
+            equity_history=[45, 50, 55],
+            shares_history=[100, 100, 100],
+            operating_profit_history=[18, 20, 22],
+        )
+        latest_quarter = CurrentFinancials(35, 7, 7, None, 4, 3, 60, 120, 10)
+        prior_quarter = CurrentFinancials(25, 5, 5, None, 3, 2, 55, 110, 10)
+
+        result = FinancialCalculator().calculate(
+            current,
+            historical,
+            latest_quarter=latest_quarter,
+            prior_year_quarter=prior_quarter,
+        )
+
+        assert result.gross_margin == pytest.approx(0.5)
+        assert result.cash_conversion == pytest.approx(1.25)
+        assert result.fcf_conversion == pytest.approx(10 / 12)
+        assert result.operating_margin_volatility == pytest.approx(0.0)
+        assert result.positive_fcf_ratio == pytest.approx(1.0)
+        assert result.recent_revenue_growth == pytest.approx(0.4)
+        assert result.recent_growth_acceleration is True
 
     def test_valuation_pipeline_returns_valid_result(self):
         current = current_valuation_from_mock()

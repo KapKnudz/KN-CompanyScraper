@@ -36,3 +36,4 @@ class ValuationResult:
     raw_pfcf: float | None = None
     raw_ev_ebit: float | None = None
     raw_ev_ebitda: float | None = None
+    dividend_yield: float | None = None

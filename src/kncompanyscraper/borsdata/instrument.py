@@ -9,6 +9,8 @@ class Instrument:
     ticker: str | None
     stock_price_currency: str | None = None
     report_currency: str | None = None
+    sector_id: int | None = None
+    branch_id: int | None = None
 
 
 def match_instrument(company, instruments: list[Instrument]) -> Instrument | None:

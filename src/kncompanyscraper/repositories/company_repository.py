@@ -24,6 +24,8 @@ class CompanyRepository:
                     borsdata_id,
                     isin,
                     currency,
+                    sector_id,
+                    branch_id,
                     last_updated
                     FROM companies
                     WHERE id = %s
@@ -47,6 +49,8 @@ class CompanyRepository:
                     borsdata_id,
                     isin,
                     currency,
+                    sector_id,
+                    branch_id,
                     last_updated
                     FROM companies
                     WHERE ticker = %s
@@ -62,9 +66,13 @@ class CompanyRepository:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
-                    INSERT INTO companies (name, ticker, mfn_slug, borsdata_id, isin, currency)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    RETURNING id, name, ticker, mfn_slug, borsdata_id, last_updated, isin, currency
+                    INSERT INTO companies (
+                        name, ticker, mfn_slug, borsdata_id, isin, currency,
+                        sector_id, branch_id
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id, name, ticker, mfn_slug, borsdata_id, last_updated,
+                              isin, currency, sector_id, branch_id
                     """,
                     (
                         company.name,
@@ -73,6 +81,8 @@ class CompanyRepository:
                         company.borsdata_id,
                         company.isin,
                         company.currency,
+                        company.sector_id,
+                        company.branch_id,
                     ),
                 )
 
@@ -90,6 +100,8 @@ class CompanyRepository:
                         mfn_slug     = %s,
                         isin         = %s,
                         currency     = %s,
+                        sector_id    = %s,
+                        branch_id    = %s,
                         last_updated = NOW()
                     WHERE id = %s
                     """,
@@ -100,6 +112,8 @@ class CompanyRepository:
                         company.mfn_slug,
                         company.isin,
                         company.currency,
+                        company.sector_id,
+                        company.branch_id,
                         company.id,
                     ),
                 )
@@ -161,6 +175,8 @@ class CompanyRepository:
                            c.mfn_slug,
                            c.isin,
                            c.currency,
+                           c.sector_id,
+                           c.branch_id,
                            c.last_updated
                     FROM companies c
                              JOIN watchlist w
@@ -178,6 +194,8 @@ class CompanyRepository:
         company_id: int,
         borsdata_id: int,
         currency: str | None,
+        sector_id: int | None,
+        branch_id: int | None,
     ) -> None:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -186,10 +204,12 @@ class CompanyRepository:
                     UPDATE companies
                     SET borsdata_id = %s,
                         currency = COALESCE(%s, currency),
+                        sector_id = %s,
+                        branch_id = %s,
                         last_updated = NOW()
                     WHERE id = %s
                     """,
-                    (borsdata_id, currency, company_id),
+                    (borsdata_id, currency, sector_id, branch_id, company_id),
                 )
 
     def upsert_watchlist_companies(
