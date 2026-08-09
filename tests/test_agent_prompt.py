@@ -6,6 +6,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
 )
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPromptBuilder
 from kncompanyscraper.analysis.financial.financial_result import FinancialResult
+from kncompanyscraper.analysis.valuation.reverse_dcf_skill import ReverseDcfAnalysis
 
 
 def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
@@ -26,7 +27,13 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
                 roe=0.12,
                 roa=0.07,
                 debt_to_equity=0.30,
-            )
+            ),
+            "reverse_dcf": ReverseDcfAnalysis(
+                status="unavailable",
+                policy_version="reverse-dcf-v1",
+                model="fcff",
+                missing_information=("latest stock price unavailable",),
+            ),
         },
     )
 
@@ -36,6 +43,8 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "Follow the steps in order" in prompt.system
     assert '"company_id": 42' in prompt.user
     assert '"operating_margin": 0.08' in prompt.user
+    assert '"policy_version": "reverse-dcf-v1"' in prompt.user
+    assert '"latest stock price unavailable"' in prompt.user
     assert '"verdict": "reject | watch | latent_case | activated_case"' in prompt.user
 
 

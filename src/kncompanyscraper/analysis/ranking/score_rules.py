@@ -356,6 +356,7 @@ def score_valuation(
     debt_to_equity: float | None = None,
     quality_score: float | None = None,
     growth_score: float | None = None,
+    reverse_dcf: dict | None = None,
 ) -> dict:
     if valuation is None:
         return {"score": 0.0, "positives": [], "negatives": [], "missing": ["valuation data not available"]}
@@ -374,12 +375,12 @@ def score_valuation(
     )
     fcf_yield = raw_fcf_yield if raw_fcf_yield is not None else valuation.free_cash_flow_yield
 
-    # --- FCF yield: 0→0, 10%→100  (weight: 30%) ---
+    # --- FCF yield: 0→0, 10%→100  (weight: 24%) ---
     s = _linear_score(fcf_yield, 0.0, 0.10)
     if s is None:
         missing.append("FCF yield not available")
     else:
-        scored.append((s, 0.30))
+        scored.append((s, 0.24))
         if fcf_yield >= 0.08:
             positives.append(f"FCF yield {fcf_yield:.1%} — attractive")
         elif fcf_yield < 0:
@@ -387,40 +388,40 @@ def score_valuation(
         elif fcf_yield <= 0.02:
             negatives.append(f"FCF yield {fcf_yield:.1%} — expensive")
 
-    # --- Earnings yield: 0→0, 10%→100  (weight: 20%) ---
+    # --- Earnings yield: 0→0, 10%→100  (weight: 16%) ---
     s = _linear_score(earnings_yield, 0.0, 0.10)
     if s is None:
         missing.append("Earnings yield not available")
     else:
-        scored.append((s, 0.20))
+        scored.append((s, 0.16))
         if earnings_yield >= 0.08:
             positives.append(f"Earnings yield {earnings_yield:.1%} — attractive")
         elif earnings_yield <= 0.02:
             negatives.append(f"Earnings yield {earnings_yield:.1%} — expensive")
 
-    # --- EV/EBIT percentile (inverted)  (weight: 20%) ---
+    # --- EV/EBIT percentile (inverted)  (weight: 16%) ---
     s = _inverted_linear_score(valuation.ev_ebit_percentile, 0.0, 100.0)
     if s is None:
         missing.append("EV/EBIT percentile not available")
     else:
-        scored.append((s, 0.20))
+        scored.append((s, 0.16))
         if valuation.ev_ebit_percentile <= 20:
             positives.append(f"EV/EBIT at {valuation.ev_ebit_percentile:.0f}th percentile — cheap vs history")
         elif valuation.ev_ebit_percentile >= 80:
             negatives.append(f"EV/EBIT at {valuation.ev_ebit_percentile:.0f}th percentile — expensive vs history")
 
-    # --- PE percentile (inverted)  (weight: 15%) ---
+    # --- PE percentile (inverted)  (weight: 12%) ---
     s = _inverted_linear_score(valuation.pe_percentile, 0.0, 100.0)
     if s is None:
         missing.append("PE percentile not available")
     else:
-        scored.append((s, 0.15))
+        scored.append((s, 0.12))
         if valuation.pe_percentile <= 20:
             positives.append(f"PE at {valuation.pe_percentile:.0f}th percentile — cheap vs history")
         elif valuation.pe_percentile >= 80:
             negatives.append(f"PE at {valuation.pe_percentile:.0f}th percentile — expensive vs history")
 
-    # --- Margin of safety  (weight: 15%) ---
+    # --- Margin of safety  (weight: 12%) ---
     mos = compute_margin_of_safety(
         fcf_yield,
         debt_to_equity=debt_to_equity,
@@ -432,7 +433,7 @@ def score_valuation(
     if s is None:
         missing.append("Margin of safety not available")
     else:
-        scored.append((s, 0.15))
+        scored.append((s, 0.12))
         if mos >= 0.03:
             positives.append(f"Margin of safety {mos:.1%} — large discount to required return")
         elif fcf_yield is not None and fcf_yield < 0:
@@ -440,14 +441,27 @@ def score_valuation(
         elif mos <= -0.03:
             negatives.append(f"Margin of safety {mos:.1%} — trading above required return")
 
-    # Weighted average
+    if reverse_dcf is not None and reverse_dcf.get("score") is not None:
+        scored.append((reverse_dcf["score"], 0.20))
+        positives.extend(reverse_dcf.get("positives", []))
+        negatives.extend(reverse_dcf.get("negatives", []))
+
+    # Weighted average. Without reverse DCF, the uniformly rescaled legacy
+    # weights normalize back to exactly the prior valuation score.
     if scored:
         total_weight = sum(w for _, w in scored)
         score = sum(s * w for s, w in scored) / total_weight if total_weight > 0 else 0.0
     else:
         score = 0.0
 
-    return {"score": score, "positives": positives, "negatives": negatives, "missing": missing}
+    return {
+        "score": score,
+        "reverse_dcf_score": reverse_dcf.get("score") if reverse_dcf else None,
+        "positives": positives,
+        "negatives": negatives,
+        "missing": missing,
+        "flags": reverse_dcf.get("flags", []) if reverse_dcf else [],
+    }
 
 
 def score_balance_sheet(

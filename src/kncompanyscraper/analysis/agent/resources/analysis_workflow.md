@@ -27,7 +27,9 @@ Do not use unsupported precision. Give ranges when the evidence only supports ra
 
 ## 5. Build valuation scenarios
 
-Create bear, base, and bull scenarios using revenue, EBIT margin, net debt or cash, share count, and a defensible valuation multiple. Calculate or request calculation of implied per-share value and expected return.
+Create bear, base, and bull narratives using revenue, EBIT margin, net debt or cash, share count, and a defensible valuation assumption. Populate implied per-share values and expected returns only from supplied deterministic engine output; otherwise use `null` and identify the required calculation.
+
+Use supplied deterministic valuation-engine output as authoritative arithmetic. You may select or critique assumptions from the evidence and explain what the current price implies, but do not replace, silently modify, or independently invent calculated DCF values. If deterministic output is unavailable, identify the required inputs rather than presenting model-generated arithmetic as authoritative.
 
 Decompose the return into revenue growth, margin change, multiple change, balance-sheet change, and dilution. Flag dependence on multiple expansion.
 

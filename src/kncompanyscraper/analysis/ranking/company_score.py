@@ -11,6 +11,7 @@ class CompanyScore:
     quality_score: float = 0.0
     growth_score: float = 0.0
     valuation_score: float = 0.0
+    reverse_dcf_score: float | None = None
     balance_sheet_score: float = 0.0
 
     total_score: float = 0.0
@@ -34,6 +35,7 @@ class CompanyScore:
             "quality_score": self.quality_score,
             "growth_score": self.growth_score,
             "valuation_score": self.valuation_score,
+            "reverse_dcf_score": self.reverse_dcf_score,
             "balance_sheet_score": self.balance_sheet_score,
             "total_score": self.total_score,
             "positives": self.positives,

@@ -21,6 +21,7 @@ from kncompanyscraper.analysis.valuation.current_valuation import CurrentValuati
 from kncompanyscraper.analysis.valuation.valuation_calculator import ValuationCalculator
 from kncompanyscraper.analysis.valuation.valuation_mapper import ValuationMapper
 from kncompanyscraper.analysis.valuation.valuation_result import ValuationResult
+from kncompanyscraper.analysis.valuation.reverse_dcf_skill import ReverseDcfSkill
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
 from kncompanyscraper.borsdata.report import Report
 from kncompanyscraper.logger import get_logger
@@ -32,7 +33,14 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-_CATEGORIES = ("quality_score", "growth_score", "valuation_score", "balance_sheet_score", "total_score")
+_CATEGORIES = (
+    "quality_score",
+    "growth_score",
+    "valuation_score",
+    "reverse_dcf_score",
+    "balance_sheet_score",
+    "total_score",
+)
 _NUM_DECILES = 10
 _ANNUAL_REPORT_LAG_DAYS = 90
 _INTERIM_REPORT_LAG_DAYS = 45
@@ -69,6 +77,10 @@ class BacktestEngine:
         self.financial_calculator = FinancialCalculator()
         self.valuation_mapper = ValuationMapper()
         self.valuation_calculator = ValuationCalculator()
+        self.reverse_dcf_skill = ReverseDcfSkill(
+            valuation_repository,
+            financial_repository,
+        )
         self.ranking_engine = RankingEngine()
 
     # ------------------------------------------------------------------
@@ -127,12 +139,17 @@ class BacktestEngine:
             )
             if observation_price is None:
                 continue
-            financial, valuation, sector_kpis, fundamental_kpis = self._reconstruct(company, period_date)
+            financial, valuation, reverse_dcf, sector_kpis, fundamental_kpis = self._reconstruct(
+                company,
+                period_date,
+                observation_price,
+            )
             if financial is None:
                 continue
             results_by_company[company.id] = {
                 "financial": financial,
                 "valuation": valuation,
+                "reverse_dcf": reverse_dcf,
                 "sector_kpis": sector_kpis,
                 "fundamental_kpis": fundamental_kpis,
             }
@@ -186,7 +203,7 @@ class BacktestEngine:
     # Historical reconstruction
     # ------------------------------------------------------------------
 
-    def _reconstruct(self, company, period_date: date):
+    def _reconstruct(self, company, period_date: date, observation_price):
         """Reconstruct ranking inputs as they would have appeared on *period_date*."""
         # Financial data
         latest_year = self.financial_repository.get_latest_report_as_of(
@@ -203,12 +220,20 @@ class BacktestEngine:
         )
         current_report = latest_r12 or latest_year
         if current_report is None:
-            return None, None, {}, {}
+            return None, None, None, {}, {}
 
         historical_reports = self._historical_reports_as_of(company.id, period_date)
         current = self.financial_mapper.to_current(current_report)
         historical = self.financial_mapper.to_historical(historical_reports)
         financial = self.financial_calculator.calculate(current, historical)
+        reverse_dcf = self.reverse_dcf_skill.analyze_reports(
+            company,
+            latest_annual=latest_year,
+            latest_r12=latest_r12,
+            history=historical_reports,
+            price=observation_price,
+            as_of=period_date,
+        )
 
         # KPI snapshots as of period_date
         kpi_snapshot = self.valuation_repository.get_snapshot_history_as_of(
@@ -247,7 +272,7 @@ class BacktestEngine:
                 if value is not None:
                     sector_kpis["current"][kpi_id] = value
 
-        return financial, valuation, sector_kpis, fundamental_kpis
+        return financial, valuation, reverse_dcf, sector_kpis, fundamental_kpis
 
     def _historical_reports_as_of(self, company_id: int, as_of: date) -> list[Report]:
         """Historical annual reports with period_end ≤ *as_of*, excluding the latest."""
@@ -412,7 +437,9 @@ class BacktestEngine:
             pairs_6m, pairs_12m = [], []
             for score in scores:
                 fwd = forward_returns.get(score.company_id, (None, None))
-                cat_value = getattr(score, category, 0.0)
+                cat_value = getattr(score, category, None)
+                if cat_value is None:
+                    continue
                 if fwd[0] is not None:
                     pairs_6m.append((cat_value, fwd[0]))
                 if fwd[1] is not None:

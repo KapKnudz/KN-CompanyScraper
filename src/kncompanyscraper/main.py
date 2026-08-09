@@ -19,6 +19,7 @@ def _build_watchlist_analysis_service():
     from kncompanyscraper.analysis.sector_kpi_skill import SectorKpiSkill
     from kncompanyscraper.analysis.fundamental_kpi_skill import FundamentalKpiSkill
     from kncompanyscraper.analysis.valuation.valuation_skill import ValuationSkill
+    from kncompanyscraper.analysis.valuation.reverse_dcf_skill import ReverseDcfSkill
     from kncompanyscraper.analysis.base.analysisengine import AnalysisEngine
     from kncompanyscraper.analysis.ranking.ranking_engine import RankingEngine
     from kncompanyscraper.analysis.watchlist.watchlist_analysis_service import WatchlistAnalysisService
@@ -31,6 +32,7 @@ def _build_watchlist_analysis_service():
     financial_skill = FinancialSkill(financial_repo)
     insider_skill = InsiderSkill(insider_repo)
     valuation_skill = ValuationSkill(valuation_repo, financial_repo)
+    reverse_dcf_skill = ReverseDcfSkill(valuation_repo, financial_repo)
 
     sector_kpi_skill = SectorKpiSkill(valuation_repo)
     fundamental_kpi_skill = FundamentalKpiSkill(valuation_repo)
@@ -38,6 +40,7 @@ def _build_watchlist_analysis_service():
         [
             financial_skill,
             valuation_skill,
+            reverse_dcf_skill,
             insider_skill,
             sector_kpi_skill,
             fundamental_kpi_skill,
@@ -66,6 +69,7 @@ def _cmd_rank_watchlist():
             f"quality={cs.quality_score:>5.1f}  "
             f"growth={cs.growth_score:>5.1f}  "
             f"valuation={cs.valuation_score:>5.1f}  "
+            f"expectations={cs.reverse_dcf_score if cs.reverse_dcf_score is not None else '—':>5}  "
             f"balance={cs.balance_sheet_score:>5.1f}  "
             f"model={cs.ranking_model:<8}  "
             f"eligible={'yes' if cs.rank_eligible else 'no ':<3}  "

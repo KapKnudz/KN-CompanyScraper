@@ -64,6 +64,34 @@ standalone buy/sell signal. Companies missing model-critical data remain visible
 with `eligible=no`, but sort after eligible companies and are excluded from the
 agent shortlist.
 
+### Backtesting and DCF ownership
+
+The backtest engine validates the deterministic ranking policy. For each
+historical observation date it reconstructs only information then available,
+runs the ranking, and measures subsequent 6- and 12-month returns by decile and
+score correlation. It is a policy-validation tool, not a valuation calculator,
+forecast generator, or substitute for an investment decision.
+
+DCF arithmetic belongs to the deterministic valuation engine. Reverse DCF is
+implemented first and solves one bounded assumption at a time—revenue growth,
+EBIT margin, or perpetual terminal growth—so the result states what the current
+price implies while all other inputs remain fixed. The FCFF implementation is
+for ordinary operating companies. Bank branches are rejected pending a
+residual-income/dividend model, and property companies are rejected pending a
+NAV/FFO-oriented model.
+
+For eligible operating companies, ranking also compares those implied
+expectations with the evidence-based DCF baseline. The median materiality-scaled
+gap becomes a standalone expectation-headroom signal and contributes 20% of the
+valuation category when available. Historical backtests reconstruct the same
+reverse DCF only from reports and prices available on each observation date.
+
+The agent may select or challenge assumptions using company evidence and explain
+bounded bear/base/bull narratives. It is never the authoritative calculator;
+identical valuation inputs must reproduce the same result without a model call.
+The complete versioned input hierarchy, constants, solver bounds, equations, and
+limitations are in [the reverse DCF assumption policy](docs/dcf_assumption_policy.md).
+
 The watchlist importer expects a UTF-8, semicolon-delimited file with the
 header `Id;Name;Ticker`. It upserts by Börsdata ID (falling back to ticker),
 activates every imported company, and leaves companies not present in the file

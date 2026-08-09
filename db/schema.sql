@@ -410,6 +410,41 @@ ALTER SEQUENCE public.news_releases_id_seq OWNED BY public.news_releases.id;
 
 
 --
+-- Name: ranking_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ranking_runs (
+    id integer NOT NULL,
+    run_at timestamp with time zone DEFAULT now(),
+    model_version text NOT NULL,
+    company_count integer NOT NULL,
+    eligible_count integer NOT NULL,
+    scores jsonb NOT NULL,
+    inputs_summary jsonb
+);
+
+
+--
+-- Name: ranking_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ranking_runs_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ranking_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ranking_runs_id_seq OWNED BY public.ranking_runs.id;
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -579,6 +614,13 @@ ALTER TABLE ONLY public.news_releases ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: ranking_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_runs ALTER COLUMN id SET DEFAULT nextval('public.ranking_runs_id_seq'::regclass);
+
+
+--
 -- Name: scrape_runs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -718,6 +760,14 @@ ALTER TABLE ONLY public.news_releases
 
 ALTER TABLE ONLY public.news_releases
     ADD CONSTRAINT news_releases_url_key UNIQUE (url);
+
+
+--
+-- Name: ranking_runs ranking_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_runs
+    ADD CONSTRAINT ranking_runs_pkey PRIMARY KEY (id);
 
 
 --
@@ -1056,4 +1106,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260807120000'),
     ('20260807143000'),
     ('20260808120000'),
-    ('20260808143000');
+    ('20260808143000'),
+    ('20260809120000');
