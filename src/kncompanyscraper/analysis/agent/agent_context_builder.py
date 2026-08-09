@@ -3,6 +3,9 @@ from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
 
 class AgentContextBuilder:
 
+    def __init__(self, evidence_builder=None):
+        self.evidence_builder = evidence_builder
+
     def build(
         self,
         ranking,
@@ -35,6 +38,7 @@ class AgentContextBuilder:
                 negatives=list(cs.negatives),
                 missing_data=list(cs.missing_data),
                 full_results=full_results,
+                research_evidence=self._research_evidence(cs.company_id),
             )
             candidates.append(candidate)
 
@@ -46,6 +50,7 @@ class AgentContextBuilder:
         results_by_company: dict[int, dict],
         top_n: int = 25,
         max_total: int = 30,
+        limit: int | None = None,
     ) -> list[AgentCandidate]:
         shortlist = ranking.shortlist_for_agent(top_n=top_n, max_total=max_total)
         shortlist_ids = {cs.company_id for cs in shortlist}
@@ -79,7 +84,15 @@ class AgentContextBuilder:
                 negatives=list(cs.negatives),
                 missing_data=list(cs.missing_data),
                 full_results=full_results,
+                research_evidence=self._research_evidence(cs.company_id),
             )
             candidates.append(candidate)
+            if limit is not None and len(candidates) >= limit:
+                break
 
         return candidates
+
+    def _research_evidence(self, company_id: int) -> dict:
+        if self.evidence_builder is None:
+            return {}
+        return self.evidence_builder.build(company_id).to_dict()

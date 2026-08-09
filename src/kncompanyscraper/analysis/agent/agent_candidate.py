@@ -22,3 +22,4 @@ class AgentCandidate:
 
     # Raw skill results — available to the LLM for deeper reasoning
     full_results: dict = field(default_factory=dict)
+    research_evidence: dict = field(default_factory=dict)

@@ -8,6 +8,7 @@ Follow the steps in order. If a core step cannot be completed, preserve the miss
 - Separate raw values from derived scores and narrative flags.
 - List missing data that could materially change the decision.
 - Treat the existing ranking as a shortlist mechanism only.
+- Cite material factual claims with the supplied `source_id`. Never cite a source ID that is not present in the evidence packet.
 
 ## 2. Explain the business model
 
@@ -27,7 +28,13 @@ Do not use unsupported precision. Give ranges when the evidence only supports ra
 
 ## 5. Build valuation scenarios
 
-Create bear, base, and bull narratives using revenue, EBIT margin, net debt or cash, share count, and a defensible valuation assumption. Populate implied per-share values and expected returns only from supplied deterministic engine output; otherwise use `null` and identify the required calculation.
+Create bear, base, and bull narratives using revenue, EBIT margin, net debt or cash, share count, and a defensible valuation assumption. Deterministic bear/base/bull FCFF calculations are supplied under `full_results.reverse_dcf.forward_scenarios` when available. Copy each scenario's `value_per_share` and `expected_return` exactly into the matching output fields. If those calculations are unavailable, use `null` and identify the required calculation.
+
+Every scalar in `expected_return_components` remains `null` until a deterministic decomposition engine is supplied. Do not calculate substitute P/E, EPS, DCF, return-component, or upside values yourself. Any valuation or upside number stated anywhere in the response must come directly from the supplied deterministic engine output.
+
+Deterministic valuation scenarios and implied expectations carry `source_id` values beginning with `valuation:`. Cite material valuation claims with those exact IDs. For other scalar deterministic metrics that do not carry a `source_id`, cite the exact supplied path beginning with `full_results.`; the execution boundary will normalize a resolvable path to a canonical `deterministic:` ID. Never invent or abbreviate a path.
+
+Treat `bear`, `base`, and `bull` as deterministic sensitivity labels, not probabilities. Do not call the base case conservative, realistic, likely, or probable. Copy the supplied assumptions without adding causal interpretations. In particular, a normalized 0% net-reinvestment input does not mean the company requires no reinvestment.
 
 Use supplied deterministic valuation-engine output as authoritative arithmetic. You may select or critique assumptions from the evidence and explain what the current price implies, but do not replace, silently modify, or independently invent calculated DCF values. If deterministic output is unavailable, identify the required inputs rather than presenting model-generated arithmetic as authoritative.
 
@@ -42,6 +49,10 @@ Evaluate founder or owner-operator alignment, ownership, capital allocation, cos
 Analyze insider activity, ownership changes, average traded value, free float, listing venue, known supply overhangs, and plausible fund or index eligibility. Keep signal value separate from flow effects.
 
 Use this evidence to modify confidence or timing. Do not allow it to replace the fundamental case.
+
+Insider transactions are deliberately supplied as raw events with subsequent unadjusted price returns. Do not convert them into a mechanical score. Compare like-for-like transaction types, roles, sizes, repeated behavior, and the outcomes visible at the evidence cutoff. Do not treat missing future horizons as failed outcomes.
+
+If `insider_event_count` is zero, make no inference from the absence of stored transactions. A company buyback is capital allocation, not an insider transaction, and cannot substitute for insider buying. A synthetic buyback must not be assumed to reduce share count or increase per-share value unless that effect is supplied by deterministic evidence.
 
 ## 8. Attempt to disprove the case
 

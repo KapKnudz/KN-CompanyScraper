@@ -22,6 +22,10 @@ Tracks companies, scrapes financial/news data, stores results in PostgreSQL, and
    - `OPENAI_MODEL` — optional model override (default: `gpt-5.6-sol`)
    - `OPENAI_REASONING_EFFORT` — optional reasoning effort (default: `medium`)
    - `OPENAI_MAX_OUTPUT_TOKENS` — per-company output cap (default: `6000`)
+   - `DEEPSEEK_API_KEY` — DeepSeek API key used with `--provider deepseek`
+   - `DEEPSEEK_MODEL` — optional DeepSeek model override (default: `deepseek-v4-pro`)
+   - `DEEPSEEK_REASONING_EFFORT` — optional reasoning effort (default: `high`)
+   - `DEEPSEEK_MAX_OUTPUT_TOKENS` — per-company output cap (default: `30000`)
 
 3. Set up the database:
    ```
@@ -100,8 +104,23 @@ unchanged. Running it again is safe and updates the existing rows.
 Export model-ready prompts for the current shortlist without calling a model:
 
 ```
-python -m kncompanyscraper.main export-agent-prompts --output-dir ./agent-prompts
+python -m kncompanyscraper.main sync-agent-evidence --max-candidates 5
+python -m kncompanyscraper.main export-agent-prompts --output-dir ./agent-prompts --max-candidates 5
 ```
+
+The evidence sync chooses the top eligible companies from the deterministic
+ranking. It stores MFN release bodies and extracts text from attached annual,
+year-end, and interim-report PDFs. Börsdata's report API supplies standardized
+financial statement values, not CEO letters or outlook text; MFN/company report
+attachments are therefore the primary textual source. PDF extraction is capped
+at the first 30 pages, where the CEO letter and outlook normally appear, and
+each stored document retains its publication time and source URL for citations.
+
+Insider transactions are synced separately from Börsdata. They do not contribute
+to the deterministic ranking. The agent receives raw transaction details plus
+subsequent 90-, 180-, and 365-day unadjusted price returns calculated from stored
+Börsdata prices. Missing future horizons remain null and no insider score is
+created.
 
 Call OpenAI for a deliberately bounded number of shortlisted companies,
 validate each structured response, and persist it to PostgreSQL:
@@ -110,8 +129,17 @@ validate each structured response, and persist it to PostgreSQL:
 python -m kncompanyscraper.main analyze-shortlist --max-candidates 1
 ```
 
-This command makes paid API calls. It requires `OPENAI_API_KEY`; the mandatory
-candidate limit prevents accidentally analyzing the entire shortlist.
+Use DeepSeek instead while keeping the same policy, evidence packet, local
+schema validation, citation checks, and persistence boundary:
+
+```
+python -m kncompanyscraper.main analyze-shortlist --provider deepseek --max-candidates 1
+```
+
+This command makes paid API calls. It requires the selected provider's API key;
+the mandatory candidate limit prevents accidentally analyzing the entire shortlist.
+For the five-company shadow pilot, pass `--max-candidates 5` after inspecting
+the exported prompts.
 
 ## Development
 

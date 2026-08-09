@@ -12,10 +12,8 @@ logger = get_logger("main")
 def _build_watchlist_analysis_service():
     from kncompanyscraper.repositories.company_repository import CompanyRepository
     from kncompanyscraper.repositories.financial_repository import FinancialRepository
-    from kncompanyscraper.repositories.insider_repository import InsiderRepository
     from kncompanyscraper.repositories.valuation_repository import ValuationRepository
     from kncompanyscraper.analysis.financial.financial_skill import FinancialSkill
-    from kncompanyscraper.analysis.insider.insider_skill import InsiderSkill
     from kncompanyscraper.analysis.sector_kpi_skill import SectorKpiSkill
     from kncompanyscraper.analysis.fundamental_kpi_skill import FundamentalKpiSkill
     from kncompanyscraper.analysis.valuation.valuation_skill import ValuationSkill
@@ -26,11 +24,9 @@ def _build_watchlist_analysis_service():
     from kncompanyscraper.repositories.ranking_repository import RankingRepository
     company_repo = CompanyRepository()
     financial_repo = FinancialRepository()
-    insider_repo = InsiderRepository()
     valuation_repo = ValuationRepository()
 
     financial_skill = FinancialSkill(financial_repo)
-    insider_skill = InsiderSkill(insider_repo)
     valuation_skill = ValuationSkill(valuation_repo, financial_repo)
     reverse_dcf_skill = ReverseDcfSkill(valuation_repo, financial_repo)
 
@@ -41,7 +37,6 @@ def _build_watchlist_analysis_service():
             financial_skill,
             valuation_skill,
             reverse_dcf_skill,
-            insider_skill,
             sector_kpi_skill,
             fundamental_kpi_skill,
         ]
@@ -188,33 +183,51 @@ def _cmd_import_watchlist(csv_path: Path):
     )
 
 
-def _cmd_export_agent_prompts(output_dir: Path):
+def _cmd_export_agent_prompts(output_dir: Path, max_candidates: int):
     """Export model-ready prompts for the deterministic shortlist."""
     from kncompanyscraper.analysis.agent.agent_context_builder import AgentContextBuilder
     from kncompanyscraper.analysis.agent.prompt_exporter import AgentPromptExporter
 
     run = _build_watchlist_analysis_service().analyze_watchlist()
-    candidates = AgentContextBuilder().build_shortlist(run.ranking, run.results_by_company)
+    candidates = AgentContextBuilder(_build_research_evidence_builder()).build_shortlist(
+        run.ranking,
+        run.results_by_company,
+        limit=max_candidates,
+    )
     paths = AgentPromptExporter().export(candidates, output_dir)
     print(f"Exported {len(paths)} agent prompts to {output_dir}.")
 
 
-def _cmd_analyze_shortlist(max_candidates: int, model: str | None, reasoning_effort: str | None):
+def _cmd_analyze_shortlist(
+    max_candidates: int,
+    provider: str,
+    model: str | None,
+    reasoning_effort: str | None,
+):
     """Analyze and persist a spend-bounded subset of the current shortlist."""
     from kncompanyscraper.analysis.agent.agent_analysis_service import AgentAnalysisService
     from kncompanyscraper.analysis.agent.agent_context_builder import AgentContextBuilder
     from kncompanyscraper.analysis.agent.execution_boundary import AgentExecutionBoundary
-    from kncompanyscraper.analysis.agent.openai_responses import OpenAIResponsesAdapter
     from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
 
     try:
-        model_adapter = OpenAIResponsesAdapter(model=model, reasoning_effort=reasoning_effort)
+        if provider == "deepseek":
+            from kncompanyscraper.analysis.agent.deepseek_chat import DeepSeekChatAdapter
+
+            model_adapter = DeepSeekChatAdapter(model=model, reasoning_effort=reasoning_effort)
+        else:
+            from kncompanyscraper.analysis.agent.openai_responses import OpenAIResponsesAdapter
+
+            model_adapter = OpenAIResponsesAdapter(model=model, reasoning_effort=reasoning_effort)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
     run = _build_watchlist_analysis_service().analyze_watchlist()
-    candidates = AgentContextBuilder().build_shortlist(run.ranking, run.results_by_company)
-    candidates = candidates[:max_candidates]
+    candidates = AgentContextBuilder(_build_research_evidence_builder()).build_shortlist(
+        run.ranking,
+        run.results_by_company,
+        limit=max_candidates,
+    )
     if not candidates:
         print("No companies available in the agent shortlist.")
         return
@@ -225,6 +238,56 @@ def _cmd_analyze_shortlist(max_candidates: int, model: str | None, reasoning_eff
     )
     persisted = service.analyze(candidates)
     print(f"Persisted {len(persisted)} stock analyses.")
+
+
+def _build_research_evidence_builder():
+    from kncompanyscraper.analysis.agent.research_evidence import ResearchEvidenceBuilder
+    from kncompanyscraper.repositories.insider_repository import InsiderRepository
+    from kncompanyscraper.repositories.news_repository import NewsRepository
+    from kncompanyscraper.repositories.research_document_repository import (
+        ResearchDocumentRepository,
+    )
+    from kncompanyscraper.repositories.valuation_repository import ValuationRepository
+
+    return ResearchEvidenceBuilder(
+        ResearchDocumentRepository(),
+        NewsRepository(),
+        InsiderRepository(),
+        ValuationRepository(),
+    )
+
+
+def _cmd_sync_agent_evidence(max_candidates: int):
+    """Backfill MFN release bodies and attached report PDFs for the pilot cohort."""
+    from kncompanyscraper.analysis.agent.agent_context_builder import AgentContextBuilder
+    from kncompanyscraper.analysis.agent.research_document_ingestion import (
+        ResearchDocumentIngestionService,
+    )
+    from kncompanyscraper.repositories.company_repository import CompanyRepository
+    from kncompanyscraper.repositories.news_repository import NewsRepository
+    from kncompanyscraper.repositories.research_document_repository import (
+        ResearchDocumentRepository,
+    )
+
+    run = _build_watchlist_analysis_service().analyze_watchlist()
+    candidates = AgentContextBuilder().build_shortlist(
+        run.ranking,
+        run.results_by_company,
+        limit=max_candidates,
+    )
+    company_repository = CompanyRepository()
+    service = ResearchDocumentIngestionService(
+        NewsRepository(),
+        ResearchDocumentRepository(),
+    )
+
+    for candidate in candidates:
+        company = company_repository.get_by_id(candidate.company_id)
+        result = service.sync_company(company)
+        print(
+            f"{candidate.rank}. {candidate.name}: "
+            f"{result.releases_added} releases, {result.documents_added} report PDFs added"
+        )
 
 
 def _cmd_backtest(periods: int):
@@ -358,15 +421,36 @@ def main():
         help="Export prompts for the agent shortlist without calling a model",
     )
     export_parser.add_argument("--output-dir", required=True, type=Path)
+    export_parser.add_argument(
+        "--max-candidates",
+        type=_positive_int,
+        default=5,
+        help="Number of top eligible companies to export (default: 5)",
+    )
     analyze_parser = subparsers.add_parser(
         "analyze-shortlist",
-        help="Call OpenAI for a bounded shortlist subset and persist validated results",
+        help="Call a model provider for a bounded shortlist subset and persist validated results",
     )
     analyze_parser.add_argument("--max-candidates", required=True, type=_positive_int)
+    analyze_parser.add_argument(
+        "--provider",
+        choices=("openai", "deepseek"),
+        default="openai",
+    )
     analyze_parser.add_argument("--model")
     analyze_parser.add_argument(
         "--reasoning-effort",
         choices=("low", "medium", "high", "xhigh", "max"),
+    )
+    evidence_parser = subparsers.add_parser(
+        "sync-agent-evidence",
+        help="Backfill MFN release text and report PDFs for a bounded shortlist subset",
+    )
+    evidence_parser.add_argument(
+        "--max-candidates",
+        type=_positive_int,
+        default=5,
+        help="Number of top eligible companies to sync (default: 5)",
     )
     backtest_parser = subparsers.add_parser(
         "backtest",
@@ -392,9 +476,16 @@ def main():
     elif args.command == "import-watchlist":
         _cmd_import_watchlist(args.csv)
     elif args.command == "export-agent-prompts":
-        _cmd_export_agent_prompts(args.output_dir)
+        _cmd_export_agent_prompts(args.output_dir, args.max_candidates)
     elif args.command == "analyze-shortlist":
-        _cmd_analyze_shortlist(args.max_candidates, args.model, args.reasoning_effort)
+        _cmd_analyze_shortlist(
+            args.max_candidates,
+            args.provider,
+            args.model,
+            args.reasoning_effort,
+        )
+    elif args.command == "sync-agent-evidence":
+        _cmd_sync_agent_evidence(args.max_candidates)
     elif args.command == "backtest":
         _cmd_backtest(args.periods)
     else:
