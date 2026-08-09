@@ -2,6 +2,7 @@ import json
 import math
 
 from kncompanyscraper.analysis.agent.output_schema import (
+    EvidenceCitation,
     ManagementClaimAssessment,
     STOCK_ANALYSIS_OUTPUT_CONTRACT,
     StockAnalysisResult,
@@ -28,6 +29,9 @@ def parse_stock_analysis_result(raw_response: str) -> StockAnalysisResult:
     result_data["management_credibility_ledger"] = [
         ManagementClaimAssessment(**assessment)
         for assessment in payload["management_credibility_ledger"]
+    ]
+    result_data["citations"] = [
+        EvidenceCitation(**citation) for citation in payload["citations"]
     ]
     return StockAnalysisResult(**result_data)
 

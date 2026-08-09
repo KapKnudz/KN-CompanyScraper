@@ -5,6 +5,7 @@ from datetime import date
 from typing import Literal
 
 from kncompanyscraper.analysis.base.skill import Skill
+from kncompanyscraper.analysis.valuation.forward_dcf_policy import ForwardDcfScenarioPolicy
 from kncompanyscraper.analysis.valuation.dcf_assumption_policy import (
     DcfAssumptionPolicy,
 )
@@ -27,6 +28,7 @@ class ImpliedExpectation:
     status: ExpectationStatus
     lower_bound: float
     upper_bound: float
+    source_id: str | None = None
     implied_value: float | None = None
     modeled_price: float | None = None
     price_difference: float | None = None
@@ -48,8 +50,22 @@ class ReverseDcfAnalysis:
     assumption_sources: dict[str, str] | None = None
     baseline_valuation: DcfValue | None = None
     implied_expectations: dict[str, ImpliedExpectation] | None = None
+    forward_policy_version: str | None = None
+    forward_scenarios: dict[str, "ForwardDcfScenario"] | None = None
     missing_information: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ForwardDcfScenario:
+    label: str
+    source_id: str
+    assumptions: DcfAssumptions
+    assumption_sources: dict[str, str]
+    valuation: DcfValue
+    value_per_share: float
+    expected_return: float
+    terminal_value_share: float
 
 
 class ReverseDcfSkill(Skill):
@@ -67,12 +83,14 @@ class ReverseDcfSkill(Skill):
         financial_repository,
         *,
         policy: DcfAssumptionPolicy | None = None,
+        forward_policy: ForwardDcfScenarioPolicy | None = None,
         engine: ReverseDcfEngine | None = None,
         as_of: date | None = None,
     ):
         self.valuation_repository = valuation_repository
         self.financial_repository = financial_repository
         self.policy = policy or DcfAssumptionPolicy()
+        self.forward_policy = forward_policy or ForwardDcfScenarioPolicy()
         self.engine = engine or ReverseDcfEngine()
         self.as_of = as_of or date.today()
 
@@ -175,6 +193,34 @@ class ReverseDcfSkill(Skill):
             branch_id=company.branch_id,
         )
         baseline = self.engine.value(inputs)
+        forward_decision = self.forward_policy.build(
+            decision.assumptions,
+            latest_annual,
+            history,
+        )
+        forward_scenarios = {}
+        forward_warnings = []
+        for scenario in forward_decision.scenarios:
+            valuation = self.engine.value(replace(inputs, assumptions=scenario.assumptions))
+            terminal_value_share = (
+                valuation.discounted_terminal_value / valuation.enterprise_value
+                if valuation.enterprise_value
+                else 0.0
+            )
+            forward_scenarios[scenario.label] = ForwardDcfScenario(
+                label=scenario.label,
+                source_id=f"valuation:forward_dcf:{scenario.label}",
+                assumptions=scenario.assumptions,
+                assumption_sources=scenario.assumption_sources,
+                valuation=valuation,
+                value_per_share=round(valuation.value_per_share, 6),
+                expected_return=round(valuation.value_per_share / price.close - 1, 6),
+                terminal_value_share=round(terminal_value_share, 6),
+            )
+            if terminal_value_share > 0.75:
+                forward_warnings.append(
+                    f"{scenario.label} scenario terminal value exceeds 75% of enterprise value"
+                )
         expectations = {
             assumption: self._solve(inputs, assumption, bounds)
             for assumption, bounds in decision.solve_bounds.items()
@@ -190,7 +236,14 @@ class ReverseDcfSkill(Skill):
             assumption_sources=decision.assumption_sources,
             baseline_valuation=baseline,
             implied_expectations=expectations,
-            warnings=decision.warnings + self._LIMITATIONS,
+            forward_policy_version=forward_decision.policy_version,
+            forward_scenarios=forward_scenarios,
+            warnings=(
+                decision.warnings
+                + forward_decision.warnings
+                + tuple(forward_warnings)
+                + self._LIMITATIONS
+            ),
         )
 
     def _solve(
@@ -212,6 +265,7 @@ class ReverseDcfSkill(Skill):
                 status="outside_bounds",
                 lower_bound=lower,
                 upper_bound=upper,
+                source_id=f"valuation:reverse_dcf:{assumption}",
                 modeled_price_range=tuple(sorted((lower_price, upper_price))),
                 reason=str(exc),
             )
@@ -220,6 +274,7 @@ class ReverseDcfSkill(Skill):
             status="solved",
             lower_bound=lower,
             upper_bound=upper,
+            source_id=f"valuation:reverse_dcf:{assumption}",
             implied_value=result.implied_assumption,
             modeled_price=result.modeled_price,
             price_difference=result.price_difference,

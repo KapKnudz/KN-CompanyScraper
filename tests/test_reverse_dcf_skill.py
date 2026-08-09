@@ -87,6 +87,16 @@ def test_skill_wires_policy_and_all_three_solvers_into_analysis_result():
     for expectation in result.implied_expectations.values():
         assert expectation.status == "solved"
         assert expectation.price_difference == pytest.approx(0.0, abs=1e-6)
+        assert expectation.source_id.startswith("valuation:reverse_dcf:")
+    assert result.forward_policy_version == "forward-dcf-scenarios-v1"
+    assert set(result.forward_scenarios) == {"bear", "base", "bull"}
+    for scenario in result.forward_scenarios.values():
+        assert scenario.source_id == f"valuation:forward_dcf:{scenario.label}"
+        assert scenario.expected_return == pytest.approx(
+            scenario.valuation.value_per_share / price.close - 1
+        )
+        assert scenario.value_per_share == pytest.approx(scenario.valuation.value_per_share)
+        assert scenario.assumptions.net_reinvestment_rate >= 0
 
 
 @pytest.mark.parametrize(

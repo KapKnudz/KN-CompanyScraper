@@ -18,8 +18,18 @@ class AgentAnalysisService:
                     candidate,
                     created_by=response.model,
                     metadata={
-                        "openai_response_id": response.response_id,
+                        "model_response_id": response.response_id,
                         "usage": response.usage,
+                        "policy_name": prompt.policy_name,
+                        "policy_version": prompt.policy_version,
+                        "policy_sha256": prompt.policy_sha256,
+                        "candidate_rank": candidate.rank,
+                        "evidence_as_of": candidate.research_evidence.get("as_of"),
+                        "evidence_source_ids": [
+                            source["source_id"]
+                            for key in ("documents", "insider_transactions")
+                            for source in candidate.research_evidence.get(key, [])
+                        ],
                     },
                 )
             )

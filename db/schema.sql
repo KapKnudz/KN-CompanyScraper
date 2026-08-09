@@ -445,6 +445,44 @@ ALTER SEQUENCE public.ranking_runs_id_seq OWNED BY public.ranking_runs.id;
 
 
 --
+-- Name: research_documents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.research_documents (
+    id integer NOT NULL,
+    company_id integer NOT NULL,
+    document_type text NOT NULL,
+    title text NOT NULL,
+    url text NOT NULL,
+    published_at timestamp with time zone,
+    document_text text NOT NULL,
+    source_release_url text,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: research_documents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.research_documents_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: research_documents_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.research_documents_id_seq OWNED BY public.research_documents.id;
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -621,6 +659,13 @@ ALTER TABLE ONLY public.ranking_runs ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: research_documents id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.research_documents ALTER COLUMN id SET DEFAULT nextval('public.research_documents_id_seq'::regclass);
+
+
+--
 -- Name: scrape_runs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -768,6 +813,22 @@ ALTER TABLE ONLY public.news_releases
 
 ALTER TABLE ONLY public.ranking_runs
     ADD CONSTRAINT ranking_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: research_documents research_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.research_documents
+    ADD CONSTRAINT research_documents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: research_documents research_documents_url_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.research_documents
+    ADD CONSTRAINT research_documents_url_key UNIQUE (url);
 
 
 --
@@ -930,6 +991,13 @@ CREATE INDEX idx_news_releases_slug ON public.news_releases USING btree (slug);
 
 
 --
+-- Name: idx_research_documents_company_published; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_research_documents_company_published ON public.research_documents USING btree (company_id, published_at DESC);
+
+
+--
 -- Name: idx_scrape_runs_started_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1060,6 +1128,14 @@ ALTER TABLE ONLY public.news_releases
 
 
 --
+-- Name: research_documents research_documents_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.research_documents
+    ADD CONSTRAINT research_documents_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
 -- Name: stock_prices stock_prices_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1107,4 +1183,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260807143000'),
     ('20260808120000'),
     ('20260808143000'),
-    ('20260809120000');
+    ('20260809120000'),
+    ('20260809143000');

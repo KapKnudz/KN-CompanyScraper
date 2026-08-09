@@ -159,6 +159,36 @@ class ValuationRepository:
             currency=row["currency"],
         )
 
+    def get_stock_price_on_or_after(
+        self,
+        company_id: int,
+        target_date: date,
+        max_age_days: int | None = None,
+    ) -> StockPrice | None:
+        """Return the closest stored stock price on or after *target_date*."""
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT price_date, close, currency
+                    FROM stock_prices
+                    WHERE company_id = %s AND price_date >= %s
+                    ORDER BY price_date
+                    LIMIT 1
+                    """,
+                    (company_id, target_date),
+                )
+                row = cur.fetchone()
+        if row is None:
+            return None
+        if max_age_days is not None and (row["price_date"] - target_date).days > max_age_days:
+            return None
+        return StockPrice(
+            date=row["price_date"],
+            close=float(row["close"]),
+            currency=row["currency"],
+        )
+
     def get_snapshot_history_as_of(
         self,
         company_id: int,

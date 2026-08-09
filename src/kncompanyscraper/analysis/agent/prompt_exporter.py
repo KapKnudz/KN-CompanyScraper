@@ -22,6 +22,9 @@ class AgentPromptExporter:
                     {
                         "company_id": candidate.company_id,
                         "ticker": candidate.ticker,
+                        "policy_name": prompt.policy_name,
+                        "policy_version": prompt.policy_version,
+                        "policy_sha256": prompt.policy_sha256,
                         "system": prompt.system,
                         "user": prompt.user,
                     },

@@ -9,7 +9,13 @@ from tests.test_agent_result_boundary import valid_response
 
 def test_agent_analysis_service_routes_model_output_through_persistence_boundary():
     candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
-    prompt = AgentPrompt(system="policy", user="candidate")
+    prompt = AgentPrompt(
+        system="policy",
+        user="candidate",
+        policy_name="test-policy",
+        policy_version="2.0.0",
+        policy_sha256="abc123",
+    )
     prompt_builder = MagicMock()
     prompt_builder.build.return_value = prompt
     model_adapter = MagicMock()
@@ -31,7 +37,13 @@ def test_agent_analysis_service_routes_model_output_through_persistence_boundary
         candidate,
         created_by="gpt-5.6-sol",
         metadata={
-            "openai_response_id": "resp_123",
+            "model_response_id": "resp_123",
             "usage": {"total_tokens": 150},
+            "policy_name": "test-policy",
+            "policy_version": "2.0.0",
+            "policy_sha256": "abc123",
+            "candidate_rank": 1,
+            "evidence_as_of": None,
+            "evidence_source_ids": [],
         },
     )

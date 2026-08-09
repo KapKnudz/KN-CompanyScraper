@@ -23,6 +23,13 @@ class ManagementClaimAssessment:
     expected_timing: str | None
     observed_outcome: str | None
     result: ClaimResult
+    source_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class EvidenceCitation:
+    source_id: str
+    claim: str
 
 
 @dataclass
@@ -51,6 +58,7 @@ class StockAnalysisResult:
     disconfirming_evidence: list[str] = field(default_factory=list)
     thesis_break_conditions: list[str] = field(default_factory=list)
     missing_information: list[str] = field(default_factory=list)
+    citations: list[EvidenceCitation] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -93,6 +101,7 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
             "expected_timing": "string | null",
             "observed_outcome": "string | null",
             "result": "kept | delayed | missed | changed | unverifiable",
+            "source_ids": ["string"],
         }
     ],
     "ownership_and_flow_assessment": "string",
@@ -101,6 +110,12 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     "disconfirming_evidence": ["string"],
     "thesis_break_conditions": ["string"],
     "missing_information": ["string"],
+    "citations": [
+        {
+            "source_id": "string",
+            "claim": "string",
+        }
+    ],
 }
 
 

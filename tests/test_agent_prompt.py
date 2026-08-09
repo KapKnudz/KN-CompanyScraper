@@ -1,5 +1,8 @@
+import hashlib
+
 from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
 from kncompanyscraper.analysis.agent.output_schema import (
+    EvidenceCitation,
     ManagementClaimAssessment,
     StockAnalysisResult,
     ValuationScenario,
@@ -35,16 +38,46 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
                 missing_information=("latest stock price unavailable",),
             ),
         },
+        research_evidence={
+            "as_of": "2026-08-09",
+            "documents": [
+                {
+                    "source_id": "news:21",
+                    "title": "Interim report Q2 2026",
+                    "text": "Management expects continued growth.",
+                }
+            ],
+        },
     )
 
     prompt = AgentPromptBuilder().build(candidate)
 
     assert "Three return engines" in prompt.system
     assert "Follow the steps in order" in prompt.system
+    assert prompt.policy_name == "nordic-case-investing-policy"
+    assert prompt.policy_version == "1.5.0"
+    assert prompt.policy_sha256 == hashlib.sha256(
+        (
+            AgentPromptBuilder._read_resource("resources/analyst_policy.md")
+            + "\n\n"
+            + AgentPromptBuilder._read_resource("resources/analysis_workflow.md")
+        ).encode("utf-8")
+    ).hexdigest()
+    assert f"- Name: `{prompt.policy_name}`" in prompt.system
+    assert f"- Version: `{prompt.policy_version}`" in prompt.system
+    assert f"- SHA-256: `{prompt.policy_sha256}`" in prompt.system
+    assert "full_results.reverse_dcf.forward_scenarios" in prompt.system
+    assert "Any valuation or upside number" in prompt.system
+    assert "not probabilities" in prompt.system
+    assert "does not mean the company requires no reinvestment" in prompt.system
+    assert "normalize a resolvable path" in prompt.system
+    assert "Never invent or abbreviate a path" in prompt.system
+    assert "A company buyback is capital allocation" in prompt.system
     assert '"company_id": 42' in prompt.user
     assert '"operating_margin": 0.08' in prompt.user
     assert '"policy_version": "reverse-dcf-v1"' in prompt.user
     assert '"latest stock price unavailable"' in prompt.user
+    assert '"source_id": "news:21"' in prompt.user
     assert '"verdict": "reject | watch | latent_case | activated_case"' in prompt.user
 
 
@@ -71,6 +104,13 @@ def test_stock_analysis_result_serializes_nested_evidence():
                 expected_timing="2026-H2",
                 observed_outcome=None,
                 result="unverifiable",
+                source_ids=["news:21"],
+            )
+        ],
+        citations=[
+            EvidenceCitation(
+                source_id="news:21",
+                claim="Management expects continued growth.",
             )
         ],
     )
@@ -80,3 +120,4 @@ def test_stock_analysis_result_serializes_nested_evidence():
     assert serialized["verdict"] == "latent_case"
     assert serialized["valuation_scenarios"][0]["expected_return"] == 0.25
     assert serialized["management_credibility_ledger"][0]["result"] == "unverifiable"
+    assert serialized["citations"][0]["source_id"] == "news:21"
