@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from psycopg2.extras import Json, RealDictCursor
 
@@ -61,6 +61,40 @@ class FinancialRepository:
     def get_latest_report(self, company_id: int, period_type: str = "year") -> Report | None:
         reports = self._get_reports(company_id, period_type, limit=1)
         return reports[0] if reports else None
+
+    def get_latest_report_as_of(
+        self,
+        company_id: int,
+        period_type: str = "year",
+        as_of: date | None = None,
+        availability_lag_days: int = 0,
+    ) -> Report | None:
+        """Return the latest report estimated to be public by *as_of*."""
+        if as_of is None:
+            return self.get_latest_report(company_id, period_type)
+        reports = self.get_reports_as_of(
+            company_id,
+            period_type,
+            as_of,
+            availability_lag_days=availability_lag_days,
+        )
+        return reports[0] if reports else None
+
+    def get_reports_as_of(
+        self,
+        company_id: int,
+        period_type: str,
+        as_of: date,
+        availability_lag_days: int = 0,
+    ) -> list[Report]:
+        """Return reports whose period end plus the configured lag is available."""
+        reports = self._get_reports(company_id, period_type)
+        return [
+            report
+            for report in reports
+            if report.period_end
+            and report.period_end + timedelta(days=availability_lag_days) <= as_of
+        ]
 
     def get_historical_reports(self, company_id: int, period_type: str = "year") -> list[Report]:
         reports = self._get_reports(company_id, period_type)

@@ -89,3 +89,25 @@ def test_latest_report_is_loaded_by_local_company_id():
     assert report.ebitda is None
     assert report.gross_income == 40
     assert report.operating_cash_flow == 18
+
+
+def test_latest_report_as_of_applies_publication_lag():
+    repository = FinancialRepository()
+    reports = [make_report(2025), make_report(2024)]
+
+    with patch.object(repository, "_get_reports", return_value=reports):
+        before_release = repository.get_latest_report_as_of(
+            7,
+            "year",
+            date(2026, 2, 28),
+            availability_lag_days=90,
+        )
+        after_release = repository.get_latest_report_as_of(
+            7,
+            "year",
+            date(2026, 3, 31),
+            availability_lag_days=90,
+        )
+
+    assert before_release.year == 2024
+    assert after_release.year == 2025

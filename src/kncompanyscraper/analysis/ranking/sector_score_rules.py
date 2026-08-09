@@ -1,9 +1,27 @@
+from datetime import date
+
 from kncompanyscraper.analysis.ranking.score_rules import (
     _growth_score,
     _inverted_linear_score,
     _linear_score,
 )
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
+
+
+def _cagr_from_snapshot_history(
+    history: list[tuple[date, float]],
+    min_span_days: int = 365,
+) -> float | None:
+    """CAGR from earliest to latest observation, requiring ≥2 points spanning ≥ *min_span_days*."""
+    if len(history) < 2:
+        return None
+    earliest_date, earliest_value = history[0]
+    latest_date, latest_value = history[-1]
+    span_days = (latest_date - earliest_date).days
+    if span_days < min_span_days or earliest_value <= 0:
+        return None
+    years = span_days / 365.25
+    return (latest_value / earliest_value) ** (1.0 / years) - 1.0
 
 
 def ranking_model_for_branch(branch_id: int | None) -> str:
@@ -32,12 +50,27 @@ def _result(scored, positives=None, negatives=None, missing=None, flags=None):
     }
 
 
-def score_property(financial, valuation, kpis: dict[int, float | None]):
-    occupancy = kpis.get(KpiIds.PROPERTY_OCCUPANCY)
-    interest_coverage = kpis.get(KpiIds.PROPERTY_INTEREST_COVERAGE)
-    ltv = kpis.get(KpiIds.PROPERTY_LTV)
-    nav_discount = kpis.get(KpiIds.PROPERTY_NAV_DISCOUNT)
-    price_to_income = kpis.get(KpiIds.PROPERTY_PRICE_TO_INCOME)
+def score_property(financial, valuation, sector_data: dict):
+    """Score a property company.
+
+    *sector_data* is a dict with keys ``"current"`` (kpi_id → value) and
+    ``"histories"`` (kpi_id → [(date, value), …]).  When dated snapshot
+    history for NOI/share or property-income/share spans ≥1 year, its
+    CAGR replaces financial revenue growth as the growth metric.
+    """
+    current = sector_data.get("current", {}) if isinstance(sector_data, dict) else sector_data
+    histories = sector_data.get("histories", {}) if isinstance(sector_data, dict) else {}
+
+    # Backward compatibility: if called the old way (plain dict), treat it as current values.
+    if not isinstance(sector_data, dict) or "current" not in sector_data:
+        current = sector_data
+        histories = {}
+
+    occupancy = current.get(KpiIds.PROPERTY_OCCUPANCY)
+    interest_coverage = current.get(KpiIds.PROPERTY_INTEREST_COVERAGE)
+    ltv = current.get(KpiIds.PROPERTY_LTV)
+    nav_discount = current.get(KpiIds.PROPERTY_NAV_DISCOUNT)
+    price_to_income = current.get(KpiIds.PROPERTY_PRICE_TO_INCOME)
 
     quality_missing = [] if occupancy is not None else ["Property occupancy not available"]
     quality_positives = []
@@ -57,40 +90,66 @@ def score_property(financial, valuation, kpis: dict[int, float | None]):
         quality_flags,
     )
 
-    revenue_growth = None
-    if financial:
-        revenue_growth = (
-            financial.revenue_per_share_growth
-            if financial.revenue_per_share_growth is not None
-            else financial.revenue_growth
-        )
-    growth_missing = [] if revenue_growth is not None else ["Property revenue growth not available"]
-    growth_positives = []
-    growth_negatives = []
-    if revenue_growth is not None:
-        years = getattr(financial, "revenue_growth_years", 1)
-        period = f"{years}y CAGR" if years > 1 else "YoY"
-        label = (
-            "Property revenue/share growth"
-            if financial.revenue_per_share_growth is not None
-            else "Property revenue growth"
-        )
-        if revenue_growth >= 0.10:
+    # ── Growth: prefer NOI/share CAGR from dated snapshots ──────────
+    noi_share_history = histories.get(KpiIds.PROPERTY_NOI_PER_SHARE, [])
+    income_share_history = histories.get(KpiIds.PROPERTY_INCOME_PER_SHARE, [])
+    snapshot_growth = _cagr_from_snapshot_history(noi_share_history)
+    growth_source = "NOI/share"
+    if snapshot_growth is None:
+        snapshot_growth = _cagr_from_snapshot_history(income_share_history)
+        growth_source = "property income/share"
+
+    growth_missing: list[str] = []
+    growth_positives: list[str] = []
+    growth_negatives: list[str] = []
+    growth_flags: list[str] = []
+
+    if snapshot_growth is not None:
+        # Use the KPI-based growth
+        if snapshot_growth >= 0.10:
             growth_positives.append(
-                f"{label} {revenue_growth:.0%} ({period}) — strong"
+                f"Property {growth_source} growth {snapshot_growth:.0%} (CAGR) — strong"
             )
-        elif revenue_growth < 0:
+        elif snapshot_growth < 0:
             growth_negatives.append(
-                f"{label} {revenue_growth:.0%} ({period}) — declining"
+                f"Property {growth_source} growth {snapshot_growth:.0%} (CAGR) — declining"
             )
-    growth_flags = []
+    else:
+        # Fall back to financial revenue growth
+        revenue_growth = None
+        if financial:
+            revenue_growth = (
+                financial.revenue_per_share_growth
+                if financial.revenue_per_share_growth is not None
+                else financial.revenue_growth
+            )
+        if revenue_growth is not None:
+            snapshot_growth = revenue_growth
+            years = getattr(financial, "revenue_growth_years", 1)
+            period = f"{years}y CAGR" if years > 1 else "YoY"
+            label = (
+                "Property revenue/share growth"
+                if financial.revenue_per_share_growth is not None
+                else "Property revenue growth"
+            )
+            if revenue_growth >= 0.10:
+                growth_positives.append(
+                    f"{label} {revenue_growth:.0%} ({period}) — strong"
+                )
+            elif revenue_growth < 0:
+                growth_negatives.append(
+                    f"{label} {revenue_growth:.0%} ({period}) — declining"
+                )
+        else:
+            growth_missing.append("Property revenue growth not available")
+
     if financial and financial.share_dilution:
         growth_negatives.append(
             f"Share count growth {financial.share_count_growth:.0%} — dilution"
         )
         growth_flags.append("share_dilution")
     growth = _result(
-        [(_growth_score(revenue_growth, 0.15), 1.0)],
+        [(_growth_score(snapshot_growth, 0.15), 1.0)],
         growth_positives,
         growth_negatives,
         growth_missing,
@@ -167,7 +226,12 @@ def score_property(financial, valuation, kpis: dict[int, float | None]):
     return quality, growth, valuation_result, balance
 
 
-def score_bank(financial, valuation, kpis: dict[int, float | None]):
+def score_bank(financial, valuation, sector_data: dict):
+    # Unpack the new {current, histories} structure, falling back for plain-dict callers.
+    kpis = sector_data.get("current", {}) if isinstance(sector_data, dict) else sector_data
+    if not isinstance(sector_data, dict) or "current" not in sector_data:
+        kpis = sector_data or {}
+
     roe = financial.roe if financial else None
     cost_income = kpis.get(KpiIds.BANK_COST_INCOME)
     credit_losses = kpis.get(KpiIds.BANK_CREDIT_LOSSES)

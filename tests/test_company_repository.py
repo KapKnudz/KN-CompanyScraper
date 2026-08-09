@@ -4,6 +4,25 @@ from kncompanyscraper.repositories.company_repository import CompanyRepository
 from kncompanyscraper.watchlist_import import WatchlistCompany
 
 
+def test_backtest_companies_include_inactive_names_with_price_history():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = []
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.cursor.return_value.__enter__.return_value = cursor
+
+    with patch(
+        "kncompanyscraper.repositories.company_repository.get_connection",
+        return_value=connection,
+    ):
+        CompanyRepository().get_backtest_companies()
+
+    sql = cursor.execute.call_args.args[0]
+    assert "EXISTS" in sql
+    assert "stock_prices" in sql
+    assert "watchlist" not in sql
+
+
 def test_set_borsdata_identity_updates_id_and_listing_currency():
     cursor = MagicMock()
     connection = MagicMock()

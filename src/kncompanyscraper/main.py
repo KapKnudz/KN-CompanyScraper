@@ -1,6 +1,7 @@
 import argparse
 import sys
 from pathlib import Path
+from statistics import mean
 
 from kncompanyscraper import scheduler
 from kncompanyscraper.logger import get_logger
@@ -21,6 +22,7 @@ def _build_watchlist_analysis_service():
     from kncompanyscraper.analysis.base.analysisengine import AnalysisEngine
     from kncompanyscraper.analysis.ranking.ranking_engine import RankingEngine
     from kncompanyscraper.analysis.watchlist.watchlist_analysis_service import WatchlistAnalysisService
+    from kncompanyscraper.repositories.ranking_repository import RankingRepository
     company_repo = CompanyRepository()
     financial_repo = FinancialRepository()
     insider_repo = InsiderRepository()
@@ -41,13 +43,15 @@ def _build_watchlist_analysis_service():
             fundamental_kpi_skill,
         ]
     )
-    ranking_engine = RankingEngine()
+    ranking_engine = RankingEngine(ranking_repository=RankingRepository())
 
     return WatchlistAnalysisService(company_repo, analysis_engine, ranking_engine)
 
 
 def _cmd_rank_watchlist():
     """Run the deterministic watchlist ranking from persisted PostgreSQL data."""
+    from kncompanyscraper.analysis.ranking.ranking_engine import RankingEngine
+
     ranking = _build_watchlist_analysis_service().rank_watchlist()
 
     if not ranking.scores:
@@ -86,6 +90,7 @@ def _cmd_rank_watchlist():
     print(f"---")
     print(f"Total companies ranked: {len(ranking.scores)}")
     print(f"Agent shortlist size:   {len(shortlist)}")
+    print(f"Ranking run persisted (model version: {RankingEngine.RANKING_MODEL_VERSION})")
 
 
 def _cmd_sync_borsdata():
@@ -218,6 +223,109 @@ def _cmd_analyze_shortlist(max_candidates: int, model: str | None, reasoning_eff
     print(f"Persisted {len(persisted)} stock analyses.")
 
 
+def _cmd_backtest(periods: int):
+    """Run backtest against historical data."""
+    from kncompanyscraper.analysis.backtesting.backtest_engine import BacktestEngine
+    from kncompanyscraper.repositories.company_repository import CompanyRepository
+    from kncompanyscraper.repositories.financial_repository import FinancialRepository
+    from kncompanyscraper.repositories.valuation_repository import ValuationRepository
+
+    engine = BacktestEngine(
+        CompanyRepository(),
+        FinancialRepository(),
+        ValuationRepository(),
+    )
+    results = engine.run(num_periods=periods)
+
+    if not results:
+        print("No backtest results available (insufficient historical data).")
+        return
+
+    # Aggregate across periods
+    all_top_6m = [r.top_decile_spread_6m for r in results if r.top_decile_spread_6m is not None]
+    all_top_12m = [r.top_decile_spread_12m for r in results if r.top_decile_spread_12m is not None]
+
+    print(f"# Backtest Results: {len(results)} periods\n")
+
+    # Decile performance table
+    print("## Average Decile Performance")
+    print(
+        f"{'Decile':<8} {'Avg 6m':>8} {'Avg 12m':>8} "
+        f"{'Hit 6m':>8} {'Hit 12m':>8} {'N 6m':>6} {'N 12m':>6}"
+    )
+    print("-" * 66)
+    for decile_num in range(1, 11):
+        decile_results = []
+        for r in results:
+            for d in r.deciles:
+                if d.decile == decile_num:
+                    decile_results.append(d)
+                    break
+        if not decile_results:
+            continue
+        avg_6m = _weighted_decile_mean(decile_results, "avg_6m_return", "count_6m")
+        avg_12m = _weighted_decile_mean(decile_results, "avg_12m_return", "count_12m")
+        hit_6m = _weighted_decile_mean(decile_results, "hit_rate_6m", "count_6m")
+        hit_12m = _weighted_decile_mean(decile_results, "hit_rate_12m", "count_12m")
+        count_6m = sum(d.count_6m for d in decile_results)
+        count_12m = sum(d.count_12m for d in decile_results)
+        print(
+            f"{decile_num:<8} "
+            f"{_format_percent(avg_6m, 1):>8} "
+            f"{_format_percent(avg_12m, 1):>8} "
+            f"{_format_percent(hit_6m, 0):>8} "
+            f"{_format_percent(hit_12m, 0):>8} "
+            f"{count_6m:>6} {count_12m:>6}"
+        )
+
+    if not any(result.deciles for result in results):
+        print("At least 10 eligible companies are required for decile statistics.")
+
+    # Top-decile spread
+    print(f"\n## Top-Bottom Spread")
+    if all_top_6m:
+        print(f"6-month spread:  {mean(all_top_6m):.1%} avg")
+    if all_top_12m:
+        print(f"12-month spread: {mean(all_top_12m):.1%} avg")
+
+    # Category correlations
+    print(f"\n## Category Correlation with 12-month Returns")
+    cat_corrs: dict[str, list[float]] = {}
+    for r in results:
+        for c in r.correlations:
+            if c.correlation_12m is not None:
+                cat_corrs.setdefault(c.category, []).append(c.correlation_12m)
+    for category, corrs in cat_corrs.items():
+        label = category.replace("_score", "").replace("_", " ").title()
+        print(f"  {label:<20} {mean(corrs):>+.3f}")
+
+    print(f"\n## Period Details")
+    for r in results:
+        spread_str = ""
+        if r.top_decile_spread_6m is not None:
+            spread_str += f" 6m-spread={r.top_decile_spread_6m:.1%}"
+        if r.top_decile_spread_12m is not None:
+            spread_str += f" 12m-spread={r.top_decile_spread_12m:.1%}"
+        print(f"  {r.observation_date}: {r.eligible_count} eligible{spread_str}")
+
+
+def _weighted_decile_mean(deciles, value_field: str, count_field: str) -> float | None:
+    observations = [
+        (getattr(decile, value_field), getattr(decile, count_field))
+        for decile in deciles
+        if getattr(decile, value_field) is not None
+        and getattr(decile, count_field) > 0
+    ]
+    total_count = sum(count for _, count in observations)
+    if total_count == 0:
+        return None
+    return sum(value * count for value, count in observations) / total_count
+
+
+def _format_percent(value: float | None, decimals: int) -> str:
+    return f"{value:.{decimals}%}" if value is not None else "—"
+
+
 def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed < 1:
@@ -256,6 +364,16 @@ def main():
         "--reasoning-effort",
         choices=("low", "medium", "high", "xhigh", "max"),
     )
+    backtest_parser = subparsers.add_parser(
+        "backtest",
+        help="Backtest ranking against subsequent returns",
+    )
+    backtest_parser.add_argument(
+        "--periods",
+        type=_positive_int,
+        default=12,
+        help="Number of month-end periods to backtest (default: 12)",
+    )
 
     args = parser.parse_args()
 
@@ -273,6 +391,8 @@ def main():
         _cmd_export_agent_prompts(args.output_dir)
     elif args.command == "analyze-shortlist":
         _cmd_analyze_shortlist(args.max_candidates, args.model, args.reasoning_effort)
+    elif args.command == "backtest":
+        _cmd_backtest(args.periods)
     else:
         # Default: start the scheduler
         logger.info("Starting KN-CompanyScraper")

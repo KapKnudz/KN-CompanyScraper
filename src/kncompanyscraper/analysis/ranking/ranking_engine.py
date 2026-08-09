@@ -13,10 +13,15 @@ from kncompanyscraper.analysis.ranking.sector_score_rules import (
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
 
 
-def _rank_eligibility(ranking_model, financial, valuation, sector_kpis):
+def _rank_eligibility(ranking_model, financial, valuation, sector_data):
     reasons = []
     if financial is None:
         reasons.append("financial data not available")
+
+    # Unpack the new {current, histories} structure, falling back for plain-dict callers.
+    sector_kpis = sector_data.get("current", {}) if isinstance(sector_data, dict) else sector_data
+    if not isinstance(sector_data, dict) or "current" not in sector_data:
+        sector_kpis = sector_data or {}
 
     if ranking_model == "property":
         required = {
@@ -124,6 +129,11 @@ def _compute_candidate_reason(quality: dict, growth: dict, val: dict, balance: d
 
 class RankingEngine:
 
+    RANKING_MODEL_VERSION = "2026-08-09"
+
+    def __init__(self, ranking_repository=None):
+        self.ranking_repository = ranking_repository
+
     def rank(self, companies: list, results_by_company: dict[int, dict]) -> WatchlistRanking:
         scores: list[CompanyScore] = []
 
@@ -214,4 +224,21 @@ class RankingEngine:
             scores.append(cs)
 
         scores.sort(key=lambda s: (s.rank_eligible, s.total_score), reverse=True)
+
+        if self.ranking_repository is not None:
+            eligible_count = sum(1 for s in scores if s.rank_eligible)
+            self.ranking_repository.save_ranking_run(
+                model_version=self.RANKING_MODEL_VERSION,
+                company_count=len(scores),
+                eligible_count=eligible_count,
+                scores=[s.to_dict() for s in scores],
+                inputs_summary={
+                    "total_companies": len(companies),
+                    "eligible_count": eligible_count,
+                    "ranking_models_used": list(
+                        {s.ranking_model for s in scores}
+                    ),
+                },
+            )
+
         return WatchlistRanking(scores=scores)

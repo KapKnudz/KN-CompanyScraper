@@ -26,6 +26,27 @@ class CompanyScore:
     rank_eligible: bool = True
     eligibility_reasons: list[str] = field(default_factory=list)
 
+    def to_dict(self) -> dict:
+        return {
+            "company_id": self.company_id,
+            "ticker": self.ticker,
+            "name": self.name,
+            "quality_score": self.quality_score,
+            "growth_score": self.growth_score,
+            "valuation_score": self.valuation_score,
+            "balance_sheet_score": self.balance_sheet_score,
+            "total_score": self.total_score,
+            "positives": self.positives,
+            "negatives": self.negatives,
+            "missing_data": self.missing_data,
+            "flags": self.flags,
+            "data_quality": self.data_quality,
+            "candidate_reason": self.candidate_reason,
+            "ranking_model": self.ranking_model,
+            "rank_eligible": self.rank_eligible,
+            "eligibility_reasons": self.eligibility_reasons,
+        }
+
 
 @dataclass
 class WatchlistRanking:

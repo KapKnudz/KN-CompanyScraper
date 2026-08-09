@@ -189,6 +189,33 @@ class CompanyRepository:
 
                 return [Company(**row) for row in cur.fetchall()]
 
+    def get_backtest_companies(self) -> list[Company]:
+        """Return every stored company with price history, including inactive names."""
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT c.id,
+                           c.name,
+                           c.ticker,
+                           c.borsdata_id,
+                           c.mfn_slug,
+                           c.isin,
+                           c.currency,
+                           c.sector_id,
+                           c.branch_id,
+                           c.last_updated
+                    FROM companies c
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM stock_prices sp
+                        WHERE sp.company_id = c.id
+                    )
+                    ORDER BY c.name
+                    """
+                )
+                return [Company(**row) for row in cur.fetchall()]
+
     def set_borsdata_identity(
         self,
         company_id: int,

@@ -1,3 +1,5 @@
+from datetime import date
+
 from psycopg2.extras import RealDictCursor
 
 from kncompanyscraper.borsdata.kpi_history import KpiHistory
@@ -127,6 +129,108 @@ class ValuationRepository:
             currency=row["currency"],
         )
 
+    def get_stock_price_on_date(
+        self,
+        company_id: int,
+        target_date: date,
+        max_age_days: int | None = None,
+    ) -> StockPrice | None:
+        """Return the closest stock price on or before *target_date*."""
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT price_date, close, currency
+                    FROM stock_prices
+                    WHERE company_id = %s AND price_date <= %s
+                    ORDER BY price_date DESC
+                    LIMIT 1
+                    """,
+                    (company_id, target_date),
+                )
+                row = cur.fetchone()
+        if row is None:
+            return None
+        if max_age_days is not None and (target_date - row["price_date"]).days > max_age_days:
+            return None
+        return StockPrice(
+            date=row["price_date"],
+            close=float(row["close"]),
+            currency=row["currency"],
+        )
+
+    def get_snapshot_history_as_of(
+        self,
+        company_id: int,
+        kpi_ids: tuple[int, ...],
+        target_date: date,
+    ) -> dict[int, float | None]:
+        """Return the most recent snapshot value per KPI on or before *target_date*."""
+        if not kpi_ids:
+            return {}
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (kpi_id) kpi_id, value
+                    FROM kpi_snapshot_history
+                    WHERE company_id = %s AND kpi_id = ANY(%s)
+                      AND observation_date <= %s
+                    ORDER BY kpi_id, observation_date DESC
+                    """,
+                    (company_id, list(kpi_ids), target_date),
+                )
+                return {
+                    row["kpi_id"]: float(row["value"]) if row["value"] is not None else None
+                    for row in cur.fetchall()
+                }
+
+    def get_month_end_price_dates(
+        self,
+        company_id: int,
+        min_date: date | None = None,
+        max_date: date | None = None,
+    ) -> list[date]:
+        """Distinct month-end price dates for *company_id*, oldest → newest."""
+        query = """
+            SELECT MAX(price_date) AS price_date
+            FROM stock_prices
+            WHERE company_id = %s
+        """
+        params: list = [company_id]
+        if min_date is not None:
+            query += " AND price_date >= %s"
+            params.append(min_date)
+        if max_date is not None:
+            query += " AND price_date <= %s"
+            params.append(max_date)
+        query += " GROUP BY date_trunc('month', price_date) ORDER BY price_date"
+
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, tuple(params))
+                return [row[0] for row in cur.fetchall()]
+
+    def get_backtest_month_end_dates(
+        self,
+        min_date: date,
+        max_date: date,
+    ) -> list[date]:
+        """Return one final stored trading date for each calendar month."""
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT MAX(price_date) AS price_date
+                    FROM stock_prices
+                    WHERE price_date BETWEEN %s AND %s
+                    GROUP BY date_trunc('month', price_date)
+                    ORDER BY price_date
+                    """,
+                    (min_date, max_date),
+                )
+                return [row[0] for row in cur.fetchall()]
+
     def get_current(self, company_id: int) -> ValuationSnapshot:
         values = self._snapshot_values(company_id)
         return ValuationSnapshot(
@@ -155,6 +259,40 @@ class ValuationRepository:
             if kpi_id in allowed
         }
 
+    def get_snapshot_history(
+        self,
+        company_id: int,
+        kpi_ids: tuple[int, ...],
+    ) -> dict[int, list[tuple[date, float]]]:
+        """Return dated observations for *kpi_ids*, ordered oldest → newest.
+
+        Each value is a ``(observation_date, value)`` pair.  KPIs with no
+        history are omitted from the returned dict.
+        """
+        if not kpi_ids:
+            return {}
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT kpi_id, observation_date, value
+                    FROM kpi_snapshot_history
+                    WHERE company_id = %s AND kpi_id = ANY(%s)
+                    ORDER BY kpi_id, observation_date
+                    """,
+                    (company_id, list(kpi_ids)),
+                )
+                rows = cur.fetchall()
+
+        result: dict[int, list[tuple[date, float]]] = {}
+        for row in rows:
+            kpi_id = row["kpi_id"]
+            obs_date = row["observation_date"]
+            value = float(row["value"]) if row["value"] is not None else None
+            if value is not None:
+                result.setdefault(kpi_id, []).append((obs_date, value))
+        return result
+
     def get_general_fundamentals(self, company_id: int) -> dict[int, float | None]:
         allowed = set(KpiIds.GENERAL_FUNDAMENTAL_KPIS)
         return {
@@ -165,6 +303,17 @@ class ValuationRepository:
 
     def get_historical(self, company_id: int) -> tuple[list[float], list[float], list[float]]:
         return tuple(self._history(company_id, kpi_id) for kpi_id in self.HISTORICAL_KPIS)
+
+    def get_historical_as_of(
+        self,
+        company_id: int,
+        as_of: date,
+    ) -> tuple[list[float], list[float], list[float]]:
+        """Return annual KPI histories completed before the observation year."""
+        return tuple(
+            self._history(company_id, kpi_id, before_year=as_of.year)
+            for kpi_id in self.HISTORICAL_KPIS
+        )
 
     def _snapshot_values(self, company_id: int) -> dict[int, float | None]:
         with get_connection() as conn:
@@ -178,17 +327,24 @@ class ValuationRepository:
                     for row in cur.fetchall()
                 }
 
-    def _history(self, company_id: int, kpi_id: int) -> list[float]:
+    def _history(
+        self,
+        company_id: int,
+        kpi_id: int,
+        before_year: int | None = None,
+    ) -> list[float]:
+        query = """
+            SELECT value
+            FROM kpi_history
+            WHERE company_id = %s AND kpi_id = %s
+              AND period_type = 'year' AND price_type = 'mean'
+        """
+        params: list = [company_id, kpi_id]
+        if before_year is not None:
+            query += " AND year < %s"
+            params.append(before_year)
+        query += " ORDER BY year"
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT value
-                    FROM kpi_history
-                    WHERE company_id = %s AND kpi_id = %s
-                      AND period_type = 'year' AND price_type = 'mean'
-                    ORDER BY year
-                    """,
-                    (company_id, kpi_id),
-                )
+                cur.execute(query, tuple(params))
                 return [float(row[0]) for row in cur.fetchall()]

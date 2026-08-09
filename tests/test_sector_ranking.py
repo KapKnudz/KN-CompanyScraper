@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from unittest.mock import MagicMock
 
 from kncompanyscraper.analysis.financial.financial_result import FinancialResult
@@ -49,6 +50,10 @@ def _valuation():
     )
 
 
+def _sector_data(current=None, histories=None):
+    return {"current": current or {}, "histories": histories or {}}
+
+
 def test_property_model_uses_property_metrics_instead_of_fcf_and_net_debt():
     company = _company(75)
     score = RankingEngine().rank(
@@ -57,13 +62,15 @@ def test_property_model_uses_property_metrics_instead_of_fcf_and_net_debt():
             1: {
                 "financial": _financial(),
                 "valuation": _valuation(),
-                "sector_kpis": {
-                    KpiIds.PROPERTY_OCCUPANCY: 96.0,
-                    KpiIds.PROPERTY_INTEREST_COVERAGE: 3.2,
-                    KpiIds.PROPERTY_LTV: 38.0,
-                    KpiIds.PROPERTY_NAV_DISCOUNT: 20.0,
-                    KpiIds.PROPERTY_PRICE_TO_INCOME: 11.0,
-                },
+                "sector_kpis": _sector_data(
+                    current={
+                        KpiIds.PROPERTY_OCCUPANCY: 96.0,
+                        KpiIds.PROPERTY_INTEREST_COVERAGE: 3.2,
+                        KpiIds.PROPERTY_LTV: 38.0,
+                        KpiIds.PROPERTY_NAV_DISCOUNT: 20.0,
+                        KpiIds.PROPERTY_PRICE_TO_INCOME: 11.0,
+                    },
+                ),
             }
         },
     ).scores[0]
@@ -83,13 +90,15 @@ def test_property_model_emits_sector_risk_flags():
             1: {
                 "financial": _financial(),
                 "valuation": _valuation(),
-                "sector_kpis": {
-                    KpiIds.PROPERTY_OCCUPANCY: 88.0,
-                    KpiIds.PROPERTY_INTEREST_COVERAGE: 1.2,
-                    KpiIds.PROPERTY_LTV: 60.0,
-                    KpiIds.PROPERTY_NAV_DISCOUNT: 10.0,
-                    KpiIds.PROPERTY_PRICE_TO_INCOME: 23.0,
-                },
+                "sector_kpis": _sector_data(
+                    current={
+                        KpiIds.PROPERTY_OCCUPANCY: 88.0,
+                        KpiIds.PROPERTY_INTEREST_COVERAGE: 1.2,
+                        KpiIds.PROPERTY_LTV: 60.0,
+                        KpiIds.PROPERTY_NAV_DISCOUNT: 10.0,
+                        KpiIds.PROPERTY_PRICE_TO_INCOME: 23.0,
+                    },
+                ),
             }
         },
     ).scores[0]
@@ -97,6 +106,109 @@ def test_property_model_emits_sector_risk_flags():
     assert {"low_occupancy", "weak_interest_coverage", "high_ltv", "nav_premium"} <= set(
         score.flags
     )
+
+
+def test_property_model_uses_noi_share_growth_from_dated_snapshots():
+    """When NOI/share history spans ≥1 year, use its CAGR instead of revenue growth."""
+    company = _company(75)
+    today = date.today()
+    score = RankingEngine().rank(
+        [company],
+        {
+            1: {
+                "financial": _financial(),
+                "valuation": _valuation(),
+                "sector_kpis": _sector_data(
+                    current={
+                        KpiIds.PROPERTY_OCCUPANCY: 96.0,
+                        KpiIds.PROPERTY_INTEREST_COVERAGE: 3.2,
+                        KpiIds.PROPERTY_LTV: 38.0,
+                        KpiIds.PROPERTY_NAV_DISCOUNT: 20.0,
+                        KpiIds.PROPERTY_PRICE_TO_INCOME: 11.0,
+                    },
+                    histories={
+                        # 10% CAGR over ~2 years
+                        KpiIds.PROPERTY_NOI_PER_SHARE: [
+                            (today - timedelta(days=730), 10.0),
+                            (today - timedelta(days=365), 11.0),
+                            (today, 12.1),
+                        ],
+                    },
+                ),
+            }
+        },
+    ).scores[0]
+
+    assert score.ranking_model == "property"
+    assert any("NOI/share" in p for p in score.positives)
+
+
+def test_property_model_falls_back_to_revenue_growth_when_history_insufficient():
+    """When NOI/share history < 1 year, fall back to financial revenue growth."""
+    company = _company(75)
+    today = date.today()
+    score = RankingEngine().rank(
+        [company],
+        {
+            1: {
+                "financial": _financial(),
+                "valuation": _valuation(),
+                "sector_kpis": _sector_data(
+                    current={
+                        KpiIds.PROPERTY_OCCUPANCY: 96.0,
+                        KpiIds.PROPERTY_INTEREST_COVERAGE: 3.2,
+                        KpiIds.PROPERTY_LTV: 38.0,
+                        KpiIds.PROPERTY_NAV_DISCOUNT: 20.0,
+                        KpiIds.PROPERTY_PRICE_TO_INCOME: 11.0,
+                    },
+                    histories={
+                        # Only 30 days of history — insufficient
+                        KpiIds.PROPERTY_NOI_PER_SHARE: [
+                            (today - timedelta(days=30), 10.0),
+                            (today, 10.5),
+                        ],
+                    },
+                ),
+            }
+        },
+    ).scores[0]
+
+    assert score.ranking_model == "property"
+    assert any("revenue" in p.lower() for p in score.positives)
+
+
+def test_property_model_uses_income_share_as_fallback_for_noi():
+    """When NOI/share history is missing but income/share has enough data, use that."""
+    company = _company(75)
+    today = date.today()
+    score = RankingEngine().rank(
+        [company],
+        {
+            1: {
+                "financial": _financial(),
+                "valuation": _valuation(),
+                "sector_kpis": _sector_data(
+                    current={
+                        KpiIds.PROPERTY_OCCUPANCY: 96.0,
+                        KpiIds.PROPERTY_INTEREST_COVERAGE: 3.2,
+                        KpiIds.PROPERTY_LTV: 38.0,
+                        KpiIds.PROPERTY_NAV_DISCOUNT: 20.0,
+                        KpiIds.PROPERTY_PRICE_TO_INCOME: 11.0,
+                    },
+                    histories={
+                        # NOI/share missing, but income/share has 2 years of data
+                        KpiIds.PROPERTY_INCOME_PER_SHARE: [
+                            (today - timedelta(days=730), 20.0),
+                            (today, 24.2),
+                        ],
+                    },
+                ),
+            }
+        },
+    ).scores[0]
+
+    assert score.ranking_model == "property"
+    assert any("property income/share" in p.lower() for p in score.positives)
 
 
 def test_bank_model_uses_capital_and_liquidity_instead_of_debt_equity():
@@ -107,13 +219,15 @@ def test_bank_model_uses_capital_and_liquidity_instead_of_debt_equity():
             1: {
                 "financial": _financial(),
                 "valuation": _valuation(),
-                "sector_kpis": {
-                    KpiIds.BANK_COST_INCOME: 36.0,
-                    KpiIds.BANK_CREDIT_LOSSES: 0.10,
-                    KpiIds.BANK_CET1: 19.0,
-                    KpiIds.BANK_CAPITAL_ADEQUACY: 23.0,
-                    KpiIds.BANK_LCR: 190.0,
-                },
+                "sector_kpis": _sector_data(
+                    current={
+                        KpiIds.BANK_COST_INCOME: 36.0,
+                        KpiIds.BANK_CREDIT_LOSSES: 0.10,
+                        KpiIds.BANK_CET1: 19.0,
+                        KpiIds.BANK_CAPITAL_ADEQUACY: 23.0,
+                        KpiIds.BANK_LCR: 190.0,
+                    },
+                ),
             }
         },
     ).scores[0]
@@ -132,13 +246,15 @@ def test_bank_model_emits_capital_liquidity_and_credit_flags():
             1: {
                 "financial": _financial(),
                 "valuation": _valuation(),
-                "sector_kpis": {
-                    KpiIds.BANK_COST_INCOME: 65.0,
-                    KpiIds.BANK_CREDIT_LOSSES: 0.90,
-                    KpiIds.BANK_CET1: 11.0,
-                    KpiIds.BANK_CAPITAL_ADEQUACY: 16.0,
-                    KpiIds.BANK_LCR: 90.0,
-                },
+                "sector_kpis": _sector_data(
+                    current={
+                        KpiIds.BANK_COST_INCOME: 65.0,
+                        KpiIds.BANK_CREDIT_LOSSES: 0.90,
+                        KpiIds.BANK_CET1: 11.0,
+                        KpiIds.BANK_CAPITAL_ADEQUACY: 16.0,
+                        KpiIds.BANK_LCR: 90.0,
+                    },
+                ),
             }
         },
     ).scores[0]
@@ -155,7 +271,7 @@ def test_missing_sector_balance_data_does_not_claim_balance_sheet_risk():
     company = _company(70)
     score = RankingEngine().rank(
         [company],
-        {1: {"financial": _financial(), "valuation": _valuation(), "sector_kpis": {}}},
+        {1: {"financial": _financial(), "valuation": _valuation(), "sector_kpis": _sector_data()}},
     ).scores[0]
 
     assert score.ranking_model == "bank"
@@ -165,15 +281,32 @@ def test_missing_sector_balance_data_does_not_claim_balance_sheet_risk():
     assert "incomplete_data" in score.flags
 
 
-def test_sector_kpi_skill_reads_current_values_for_company_branch():
+def test_sector_kpi_skill_reads_current_values_and_histories_for_property():
     repository = MagicMock()
     repository.get_sector_current.return_value = {KpiIds.PROPERTY_LTV: 45.0}
+    repository.get_snapshot_history.return_value = {
+        KpiIds.PROPERTY_NOI_PER_SHARE: [(date(2025, 1, 1), 100.0), (date(2026, 1, 1), 110.0)],
+    }
     company = _company(75)
 
     result = SectorKpiSkill(repository).run(company)
 
-    assert result == {KpiIds.PROPERTY_LTV: 45.0}
+    assert result["current"] == {KpiIds.PROPERTY_LTV: 45.0}
+    assert KpiIds.PROPERTY_NOI_PER_SHARE in result["histories"]
     repository.get_sector_current.assert_called_once_with(1, 75)
+    repository.get_snapshot_history.assert_called_once()
+
+
+def test_sector_kpi_skill_skips_histories_for_non_property():
+    repository = MagicMock()
+    repository.get_sector_current.return_value = {KpiIds.BANK_CET1: 19.0}
+    company = _company(68)
+
+    result = SectorKpiSkill(repository).run(company)
+
+    assert result["current"] == {KpiIds.BANK_CET1: 19.0}
+    assert result["histories"] == {}
+    repository.get_snapshot_history.assert_not_called()
 
 
 def test_fundamental_kpi_skill_reads_current_values():
@@ -199,7 +332,9 @@ def test_ineligible_sector_company_sorts_after_eligible_company():
             1: {
                 "financial": _financial(),
                 "valuation": _valuation(),
-                "sector_kpis": {KpiIds.PROPERTY_OCCUPANCY: 99.0},
+                "sector_kpis": _sector_data(
+                    current={KpiIds.PROPERTY_OCCUPANCY: 99.0},
+                ),
             },
             2: {"financial": _financial(), "valuation": _valuation()},
         },
@@ -218,13 +353,15 @@ def test_property_total_gives_balance_sheet_more_weight_than_growth():
             1: {
                 "financial": _financial(),
                 "valuation": _valuation(),
-                "sector_kpis": {
-                    KpiIds.PROPERTY_OCCUPANCY: 95.0,
-                    KpiIds.PROPERTY_INTEREST_COVERAGE: 1.0,
-                    KpiIds.PROPERTY_LTV: 65.0,
-                    KpiIds.PROPERTY_NAV_DISCOUNT: -30.0,
-                    KpiIds.PROPERTY_PRICE_TO_INCOME: 8.0,
-                },
+                "sector_kpis": _sector_data(
+                    current={
+                        KpiIds.PROPERTY_OCCUPANCY: 95.0,
+                        KpiIds.PROPERTY_INTEREST_COVERAGE: 1.0,
+                        KpiIds.PROPERTY_LTV: 65.0,
+                        KpiIds.PROPERTY_NAV_DISCOUNT: -30.0,
+                        KpiIds.PROPERTY_PRICE_TO_INCOME: 8.0,
+                    },
+                ),
             }
         },
     ).scores[0]
