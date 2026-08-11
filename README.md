@@ -77,18 +77,22 @@ score correlation. It is a policy-validation tool, not a valuation calculator,
 forecast generator, or substitute for an investment decision.
 
 DCF arithmetic belongs to the deterministic valuation engine. Reverse DCF is
-implemented first and solves one bounded assumption at a time—revenue growth,
-EBIT margin, or perpetual terminal growth—so the result states what the current
-price implies while all other inputs remain fixed. The FCFF implementation is
+implemented first. Its primary output is a growth–margin expectation curve:
+at a fixed set of revenue-growth rates it solves the EBIT margin needed to match
+the current price. The curve is also supplied for each deterministic business-risk
+profile so the agent can select a cited cyclicality lens. One-variable revenue-growth, EBIT-margin, and terminal-growth
+solves remain diagnostic cross-checks. Reverse DCF has zero ranking weight. The FCFF implementation is
 for ordinary operating companies. Bank branches are rejected pending a
 residual-income/dividend model, and property companies are rejected pending a
 NAV/FFO-oriented model.
 
-For eligible operating companies, ranking also compares those implied
-expectations with the evidence-based DCF baseline. The median materiality-scaled
-gap becomes a standalone expectation-headroom signal and contributes 20% of the
-valuation category when available. Historical backtests reconstruct the same
-reverse DCF only from reports and prices available on each observation date.
+For eligible operating companies, the analysis compares those implied
+expectations with the evidence-based DCF baseline. The legacy scalar score is
+retained for migration diagnostics but cannot change the ranking.
+Reinvestment responds to each modeled growth rate through point-in-time ROIC rather than
+Börsdata's acquisition-contaminated reported FCF. Historical backtests reconstruct
+the same reverse DCF only from reports, KPI snapshots, and prices available on
+each observation date.
 
 The agent may select or challenge assumptions using company evidence and explain
 bounded bear/base/bull narratives. It is never the authoritative calculator;

@@ -113,6 +113,7 @@ class TestBorsdataClient:
                 "year": 2025,
                 "period": 1,
                 "operating_Income": 12.0,
+                "cash_Flow_From_Investing_Activities": -7.0,
                 "intangible_Assets": 500.0,
             }
         )
@@ -122,6 +123,7 @@ class TestBorsdataClient:
         assert report.revenue is None
         assert report.net_income is None
         assert report.total_debt is None
+        assert report.investing_cash_flow == -7.0
 
     def test_get_stock_price_maps_prices(self, monkeypatch):
         payload = load_mock("stock_prices_mock.json")
@@ -219,3 +221,20 @@ class TestBorsdataClient:
 
         assert "secret" not in str(exc_info.value)
         assert "https://apiservice.borsdata.se/example" in str(exc_info.value)
+
+    def test_connection_error_does_not_expose_api_key(self, monkeypatch):
+        monkeypatch.setattr(BorsdataClient, "MAX_RETRIES", 1)
+
+        def fail(url, params, timeout):
+            raise requests.ConnectionError(f"failed URL {url}?authKey={params['authKey']}")
+
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            fail,
+        )
+
+        with pytest.raises(requests.ConnectionError) as exc_info:
+            BorsdataClient(api_key="secret")._get("/example")
+
+        assert "secret" not in str(exc_info.value)
+        assert str(exc_info.value) == "Börsdata connection error: /example"

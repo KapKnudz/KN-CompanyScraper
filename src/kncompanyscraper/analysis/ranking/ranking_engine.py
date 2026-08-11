@@ -130,7 +130,7 @@ def _compute_candidate_reason(quality: dict, growth: dict, val: dict, balance: d
 
 class RankingEngine:
 
-    RANKING_MODEL_VERSION = "2026-08-09-reverse-dcf-v2"
+    RANKING_MODEL_VERSION = "2026-08-11-reverse-dcf-v8"
 
     def __init__(self, ranking_repository=None):
         self.ranking_repository = ranking_repository

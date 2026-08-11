@@ -226,6 +226,12 @@ class BacktestEngine:
         current = self.financial_mapper.to_current(current_report)
         historical = self.financial_mapper.to_historical(historical_reports)
         financial = self.financial_calculator.calculate(current, historical)
+
+        # Point-in-time KPI evidence must be resolved before reverse DCF so the
+        # reinvestment policy never uses today's ROIC in a historical period.
+        kpi_snapshot = self.valuation_repository.get_snapshot_history_as_of(
+            company.id, _HISTORICAL_KPIS, period_date
+        )
         reverse_dcf = self.reverse_dcf_skill.analyze_reports(
             company,
             latest_annual=latest_year,
@@ -233,12 +239,9 @@ class BacktestEngine:
             history=historical_reports,
             price=observation_price,
             as_of=period_date,
+            roic=kpi_snapshot.get(KpiIds.ROIC),
         )
 
-        # KPI snapshots as of period_date
-        kpi_snapshot = self.valuation_repository.get_snapshot_history_as_of(
-            company.id, _HISTORICAL_KPIS, period_date
-        )
         valuation = self._reconstruct_valuation(
             company.id,
             period_date,

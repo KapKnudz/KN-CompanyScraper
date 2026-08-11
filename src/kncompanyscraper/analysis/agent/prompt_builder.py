@@ -18,7 +18,7 @@ class AgentPrompt:
 
 class AgentPromptBuilder:
     POLICY_NAME = "nordic-case-investing-policy"
-    POLICY_VERSION = "1.5.0"
+    POLICY_VERSION = "1.9.0"
 
     def build(self, candidate: AgentCandidate) -> AgentPrompt:
         policy = self._read_resource("resources/analyst_policy.md")

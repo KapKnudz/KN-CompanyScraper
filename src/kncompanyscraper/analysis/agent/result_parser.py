@@ -68,6 +68,10 @@ def _validate_value(value, specification, path: str) -> None:
     if isinstance(specification, list):
         if not isinstance(value, list):
             raise StockAnalysisValidationError(f"{path} must be an array")
+        if not specification:
+            if value:
+                raise StockAnalysisValidationError(f"{path} must be empty")
+            return
         item_specification = specification[0]
         for index, item in enumerate(value):
             _validate_value(item, item_specification, f"{path}[{index}]")

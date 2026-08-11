@@ -139,6 +139,11 @@ class FinancialRepository:
                 shares_outstanding=self._to_float(row["shares_outstanding"]),
                 gross_income=self._to_float(row["gross_income"]),
                 operating_cash_flow=self._to_float(row["operating_cash_flow"]),
+                investing_cash_flow=self._to_float(
+                    (row["raw_payload"] or {}).get(
+                        "cash_Flow_From_Investing_Activities"
+                    )
+                ),
                 year=row["report_year"],
                 period=row["report_period"],
                 period_end=row["period_end"],

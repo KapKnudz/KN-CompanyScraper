@@ -442,12 +442,13 @@ def score_valuation(
             negatives.append(f"Margin of safety {mos:.1%} — trading above required return")
 
     if reverse_dcf is not None and reverse_dcf.get("score") is not None:
-        scored.append((reverse_dcf["score"], 0.20))
+        # Reverse DCF is expectation evidence, not a ranking input, until the
+        # portfolio-level distribution is calibrated.
         positives.extend(reverse_dcf.get("positives", []))
         negatives.extend(reverse_dcf.get("negatives", []))
 
-    # Weighted average. Without reverse DCF, the uniformly rescaled legacy
-    # weights normalize back to exactly the prior valuation score.
+    # Reverse DCF remains diagnostic-only, so these are the legacy valuation
+    # weights normalized over whichever inputs are available.
     if scored:
         total_weight = sum(w for _, w in scored)
         score = sum(s * w for s, w in scored) / total_weight if total_weight > 0 else 0.0

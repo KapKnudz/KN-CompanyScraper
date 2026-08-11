@@ -5,7 +5,6 @@ from kncompanyscraper.analysis.agent.output_schema import (
     EvidenceCitation,
     ManagementClaimAssessment,
     StockAnalysisResult,
-    ValuationScenario,
 )
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPromptBuilder
 from kncompanyscraper.analysis.financial.financial_result import FinancialResult
@@ -55,7 +54,7 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "Three return engines" in prompt.system
     assert "Follow the steps in order" in prompt.system
     assert prompt.policy_name == "nordic-case-investing-policy"
-    assert prompt.policy_version == "1.5.0"
+    assert prompt.policy_version == "1.9.0"
     assert prompt.policy_sha256 == hashlib.sha256(
         (
             AgentPromptBuilder._read_resource("resources/analyst_policy.md")
@@ -66,9 +65,14 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert f"- Name: `{prompt.policy_name}`" in prompt.system
     assert f"- Version: `{prompt.policy_version}`" in prompt.system
     assert f"- SHA-256: `{prompt.policy_sha256}`" in prompt.system
-    assert "full_results.reverse_dcf.forward_scenarios" in prompt.system
-    assert "Any valuation or upside number" in prompt.system
-    assert "not probabilities" in prompt.system
+    assert "full_results.reverse_dcf.implied_expectations" in prompt.system
+    assert "Do not calculate or state a forward fair value" in prompt.system
+    assert "alternative growth–margin combinations" in prompt.system
+    assert "legacy scalar reverse-DCF score are diagnostic only" in prompt.system
+    assert "Terminal growth and the legacy scalar reverse-DCF score are diagnostic only" in prompt.system
+    assert "noncyclical_recurring" in prompt.system
+    assert "discount_rate_sensitivities" in prompt.system
+    assert "must not modify inputs" in prompt.system
     assert "does not mean the company requires no reinvestment" in prompt.system
     assert "normalize a resolvable path" in prompt.system
     assert "Never invent or abbreviate a path" in prompt.system
@@ -79,6 +83,7 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert '"latest stock price unavailable"' in prompt.user
     assert '"source_id": "news:21"' in prompt.user
     assert '"verdict": "reject | watch | latent_case | activated_case"' in prompt.user
+    assert '"risk_profile"' in prompt.user
 
 
 def test_stock_analysis_result_serializes_nested_evidence():
@@ -89,14 +94,7 @@ def test_stock_analysis_result_serializes_nested_evidence():
         verdict="latent_case",
         confidence="medium",
         one_sentence_thesis="Growth and operating leverage may align after the next report.",
-        valuation_scenarios=[
-            ValuationScenario(
-                label="base",
-                implied_value_per_share=125.0,
-                expected_return=0.25,
-                assumptions=["Revenue grows 15%"],
-            )
-        ],
+        valuation_scenarios=[],
         management_credibility_ledger=[
             ManagementClaimAssessment(
                 date="2026-Q1",
@@ -118,6 +116,6 @@ def test_stock_analysis_result_serializes_nested_evidence():
     serialized = result.to_dict()
 
     assert serialized["verdict"] == "latent_case"
-    assert serialized["valuation_scenarios"][0]["expected_return"] == 0.25
+    assert serialized["valuation_scenarios"] == []
     assert serialized["management_credibility_ledger"][0]["result"] == "unverifiable"
     assert serialized["citations"][0]["source_id"] == "news:21"

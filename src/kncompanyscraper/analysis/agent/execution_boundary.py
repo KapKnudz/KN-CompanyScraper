@@ -1,5 +1,4 @@
 from dataclasses import dataclass, fields, is_dataclass
-from math import isclose
 import re
 
 from kncompanyscraper.analysis.agent.result_parser import (
@@ -16,7 +15,7 @@ class PersistedStockAnalysis:
 
 
 class AgentExecutionBoundary:
-    VALIDATION_VERSION = "agent-boundary-v6"
+    VALIDATION_VERSION = "agent-boundary-v8"
     NO_INSIDER_ASSESSMENT = (
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
@@ -58,6 +57,10 @@ class AgentExecutionBoundary:
             citation.source_id = valuation_source_aliases.get(
                 citation.source_id, citation.source_id
             )
+        result.risk_profile_evidence = [
+            valuation_source_aliases.get(source_id, source_id)
+            for source_id in result.risk_profile_evidence
+        ]
         known_source_ids = (
             document_source_ids
             | insider_source_ids
@@ -70,6 +73,14 @@ class AgentExecutionBoundary:
             raise StockAnalysisValidationError(
                 "result cites unknown evidence source(s): " + ", ".join(unknown_source_ids)
             )
+        unknown_risk_source_ids = sorted(
+            set(result.risk_profile_evidence) - known_source_ids
+        )
+        if unknown_risk_source_ids:
+            raise StockAnalysisValidationError(
+                "risk profile cites unknown evidence source(s): "
+                + ", ".join(unknown_risk_source_ids)
+            )
 
         deterministic_checks, deterministic_warnings = self._validate_model_owned_arithmetic(
             result, candidate
@@ -77,6 +88,7 @@ class AgentExecutionBoundary:
         self._validate_scenario_characterization(result)
         self._validate_management_sources(result, document_source_ids)
         self._validate_activated_case(result, candidate)
+        self._validate_risk_profile(result, candidate)
 
         insider_checks = []
         warnings = list(deterministic_warnings)
@@ -121,113 +133,17 @@ class AgentExecutionBoundary:
 
     @classmethod
     def _validate_model_owned_arithmetic(cls, result, candidate):
-        reverse_dcf = candidate.full_results.get("reverse_dcf")
-        forward_scenarios = cls._field(reverse_dcf, "forward_scenarios") or {}
-        if forward_scenarios:
-            expected_labels = set(forward_scenarios)
-            actual_labels = {scenario.label for scenario in result.valuation_scenarios}
-            if actual_labels != expected_labels or len(result.valuation_scenarios) != len(
-                expected_labels
-            ):
-                raise StockAnalysisValidationError(
-                    "valuation scenarios must match supplied deterministic scenario labels"
-                )
-            scenario_descriptions_replaced = False
-            for scenario in result.valuation_scenarios:
-                supplied = forward_scenarios[scenario.label]
-                supplied_value = cls._field(supplied, "value_per_share")
-                supplied_return = cls._field(supplied, "expected_return")
-                if not cls._same_number(scenario.implied_value_per_share, supplied_value):
-                    raise StockAnalysisValidationError(
-                        f"{scenario.label} implied value does not match deterministic output"
-                    )
-                if not cls._same_number(scenario.expected_return, supplied_return):
-                    raise StockAnalysisValidationError(
-                        f"{scenario.label} expected return does not match deterministic output"
-                    )
-                deterministic_assumptions = cls._deterministic_assumption_descriptions(supplied)
-                scenario_descriptions_replaced = (
-                    scenario_descriptions_replaced
-                    or scenario.assumptions != deterministic_assumptions
-                )
-                scenario.assumptions = deterministic_assumptions
-            deterministic_checks = [
-                "scenario values and expected returns match deterministic forward DCF",
-                "scenario descriptions normalized from deterministic assumptions",
-            ]
-            deterministic_warnings = (
-                ["model scenario descriptions replaced with deterministic descriptions"]
-                if scenario_descriptions_replaced
-                else []
+        if result.valuation_scenarios:
+            raise StockAnalysisValidationError(
+                "forward valuation scenarios are not allowed by the reverse-only policy"
             )
-        else:
-            for scenario in result.valuation_scenarios:
-                if (
-                    scenario.implied_value_per_share is not None
-                    or scenario.expected_return is not None
-                ):
-                    raise StockAnalysisValidationError(
-                        "model-generated valuation scenario values are not allowed"
-                    )
-            deterministic_checks = [
-                "scenario values are null because deterministic forward DCF is unavailable"
-            ]
-            deterministic_warnings = []
-
-        for scenario in result.valuation_scenarios:
-            for assumption in scenario.assumptions:
-                normalized = assumption.casefold()
-                if "buyback" in normalized and any(
-                    term in normalized for term in ("share count", "per-share", "eps")
-                ):
-                    raise StockAnalysisValidationError(
-                        "buyback assumptions cannot create an unsupported per-share effect"
-                    )
 
         if any(value is not None for value in result.expected_return_components.values()):
             raise StockAnalysisValidationError(
                 "model-generated expected return components are not allowed"
             )
-        cls._validate_prose_upside(result, forward_scenarios)
-        return deterministic_checks, deterministic_warnings
-
-    @classmethod
-    def _deterministic_assumption_descriptions(cls, scenario):
-        assumptions = cls._field(scenario, "assumptions")
-        sources = cls._field(scenario, "assumption_sources") or {}
-        return [
-            (
-                f"Projection horizon: {cls._field(assumptions, 'projection_years')} years "
-                f"(source: {sources.get('projection_years', 'unspecified')})."
-            ),
-            (
-                f"Revenue growth: {cls._field(assumptions, 'revenue_growth'):.4%} "
-                f"(source: {sources.get('revenue_growth', 'unspecified')})."
-            ),
-            (
-                f"EBIT margin: {cls._field(assumptions, 'ebit_margin'):.4%} "
-                f"(source: {sources.get('ebit_margin', 'unspecified')})."
-            ),
-            (
-                "Net reinvestment rate: "
-                f"{cls._field(assumptions, 'net_reinvestment_rate'):.4%}; "
-                "this is a normalized modeling input, not a claim that the business "
-                "requires no reinvestment "
-                f"(source: {sources.get('net_reinvestment_rate', 'unspecified')})."
-            ),
-            (
-                f"Tax rate: {cls._field(assumptions, 'tax_rate'):.4%} "
-                f"(source: {sources.get('tax_rate', 'unspecified')})."
-            ),
-            (
-                f"Discount rate: {cls._field(assumptions, 'discount_rate'):.4%} "
-                f"(source: {sources.get('discount_rate', 'unspecified')})."
-            ),
-            (
-                f"Terminal growth: {cls._field(assumptions, 'terminal_growth'):.4%} "
-                f"(source: {sources.get('terminal_growth', 'unspecified')})."
-            ),
-        ]
+        cls._validate_prose_upside(result)
+        return ["forward valuation scenarios are disabled"], []
 
     @staticmethod
     def _validate_scenario_characterization(result):
@@ -258,37 +174,16 @@ class AgentExecutionBoundary:
             )
 
     @classmethod
-    def _validate_prose_upside(cls, result, forward_scenarios):
-        allowed_returns = [
-            cls._field(scenario, "expected_return")
-            for scenario in forward_scenarios.values()
-        ]
+    def _validate_prose_upside(cls, result):
         texts = [
             result.one_sentence_thesis,
             result.activation_trigger or "",
-            *[assumption for scenario in result.valuation_scenarios for assumption in scenario.assumptions],
         ]
         for text in texts:
             for match in re.finditer(r"(\d+(?:\.\d+)?)%\+?\s+upside", text, re.IGNORECASE):
-                claimed_return = float(match.group(1)) / 100.0
-                if not any(
-                    value is not None
-                    and isclose(claimed_return, value, rel_tol=0.05, abs_tol=0.05)
-                    for value in allowed_returns
-                ):
-                    raise StockAnalysisValidationError(
-                        "prose upside claim "
-                        f"{claimed_return:.4f} does not match deterministic forward DCF "
-                        f"returns {allowed_returns} within rounding tolerance"
-                    )
-
-    @staticmethod
-    def _same_number(actual, expected):
-        return (
-            actual is not None
-            and expected is not None
-            and isclose(actual, expected, rel_tol=1e-6, abs_tol=1e-6)
-        )
+                raise StockAnalysisValidationError(
+                    "prose upside claims are not allowed by the reverse-only policy"
+                )
 
     @staticmethod
     def _field(value, name):
@@ -301,42 +196,184 @@ class AgentExecutionBoundary:
         reverse_dcf = candidate.full_results.get("reverse_dcf")
         if reverse_dcf is None:
             return None
-        forward_scenarios = cls._field(reverse_dcf, "forward_scenarios") or {}
-        scenarios = {}
-        for label, scenario in forward_scenarios.items():
-            assumptions = cls._field(scenario, "assumptions")
-            scenarios[label] = {
-                "assumptions": {
-                    name: cls._field(assumptions, name)
-                    for name in (
-                        "projection_years",
-                        "revenue_growth",
-                        "ebit_margin",
-                        "tax_rate",
-                        "discount_rate",
-                        "terminal_growth",
-                        "net_reinvestment_rate",
-                    )
-                },
-                "source_id": (
-                    cls._field(scenario, "source_id")
-                    or f"valuation:forward_dcf:{label}"
-                ),
-                "assumption_sources": cls._field(scenario, "assumption_sources") or {},
-                "value_per_share": cls._field(scenario, "value_per_share"),
-                "expected_return": cls._field(scenario, "expected_return"),
-                "terminal_value_share": cls._field(scenario, "terminal_value_share"),
-            }
+        assumptions = cls._field(reverse_dcf, "assumptions")
+        implied_expectations = cls._field(reverse_dcf, "implied_expectations") or {}
+        required_return = cls._field(reverse_dcf, "required_return")
+        normalization = cls._field(reverse_dcf, "normalization")
+        rate_profiles = cls._field(required_return, "profiles") or {}
+        sensitivities = cls._field(reverse_dcf, "discount_rate_sensitivities") or {}
+        expectation_curve = cls._field(reverse_dcf, "expectation_curve") or ()
         return {
             "status": cls._field(reverse_dcf, "status"),
             "reverse_dcf_policy_version": cls._field(reverse_dcf, "policy_version"),
-            "forward_dcf_policy_version": cls._field(
-                reverse_dcf, "forward_policy_version"
-            ),
             "price_date": cls._field(reverse_dcf, "price_date"),
             "current_price": cls._field(reverse_dcf, "current_price"),
-            "scenarios": scenarios,
+            "assumptions": {
+                name: cls._field(assumptions, name)
+                for name in (
+                    "projection_years",
+                    "revenue_growth",
+                    "ebit_margin",
+                    "tax_rate",
+                    "discount_rate",
+                    "terminal_growth",
+                    "net_reinvestment_rate",
+                    "reinvestment_return",
+                )
+            },
+            "assumption_sources": cls._field(reverse_dcf, "assumption_sources") or {},
+            "normalized_fcf_margin": cls._field(
+                reverse_dcf, "normalized_fcf_margin"
+            ),
+            "normalization": cls._serialize_normalization(normalization),
+            "reinvestment_roic": cls._field(reverse_dcf, "reinvestment_roic"),
+            "required_return": {
+                name: cls._field(required_return, name)
+                for name in (
+                    "policy_version",
+                    "risk_free_rate",
+                    "risk_free_rate_date",
+                    "risk_free_rate_source",
+                    "equity_risk_premium",
+                    "market_cap",
+                    "size_bucket",
+                    "size_adjustment",
+                    "baseline_profile",
+                )
+            },
+            "discount_rate_profiles": {
+                name: {
+                    key: cls._field(profile, key)
+                    for key in (
+                        "label",
+                        "business_risk_adjustment",
+                        "discount_rate",
+                    )
+                }
+                for name, profile in rate_profiles.items()
+            },
+            "implied_expectations": {
+                name: {
+                    key: cls._field(expectation, key)
+                    for key in (
+                        "status",
+                        "source_id",
+                        "lower_bound",
+                        "upper_bound",
+                        "implied_value",
+                        "modeled_price",
+                        "modeled_price_range",
+                        "outside_direction",
+                        "required_value_hint",
+                        "reason",
+                    )
+                }
+                for name, expectation in implied_expectations.items()
+            },
+            "expectation_curve": [
+                {
+                    "revenue_growth": cls._field(point, "revenue_growth"),
+                    "ebit_margin_expectation": cls._serialize_expectation(
+                        cls._field(point, "ebit_margin_expectation")
+                    ),
+                }
+                for point in expectation_curve
+            ],
+            "discount_rate_sensitivities": {
+                profile_name: {
+                    "label": cls._field(sensitivity, "label"),
+                    "discount_rate": cls._field(sensitivity, "discount_rate"),
+                    "business_risk_adjustment": cls._field(
+                        sensitivity, "business_risk_adjustment"
+                    ),
+                    "implied_expectations": cls._serialize_expectations(
+                        cls._field(sensitivity, "implied_expectations") or {}
+                    ),
+                    "expectation_curve": cls._serialize_expectation_curve(
+                        cls._field(sensitivity, "expectation_curve") or ()
+                    ),
+                }
+                for profile_name, sensitivity in sensitivities.items()
+            },
             "warnings": list(cls._field(reverse_dcf, "warnings") or []),
+        }
+
+    @classmethod
+    def _serialize_normalization(cls, normalization):
+        if normalization is None:
+            return None
+
+        def window(value):
+            if value is None:
+                return None
+            return {
+                name: cls._field(value, name)
+                for name in (
+                    "years",
+                    "start_year",
+                    "end_year",
+                    "ebit_margin",
+                    "reported_fcf_margin",
+                    "operating_cash_flow_margin",
+                )
+            }
+
+        serialized = {
+            name: cls._field(normalization, name)
+            for name in (
+                "confidence",
+                "selected_window_years",
+                "annual_fcf_margin_stddev",
+                "annual_fcf_margin_range",
+                "negative_fcf_years",
+                "fcf_sign_changes",
+                "highly_volatile_fcf",
+                "material_window_disagreement",
+                "material_aggregate_investing",
+                "reasons",
+            )
+        } | {
+            "three_year": window(cls._field(normalization, "three_year")),
+            "five_year": window(cls._field(normalization, "five_year")),
+        }
+        serialized["reasons"] = list(serialized["reasons"] or [])
+        return serialized
+
+    @classmethod
+    def _serialize_expectations(cls, expectations):
+        return {
+            name: cls._serialize_expectation(expectation)
+            for name, expectation in expectations.items()
+        }
+
+    @classmethod
+    def _serialize_expectation_curve(cls, expectation_curve):
+        return [
+            {
+                "revenue_growth": cls._field(point, "revenue_growth"),
+                "ebit_margin_expectation": cls._serialize_expectation(
+                    cls._field(point, "ebit_margin_expectation")
+                ),
+            }
+            for point in expectation_curve
+        ]
+
+    @classmethod
+    def _serialize_expectation(cls, expectation):
+        return {
+            key: cls._field(expectation, key)
+            for key in (
+                "status",
+                "source_id",
+                "lower_bound",
+                "upper_bound",
+                "implied_value",
+                "modeled_price",
+                "modeled_price_range",
+                "outside_direction",
+                "required_value_hint",
+                "reason",
+            )
         }
 
     @classmethod
@@ -345,11 +382,6 @@ class AgentExecutionBoundary:
         if reverse_dcf is None:
             return {}
         aliases = {}
-        forward_scenarios = cls._field(reverse_dcf, "forward_scenarios") or {}
-        for label, scenario in forward_scenarios.items():
-            source_id = cls._field(scenario, "source_id") or f"valuation:forward_dcf:{label}"
-            aliases[source_id] = source_id
-            aliases[f"full_results.reverse_dcf.forward_scenarios.{label}"] = source_id
         implied_expectations = cls._field(reverse_dcf, "implied_expectations") or {}
         for assumption, expectation in implied_expectations.items():
             source_id = (
@@ -360,7 +392,51 @@ class AgentExecutionBoundary:
             aliases[
                 f"full_results.reverse_dcf.implied_expectations.{assumption}"
             ] = source_id
+        sensitivities = cls._field(reverse_dcf, "discount_rate_sensitivities") or {}
+        for profile, sensitivity in sensitivities.items():
+            expectations = cls._field(sensitivity, "implied_expectations") or {}
+            for assumption, expectation in expectations.items():
+                source_id = (
+                    cls._field(expectation, "source_id")
+                    or f"valuation:reverse_dcf:{profile}:{assumption}"
+                )
+                aliases[source_id] = source_id
+                aliases[
+                    "full_results.reverse_dcf.discount_rate_sensitivities."
+                    f"{profile}.implied_expectations.{assumption}"
+                ] = source_id
+            expectation_curve = cls._field(sensitivity, "expectation_curve") or ()
+            for point in expectation_curve:
+                expectation = cls._field(point, "ebit_margin_expectation")
+                source_id = cls._field(expectation, "source_id")
+                if source_id:
+                    aliases[source_id] = source_id
+        expectation_curve = cls._field(reverse_dcf, "expectation_curve") or ()
+        for point in expectation_curve:
+            expectation = cls._field(point, "ebit_margin_expectation")
+            source_id = cls._field(expectation, "source_id")
+            if source_id:
+                aliases[source_id] = source_id
         return aliases
+
+    @classmethod
+    def _validate_risk_profile(cls, result, candidate):
+        if result.risk_profile == "unclassified":
+            if result.risk_profile_evidence:
+                raise StockAnalysisValidationError(
+                    "unclassified risk profile cannot carry classification evidence"
+                )
+            return
+        if not result.risk_profile_evidence:
+            raise StockAnalysisValidationError(
+                "classified risk profile requires cited evidence"
+            )
+        reverse_dcf = candidate.full_results.get("reverse_dcf")
+        sensitivities = cls._field(reverse_dcf, "discount_rate_sensitivities") or {}
+        if result.risk_profile not in sensitivities:
+            raise StockAnalysisValidationError(
+                "risk profile does not match a deterministic discount-rate sensitivity"
+            )
 
     @classmethod
     def _deterministic_source_aliases(cls, candidate):
@@ -408,10 +484,10 @@ class AgentExecutionBoundary:
             return
         reverse_dcf = candidate.full_results.get("reverse_dcf")
         status = AgentExecutionBoundary._field(reverse_dcf, "status")
-        forward_scenarios = AgentExecutionBoundary._field(
-            reverse_dcf, "forward_scenarios"
+        implied_expectations = AgentExecutionBoundary._field(
+            reverse_dcf, "implied_expectations"
         )
-        if status != "available" or not forward_scenarios:
+        if status != "available" or not implied_expectations:
             raise StockAnalysisValidationError(
-                "activated_case requires deterministic forward valuation scenarios"
+                "activated_case requires deterministic reverse-DCF expectations"
             )

@@ -5,9 +5,9 @@ from datetime import date
 from typing import Literal
 
 from kncompanyscraper.analysis.base.skill import Skill
-from kncompanyscraper.analysis.valuation.forward_dcf_policy import ForwardDcfScenarioPolicy
 from kncompanyscraper.analysis.valuation.dcf_assumption_policy import (
     DcfAssumptionPolicy,
+    NormalizationDiagnostics,
 )
 from kncompanyscraper.analysis.valuation.reverse_dcf import (
     DcfAssumptions,
@@ -16,9 +16,19 @@ from kncompanyscraper.analysis.valuation.reverse_dcf import (
     ReverseDcfEngine,
     ReverseDcfInputs,
 )
+from kncompanyscraper.analysis.valuation.required_return_policy import (
+    RequiredReturnDecision,
+    RiskProfile,
+)
+from kncompanyscraper.borsdata.kpi_ids import KpiIds
 
 
 ExpectationStatus = Literal["solved", "outside_bounds"]
+OutsideDirection = Literal[
+    "below_lower_bound",
+    "above_upper_bound",
+    "not_determined",
+]
 AnalysisStatus = Literal["available", "unavailable", "unsupported_model"]
 
 
@@ -34,7 +44,25 @@ class ImpliedExpectation:
     price_difference: float | None = None
     iterations: int | None = None
     modeled_price_range: tuple[float, float] | None = None
+    outside_direction: OutsideDirection | None = None
+    required_value_hint: str | None = None
     reason: str | None = None
+
+
+@dataclass(frozen=True)
+class DiscountRateSensitivity:
+    profile: RiskProfile
+    label: str
+    discount_rate: float
+    business_risk_adjustment: float
+    implied_expectations: dict[str, ImpliedExpectation]
+    expectation_curve: tuple["GrowthMarginExpectation", ...] | None = None
+
+
+@dataclass(frozen=True)
+class GrowthMarginExpectation:
+    revenue_growth: float
+    ebit_margin_expectation: ImpliedExpectation
 
 
 @dataclass(frozen=True)
@@ -48,33 +76,38 @@ class ReverseDcfAnalysis:
     current_price: float | None = None
     assumptions: DcfAssumptions | None = None
     assumption_sources: dict[str, str] | None = None
+    normalized_fcf_margin: float | None = None
+    normalization: NormalizationDiagnostics | None = None
+    reinvestment_roic: float | None = None
+    required_return: RequiredReturnDecision | None = None
     baseline_valuation: DcfValue | None = None
     implied_expectations: dict[str, ImpliedExpectation] | None = None
-    forward_policy_version: str | None = None
-    forward_scenarios: dict[str, "ForwardDcfScenario"] | None = None
+    expectation_curve: tuple[GrowthMarginExpectation, ...] | None = None
+    discount_rate_sensitivities: dict[str, DiscountRateSensitivity] | None = None
     missing_information: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
 
 
-@dataclass(frozen=True)
-class ForwardDcfScenario:
-    label: str
-    source_id: str
-    assumptions: DcfAssumptions
-    assumption_sources: dict[str, str]
-    valuation: DcfValue
-    value_per_share: float
-    expected_return: float
-    terminal_value_share: float
-
-
 class ReverseDcfSkill(Skill):
     MAX_PRICE_AGE_DAYS = 7
+    SHARES_TO_UNITS = 1_000_000.0
+    EXPECTATION_CURVE_GROWTH_RATES = (
+        -0.05,
+        0.00,
+        0.05,
+        0.10,
+        0.15,
+        0.20,
+        0.25,
+        0.30,
+    )
     _LIMITATIONS = (
-        "reported FCF calibrates aggregate net reinvestment because D&A, capex, "
-        "and working-capital changes are not stored separately",
+        "Börsdata reported FCF equals operating cash flow plus aggregate investing "
+        "cash flow and is used only as a normalization-confidence diagnostic",
+        "Börsdata does not separate maintenance capex, growth capex, acquisitions, "
+        "disposals, or annual working-capital changes",
         "Report.total_debt contains the Börsdata net_Debt field",
-        "the v1 model holds growth, margin, and net reinvestment constant during projection",
+        "the model holds growth and margin constant during the explicit projection",
     )
 
     def __init__(
@@ -83,14 +116,12 @@ class ReverseDcfSkill(Skill):
         financial_repository,
         *,
         policy: DcfAssumptionPolicy | None = None,
-        forward_policy: ForwardDcfScenarioPolicy | None = None,
         engine: ReverseDcfEngine | None = None,
         as_of: date | None = None,
     ):
         self.valuation_repository = valuation_repository
         self.financial_repository = financial_repository
         self.policy = policy or DcfAssumptionPolicy()
-        self.forward_policy = forward_policy or ForwardDcfScenarioPolicy()
         self.engine = engine or ReverseDcfEngine()
         self.as_of = as_of or date.today()
 
@@ -112,6 +143,7 @@ class ReverseDcfSkill(Skill):
             if latest_annual is not None
             else []
         )
+        fundamentals = self.valuation_repository.get_general_fundamentals(company.id)
         return self.analyze_reports(
             company,
             latest_annual=latest_annual,
@@ -119,6 +151,7 @@ class ReverseDcfSkill(Skill):
             history=history,
             price=price,
             as_of=self.as_of,
+            roic=fundamentals.get(KpiIds.ROIC),
         )
 
     def analyze_reports(
@@ -130,6 +163,7 @@ class ReverseDcfSkill(Skill):
         history,
         price,
         as_of: date,
+        roic: float | None = None,
     ) -> ReverseDcfAnalysis:
         """Analyze supplied point-in-time evidence for live or historical ranking."""
         if company.branch_id in (68, 69, 70):
@@ -139,8 +173,6 @@ class ReverseDcfSkill(Skill):
 
         current_report = latest_r12 or latest_annual
         missing: list[str] = []
-        if latest_annual is None:
-            missing.append("latest annual report unavailable")
         if price is None:
             missing.append("latest stock price unavailable")
         else:
@@ -161,7 +193,26 @@ class ReverseDcfSkill(Skill):
             ):
                 missing.append("stock price and report currencies differ")
 
-        decision = self.policy.build(current_report, latest_annual, history)
+        market_cap = (
+            price.close
+            * current_report.shares_outstanding
+            * self.SHARES_TO_UNITS
+            if price is not None
+            and current_report is not None
+            and current_report.shares_outstanding is not None
+            and current_report.shares_outstanding > 0
+            else None
+        )
+        decision = self.policy.build(
+            current_report,
+            latest_annual,
+            history,
+            as_of=as_of,
+            currency=(price.currency if price else None)
+            or (current_report.currency if current_report else None),
+            market_cap=market_cap,
+            roic=roic,
+        )
         missing.extend(decision.missing_information)
 
         if current_report is not None:
@@ -180,6 +231,10 @@ class ReverseDcfSkill(Skill):
                 current_price=price.close if price else None,
                 assumptions=decision.assumptions,
                 assumption_sources=decision.assumption_sources,
+                normalized_fcf_margin=decision.normalized_fcf_margin,
+                normalization=decision.normalization,
+                reinvestment_roic=decision.reinvestment_roic,
+                required_return=decision.required_return,
                 missing_information=tuple(dict.fromkeys(missing)),
                 warnings=decision.warnings + self._LIMITATIONS,
             )
@@ -193,37 +248,24 @@ class ReverseDcfSkill(Skill):
             branch_id=company.branch_id,
         )
         baseline = self.engine.value(inputs)
-        forward_decision = self.forward_policy.build(
-            decision.assumptions,
-            latest_annual,
-            history,
-        )
-        forward_scenarios = {}
-        forward_warnings = []
-        for scenario in forward_decision.scenarios:
-            valuation = self.engine.value(replace(inputs, assumptions=scenario.assumptions))
-            terminal_value_share = (
-                valuation.discounted_terminal_value / valuation.enterprise_value
-                if valuation.enterprise_value
-                else 0.0
-            )
-            forward_scenarios[scenario.label] = ForwardDcfScenario(
-                label=scenario.label,
-                source_id=f"valuation:forward_dcf:{scenario.label}",
-                assumptions=scenario.assumptions,
-                assumption_sources=scenario.assumption_sources,
-                valuation=valuation,
-                value_per_share=round(valuation.value_per_share, 6),
-                expected_return=round(valuation.value_per_share / price.close - 1, 6),
-                terminal_value_share=round(terminal_value_share, 6),
-            )
-            if terminal_value_share > 0.75:
-                forward_warnings.append(
-                    f"{scenario.label} scenario terminal value exceeds 75% of enterprise value"
-                )
         expectations = {
             assumption: self._solve(inputs, assumption, bounds)
             for assumption, bounds in decision.solve_bounds.items()
+        }
+        expectation_curve = tuple(
+            self._growth_margin_point(inputs, growth)
+            for growth in self.EXPECTATION_CURVE_GROWTH_RATES
+        )
+        sensitivities = {
+            profile: self._build_sensitivity(
+                inputs,
+                decision.solve_bounds,
+                profile,
+                rate_profile.label,
+                rate_profile.discount_rate,
+                rate_profile.business_risk_adjustment,
+            )
+            for profile, rate_profile in decision.required_return.profiles.items()
         }
         return ReverseDcfAnalysis(
             status="available",
@@ -234,16 +276,54 @@ class ReverseDcfSkill(Skill):
             current_price=price.close,
             assumptions=decision.assumptions,
             assumption_sources=decision.assumption_sources,
+            normalized_fcf_margin=decision.normalized_fcf_margin,
+            normalization=decision.normalization,
+            reinvestment_roic=decision.reinvestment_roic,
+            required_return=decision.required_return,
             baseline_valuation=baseline,
             implied_expectations=expectations,
-            forward_policy_version=forward_decision.policy_version,
-            forward_scenarios=forward_scenarios,
-            warnings=(
-                decision.warnings
-                + forward_decision.warnings
-                + tuple(forward_warnings)
-                + self._LIMITATIONS
-            ),
+            expectation_curve=expectation_curve,
+            discount_rate_sensitivities=sensitivities,
+            warnings=decision.warnings + self._LIMITATIONS,
+        )
+
+    def _build_sensitivity(
+        self,
+        inputs: ReverseDcfInputs,
+        solve_bounds: dict[str, tuple[float, float]],
+        profile: RiskProfile,
+        label: str,
+        discount_rate: float,
+        business_risk_adjustment: float,
+    ) -> DiscountRateSensitivity:
+        sensitivity_inputs = replace(
+            inputs,
+            assumptions=replace(inputs.assumptions, discount_rate=discount_rate),
+        )
+        expectations = {
+            assumption: self._solve(
+                sensitivity_inputs,
+                assumption,
+                bounds,
+                source_prefix=f"valuation:reverse_dcf:{profile}",
+            )
+            for assumption, bounds in solve_bounds.items()
+        }
+        expectation_curve = tuple(
+            self._growth_margin_point(
+                sensitivity_inputs,
+                growth,
+                source_prefix=f"valuation:reverse_dcf:{profile}:curve",
+            )
+            for growth in self.EXPECTATION_CURVE_GROWTH_RATES
+        )
+        return DiscountRateSensitivity(
+            profile=profile,
+            label=label,
+            discount_rate=discount_rate,
+            business_risk_adjustment=business_risk_adjustment,
+            implied_expectations=expectations,
+            expectation_curve=expectation_curve,
         )
 
     def _solve(
@@ -251,6 +331,8 @@ class ReverseDcfSkill(Skill):
         inputs: ReverseDcfInputs,
         assumption: ImpliedAssumption,
         bounds: tuple[float, float],
+        *,
+        source_prefix: str = "valuation:reverse_dcf",
     ) -> ImpliedExpectation:
         lower, upper = bounds
         try:
@@ -260,13 +342,26 @@ class ReverseDcfSkill(Skill):
                 raise
             lower_price = self._price_at(inputs, assumption, lower)
             upper_price = self._price_at(inputs, assumption, upper)
+            outside_direction = self._outside_direction(
+                inputs.current_price,
+                lower_price,
+                upper_price,
+            )
+            required_value_hint = self._required_value_hint(
+                assumption,
+                outside_direction,
+                lower,
+                upper,
+            )
             return ImpliedExpectation(
                 assumption=assumption,
                 status="outside_bounds",
                 lower_bound=lower,
                 upper_bound=upper,
-                source_id=f"valuation:reverse_dcf:{assumption}",
+                source_id=f"{source_prefix}:{assumption}",
                 modeled_price_range=tuple(sorted((lower_price, upper_price))),
+                outside_direction=outside_direction,
+                required_value_hint=required_value_hint,
                 reason=str(exc),
             )
         return ImpliedExpectation(
@@ -274,12 +369,83 @@ class ReverseDcfSkill(Skill):
             status="solved",
             lower_bound=lower,
             upper_bound=upper,
-            source_id=f"valuation:reverse_dcf:{assumption}",
+            source_id=f"{source_prefix}:{assumption}",
             implied_value=result.implied_assumption,
             modeled_price=result.modeled_price,
             price_difference=result.price_difference,
             iterations=result.iterations,
         )
+
+    def _growth_margin_point(
+        self,
+        inputs: ReverseDcfInputs,
+        revenue_growth: float,
+        *,
+        source_prefix: str = "valuation:reverse_dcf:curve",
+    ) -> GrowthMarginExpectation:
+        curve_inputs = replace(
+            inputs,
+            assumptions=replace(
+                inputs.assumptions,
+                revenue_growth=revenue_growth,
+            ),
+        )
+        growth_label = f"{int(round(revenue_growth * 10_000)):+d}bp"
+        expectation = self._solve(
+            curve_inputs,
+            "ebit_margin",
+            self.policy.SOLVE_BOUNDS["ebit_margin"],
+            source_prefix=f"{source_prefix}:{growth_label}",
+        )
+        if (
+            expectation.status == "outside_bounds"
+            and expectation.outside_direction == "not_determined"
+            and curve_inputs.assumptions.reinvestment_return is not None
+            and revenue_growth >= curve_inputs.assumptions.reinvestment_return
+        ):
+            expectation = replace(
+                expectation,
+                required_value_hint=(
+                    "no EBIT margin within bounds can bridge price because "
+                    "growth / ROIC consumes 100% of NOPAT"
+                ),
+                reason=(
+                    "modeled price is insensitive to EBIT margin because the "
+                    "growth-implied reinvestment share is capped at 100% of NOPAT"
+                ),
+            )
+        return GrowthMarginExpectation(
+            revenue_growth=revenue_growth,
+            ebit_margin_expectation=expectation,
+        )
+
+    @staticmethod
+    def _outside_direction(
+        current_price: float,
+        lower_price: float,
+        upper_price: float,
+    ) -> OutsideDirection:
+        if upper_price == lower_price:
+            return "not_determined"
+        increasing = upper_price > lower_price
+        if current_price > max(lower_price, upper_price):
+            return "above_upper_bound" if increasing else "below_lower_bound"
+        if current_price < min(lower_price, upper_price):
+            return "below_lower_bound" if increasing else "above_upper_bound"
+        return "not_determined"
+
+    @staticmethod
+    def _required_value_hint(
+        assumption: ImpliedAssumption,
+        direction: OutsideDirection,
+        lower: float,
+        upper: float,
+    ) -> str | None:
+        if direction == "above_upper_bound":
+            return f"{assumption} > {upper:.1%}"
+        if direction == "below_lower_bound":
+            return f"{assumption} < {lower:.1%}"
+        return None
 
     def _price_at(
         self,

@@ -7,7 +7,6 @@ from statistics import median
 _MATERIAL_GAPS = {
     "revenue_growth": 0.10,
     "ebit_margin": 0.10,
-    "terminal_growth": 0.02,
 }
 
 
@@ -29,8 +28,9 @@ def score_reverse_dcf(analysis) -> dict:
     """Score how demanding market expectations are versus the DCF baseline.
 
     Each assumption has zero normalized headroom when its implied value matches
-    the evidence-based baseline. The median keeps the three correlated
-    one-variable solves from behaving like three independent signals. A smooth
+    the evidence-based baseline. Terminal growth remains visible as a
+    diagnostic solve but is excluded from ranking because it is dominated by
+    terminal-value sensitivity. A smooth
     transform maps half a material gap to 75/25 and a full gap to 90/10 without
     clipping finite values to 100/0.
     """
@@ -39,6 +39,7 @@ def score_reverse_dcf(analysis) -> dict:
         "positives": [],
         "negatives": [],
         "flags": [],
+        "ranking_weight": 0.0,
     }
     if (
         analysis is None
@@ -87,6 +88,8 @@ def score_reverse_dcf(analysis) -> dict:
     positives: list[str] = []
     negatives: list[str] = []
     flags: list[str] = []
+    normalization = getattr(analysis, "normalization", None)
+    confidence = getattr(normalization, "confidence", "high")
     if score >= 70.0:
         positives.append(
             f"Reverse DCF expectation headroom {score:.0f}/100 — market assumptions look undemanding"
@@ -97,10 +100,17 @@ def score_reverse_dcf(analysis) -> dict:
             f"Reverse DCF expectation headroom {score:.0f}/100 — market assumptions look demanding"
         )
         flags.append("demanding_expectations")
+    if confidence == "low":
+        negatives.append(
+            "Reverse DCF normalization confidence is low — interpret cautiously"
+        )
+        flags.append("low_confidence_expectations")
+    flags.append("diagnostic_only_expectations")
 
     return {
         "score": score,
         "positives": positives,
         "negatives": negatives,
         "flags": flags,
+        "ranking_weight": 0.0,
     }

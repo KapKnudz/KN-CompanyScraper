@@ -1,42 +1,73 @@
-# Reverse DCF assumption policy v2
+# Reverse DCF assumption policy v8
 
 This policy makes the reverse DCF reproducible and auditable. The deterministic
-engine owns every calculation. A human or agent may critique the assumptions,
-but cannot replace calculated values.
+engine owns every calculation. An agent may critique assumptions, but cannot
+replace calculated values.
 
 ## Scope and eligibility
 
-The v1 model is FCFF for ordinary operating companies. It does not run for:
+The model is FCFF for ordinary operating companies. It does not run for banks,
+consumer lenders, or property companies. It requires positive revenue and share
+count, Börsdata net debt, a supported report/price currency, and a positive stock
+price no more than seven calendar days old.
 
-- banks and consumer lenders, which require residual-income or dividend models;
-- property companies, which require NAV/FFO-oriented models; or
-- companies without positive revenue, EBIT, and reported free cash flow.
+Positive reported FCF is not an eligibility requirement. Börsdata reported FCF
+is retained as a reliability diagnostic, not used as recurring FCFF.
 
-The calculation also requires a positive share count, Börsdata net debt, matching
-report and price currencies, and a positive stock price no more than seven
-calendar days old. Missing inputs make the result unavailable; they never receive
-silent numeric defaults.
+`Report.total_debt` is a legacy field name populated from Börsdata `net_Debt`.
 
-`Report.total_debt` is a legacy field name. Börsdata ingestion populates it from
-the API's `net_Debt` value, so the DCF equity bridge subtracts net debt rather
-than gross debt.
+## Börsdata cash-flow limitation
+
+The report schema supplies operating, investing, financing, annual, and free
+cash flow. It does not supply separate maintenance capex, growth capex,
+acquisitions, disposals, depreciation/amortization, or annual working-capital
+changes.
+
+Live KPI metadata labels KPI 64 as `Capex`, but sampled KPI histories show that
+it equals aggregate investing cash flow. KPI 93 is `Workingcapital-%`, a balance
+sheet ratio rather than an annual working-capital change. Neither can support a
+clean recurring FCFF calculation. See
+[`borsdata_reverse_dcf_data_audit.md`](borsdata_reverse_dcf_data_audit.md).
 
 ## Baseline assumptions
 
-| Assumption | v1 policy | Source |
+| Assumption | v8 policy | Source |
 |---|---:|---|
 | Explicit forecast period | 5 years | Fixed policy |
-| Revenue growth | -5% to 15% | Annual revenue CAGR over up to three years; 0% disclosed fallback if unavailable |
-| EBIT margin | Unclamped | Current R12 EBIT/revenue, falling back to latest annual report |
-| Normalized tax rate | 21% | Fixed Nordic modeling proxy, not a company tax forecast |
-| Discount rate | 10% | Fixed required-return policy |
+| Revenue growth | -5% to 15% | Annual revenue CAGR over up to three years; disclosed 0% fallback |
+| EBIT margin | Unclamped | Revenue-weighted five-year annual margin, then 3y/latest annual/R12 fallback |
+| Normalized tax rate | 21% | Fixed Nordic modeling proxy |
+| Discount rate | Required-return policy | Dated currency rate + 5% ERP + size + baseline business-risk adjustment |
 | Perpetual growth | 2% | Fixed mature nominal-growth policy |
-| Net reinvestment rate | -5% to 15% of revenue | `(EBIT × (1 − tax) − reported FCF) / revenue` |
+| Net reinvestment | Growth-responsive | Normalized NOPAT × `max(growth, 0) / ROIC`, with reinvestment capped at 100% of NOPAT |
 
-The net-reinvestment assumption deliberately aggregates D&A, capital
-expenditure, and changes in working capital because the current canonical report
-model does not store those components separately. Reported FCF is therefore a
-calibration proxy; this limitation must remain visible in agent context.
+Börsdata ROIC is supplied in percentage points and converted to a fraction. If
+ROIC is missing or non-positive, net reinvestment is set to 0% and normalization
+confidence is low. Reported FCF never calibrates reinvestment.
+
+## Normalization diagnostics
+
+The result exposes revenue-weighted three- and five-year windows for:
+
+- EBIT margin;
+- reported FCF margin; and
+- operating-cash-flow margin when available.
+
+Confidence is at most `medium` because clean recurring capex is unavailable. It
+is `low` when any of these deterministic checks fires:
+
+- fewer than three valid annual observations;
+- one or more non-positive annual reported-FCF years;
+- annual FCF-margin standard deviation at least 10 percentage points;
+- annual FCF-margin range at least 25 points;
+- at least two FCF sign changes;
+- FCF standard deviation at least equal to its absolute mean when the mean is at least 1 point;
+- a three-year/five-year EBIT or FCF disagreement of at least 5 points;
+- the absolute average aggregate investing cash flow is at least 15% of revenue, or an annual value is at least 30%; or
+- missing/non-positive ROIC.
+
+Confidence controls how prominently the expectations may be interpreted. It does
+not alter a ranking score because reverse DCF has zero ranking weight in v8.
 
 ## Deterministic calculation
 
@@ -45,71 +76,54 @@ For each explicit forecast year:
 1. `revenue[t] = revenue[t-1] × (1 + revenue growth)`
 2. `EBIT[t] = revenue[t] × EBIT margin`
 3. `NOPAT[t] = EBIT[t] × (1 − tax rate)`
-4. `FCFF[t] = NOPAT[t] − revenue[t] × net reinvestment rate`
-5. Discount FCFF using the fixed discount rate.
+4. `reinvestment share[t] = min(max(revenue growth, 0) / ROIC, 100%)`
+5. `FCFF[t] = NOPAT[t] × (1 − reinvestment share[t])`
+6. Discount FCFF using the required return.
 
-Terminal value uses the Gordon-growth formula. Enterprise value equals the
-present value of explicit FCFF plus discounted terminal value. Equity value is
-enterprise value minus Börsdata net debt, and per-share value divides equity
-value by current shares outstanding.
+Terminal FCFF recomputes the share of NOPAT reinvested as
+`terminal growth / ROIC` rather than carrying the higher explicit-growth
+reinvestment rate into perpetuity. Terminal value then uses Gordon growth. Enterprise
+value is explicit FCFF plus discounted terminal value. Equity value subtracts
+Börsdata net debt and divides by current shares outstanding.
 
 ## Reverse solvers
 
-Each solver changes exactly one assumption while holding every other baseline
-assumption fixed:
+Each solver changes exactly one assumption while holding the other baseline
+assumptions fixed:
 
-| Solved assumption | Bounds |
-|---|---:|
-| Revenue growth | -10% to 30% |
-| EBIT margin | 0% to 50% |
-| Perpetual growth | -1% to 4% |
+| Solved assumption | Bounds | Use |
+|---|---:|---|
+| Revenue growth | -10% to 30% | Diagnostic cross-check |
+| EBIT margin | 0% to 50% | Diagnostic cross-check |
+| Perpetual growth | -1% to 4% | Diagnostic only |
 
-If the current price is not attainable inside a bound, the output is
-`outside_bounds` and includes the modeled endpoint price range. The engine does
-not extrapolate an extreme implied assumption.
+If the current price is not attainable within a bound, output is
+`outside_bounds` with the modeled endpoint range, direction, and a required-value
+hint such as `revenue_growth > 30.0%`. Terminal growth remains visible
+for sensitivity review but has zero ranking weight because terminal-value
+sensitivity made it outside bounds for 95.5% of the prior 111-company cohort.
 
-## Interpretation and versioning
+## Growth–margin expectation curve
 
-Reverse DCF answers what one assumption must be for the model to reproduce the
-current price, conditional on all other v2 assumptions. It does not show that the
-implied assumption is likely or that the baseline policy is uniquely correct.
+The primary output fixes revenue growth at -5%, 0%, 5%, 10%, 15%, 20%, 25%, and
+30%, then solves the EBIT margin required to reproduce the current price. Each
+solved pair is one combination of operating expectations consistent with price,
+not a forecast and not a claim that the market expects one unique combination.
+The same curve is calculated independently for each supplied discount-rate risk
+profile. The one-variable solvers remain visible as cross-checks.
 
-### Ranking signal
+## Diagnostic score and ranking policy
 
-For ordinary operating companies with an available reverse DCF, ranking policy
-v2 converts the three implied expectations into an **expectation-headroom**
-score. Each implied value is compared with its evidence-based baseline:
+Revenue-growth and EBIT-margin headroom are scaled over ±10 percentage points.
+The median normalized headroom is mapped to 0–100 with
+`100 / (1 + 9^(-normalized headroom))`. Outside-bound observations are censored
+at the bound and adjusted by log-scaled endpoint price distance.
 
-- revenue-growth gaps are scaled over ±10 percentage points;
-- EBIT-margin gaps are scaled over ±10 percentage points; and
-- terminal-growth gaps are scaled over ±2 percentage points.
+The legacy scalar score remains exposed for migration diagnostics, but its
+ranking weight is zero. Reverse DCF must not affect the total or valuation score
+until portfolio evidence demonstrates a stable, economically defensible mapping
+from multidimensional expectations to ranking value.
 
-For each solved assumption, the normalized headroom is
-`(baseline − implied) / material gap`. The final normalized headroom is the
-median of available components. The median is deliberate: the solvers all
-explain the same market price and are correlated sensitivity views, not three
-independent observations.
-
-The median is mapped to the 0–100 score with
-`100 / (1 + 9^(-normalized headroom))`. A matching implied and baseline
-assumption scores 50, half a material gap scores 75 or 25, and a full material
-gap scores 90 or 10. The smooth mapping approaches but does not clip finite
-values to 100 or 0.
-
-An implied expectation outside its permitted solver bounds is treated as a
-censored observation. Its normalized headroom starts at the relevant bound and
-is adjusted by `log2(1 + |modeled endpoint − current price| / current price)`.
-Thus a distance equal to the current price adds one material gap while preserving
-the economically meaningful solver bounds and supporting negative modeled equity
-values.
-
-The signal receives 20% weight inside the valuation category when available.
-The pre-existing valuation components share the other 80%. When reverse DCF is
-unavailable, the remaining weights are normalized so absence neither rewards nor
-penalizes the company. The standalone signal is persisted and included in
-point-in-time backtest correlations. Scores of at least 70 flag undemanding
-expectations; scores of at most 30 flag demanding expectations.
-
-Any change to constants, bounds, eligibility rules, source hierarchy, or formulas
-requires a new policy version. Historical evaluation must retain the policy
-version and use point-in-time reports and prices to prevent look-ahead bias.
+Any change to constants, eligibility, source hierarchy, confidence thresholds,
+or formulas requires a new policy version. Historical evaluation must use only
+reports, KPI snapshots, rates, and prices available at each observation date.

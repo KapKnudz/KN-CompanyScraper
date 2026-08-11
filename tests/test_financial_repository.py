@@ -69,7 +69,10 @@ def test_latest_report_is_loaded_by_local_company_id():
             "report_period": 1,
             "period_end": date(2025, 12, 31),
             "currency": "SEK",
-            "raw_payload": {"year": 2025},
+            "raw_payload": {
+                "year": 2025,
+                "cash_Flow_From_Investing_Activities": -6,
+            },
             "gross_income": 40,
             "operating_cash_flow": 18,
         }
@@ -89,6 +92,7 @@ def test_latest_report_is_loaded_by_local_company_id():
     assert report.ebitda is None
     assert report.gross_income == 40
     assert report.operating_cash_flow == 18
+    assert report.investing_cash_flow == -6
 
 
 def test_latest_report_as_of_applies_publication_lag():

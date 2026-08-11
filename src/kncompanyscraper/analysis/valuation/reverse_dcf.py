@@ -28,6 +28,7 @@ class DcfAssumptions:
     discount_rate: float
     terminal_growth: float
     net_reinvestment_rate: float = 0.0
+    reinvestment_return: float | None = None
 
 
 @dataclass(frozen=True)
@@ -104,7 +105,11 @@ class ReverseDcfEngine:
         terminal_revenue = revenue * (1.0 + assumptions.terminal_growth)
         terminal_ebit = terminal_revenue * assumptions.ebit_margin
         terminal_nopat = terminal_ebit * (1.0 - assumptions.tax_rate)
-        terminal_fcff = self._fcff(terminal_revenue, terminal_nopat, assumptions)
+        terminal_fcff = self._terminal_fcff(
+            terminal_revenue,
+            terminal_nopat,
+            assumptions,
+        )
         terminal_value = terminal_fcff / (
             assumptions.discount_rate - assumptions.terminal_growth
         )
@@ -190,7 +195,29 @@ class ReverseDcfEngine:
 
     @staticmethod
     def _fcff(revenue: float, nopat: float, assumptions: DcfAssumptions) -> float:
+        if assumptions.reinvestment_return is not None:
+            reinvestment_share_of_nopat = min(
+                max(assumptions.revenue_growth, 0.0)
+                / assumptions.reinvestment_return,
+                1.0,
+            )
+            return nopat * (1.0 - reinvestment_share_of_nopat)
         return nopat - revenue * assumptions.net_reinvestment_rate
+
+    @staticmethod
+    def _terminal_fcff(
+        revenue: float,
+        nopat: float,
+        assumptions: DcfAssumptions,
+    ) -> float:
+        if assumptions.reinvestment_return is None:
+            return ReverseDcfEngine._fcff(revenue, nopat, assumptions)
+        reinvestment_share_of_nopat = min(
+            max(assumptions.terminal_growth, 0.0)
+            / assumptions.reinvestment_return,
+            1.0,
+        )
+        return nopat * (1.0 - reinvestment_share_of_nopat)
 
     def _value_with(
         self,
@@ -249,6 +276,8 @@ class ReverseDcfEngine:
             assumptions.terminal_growth,
             assumptions.net_reinvestment_rate,
         )
+        if assumptions.reinvestment_return is not None:
+            numeric_assumptions += (assumptions.reinvestment_return,)
         if not all(isfinite(value) for value in numeric_inputs + numeric_assumptions):
             raise ValueError("all DCF inputs must be finite")
         if inputs.current_price <= 0:
@@ -269,3 +298,8 @@ class ReverseDcfEngine:
             raise ValueError("discount_rate must exceed -1")
         if assumptions.terminal_growth <= -1.0:
             raise ValueError("terminal_growth must exceed -1")
+        if (
+            assumptions.reinvestment_return is not None
+            and assumptions.reinvestment_return <= 0.0
+        ):
+            raise ValueError("reinvestment_return must be positive when supplied")

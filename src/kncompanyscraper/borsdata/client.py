@@ -157,6 +157,7 @@ class BorsdataClient:
             shares_outstanding=r.get("number_Of_Shares"),
             gross_income=r.get("gross_Income"),
             operating_cash_flow=r.get("cash_Flow_From_Operating_Activities"),
+            investing_cash_flow=r.get("cash_Flow_From_Investing_Activities"),
             year=r.get("year"),
             period=r.get("period"),
             period_end=(
@@ -187,7 +188,9 @@ class BorsdataClient:
                     time.sleep(wait)
                     continue
                 logger.error("Börsdata timeout on %s after %d attempts", path, self.MAX_RETRIES)
-                raise
+                raise requests.exceptions.Timeout(
+                    f"Börsdata request timed out: {path}"
+                ) from None
             except requests.exceptions.ConnectionError:
                 if attempt < self.MAX_RETRIES - 1:
                     wait = self._backoff(attempt)
@@ -198,7 +201,9 @@ class BorsdataClient:
                     time.sleep(wait)
                     continue
                 logger.error("Börsdata connection error on %s after %d attempts", path, self.MAX_RETRIES)
-                raise
+                raise requests.exceptions.ConnectionError(
+                    f"Börsdata connection error: {path}"
+                ) from None
 
             # Rate limiting — honour Retry-After if present, else exponential backoff
             if response.status_code == 429:
