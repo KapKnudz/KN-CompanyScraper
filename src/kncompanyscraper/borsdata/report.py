@@ -21,6 +21,7 @@ class Report:
 
     gross_income: float | None = None
     operating_cash_flow: float | None = None
+    investing_cash_flow: float | None = None
 
     year: int | None = None
     period: int | None = None

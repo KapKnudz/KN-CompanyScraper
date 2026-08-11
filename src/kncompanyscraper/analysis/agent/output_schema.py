@@ -6,6 +6,12 @@ AnalysisVerdict = Literal["reject", "watch", "latent_case", "activated_case"]
 Confidence = Literal["low", "medium", "high"]
 ScenarioLabel = Literal["bear", "base", "bull"]
 ClaimResult = Literal["kept", "delayed", "missed", "changed", "unverifiable"]
+BusinessRiskProfile = Literal[
+    "noncyclical_recurring",
+    "slightly_cyclical",
+    "cyclical_or_other_risk",
+    "unclassified",
+]
 
 
 @dataclass
@@ -45,6 +51,9 @@ class StockAnalysisResult:
     activation_trigger: str | None = None
     business_model_assessment: str = ""
     revenue_growth_case: str = ""
+    risk_profile: BusinessRiskProfile = "unclassified"
+    risk_profile_confidence: Confidence = "low"
+    risk_profile_evidence: list[str] = field(default_factory=list)
     current_ebit_margin: float | None = None
     defensible_peak_ebit_margin: float | None = None
     peak_margin_evidence: list[str] = field(default_factory=list)
@@ -75,17 +84,16 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     "activation_trigger": "string | null",
     "business_model_assessment": "string",
     "revenue_growth_case": "string",
+    "risk_profile": (
+        "noncyclical_recurring | slightly_cyclical | "
+        "cyclical_or_other_risk | unclassified"
+    ),
+    "risk_profile_confidence": "low | medium | high",
+    "risk_profile_evidence": ["string"],
     "current_ebit_margin": "number | null",
     "defensible_peak_ebit_margin": "number | null",
     "peak_margin_evidence": ["string"],
-    "valuation_scenarios": [
-        {
-            "label": "bear | base | bull",
-            "implied_value_per_share": "number | null",
-            "expected_return": "number | null",
-            "assumptions": ["string"],
-        }
-    ],
+    "valuation_scenarios": [],
     "expected_return_components": {
         "revenue_growth": "number | null",
         "margin_change": "number | null",
@@ -135,6 +143,8 @@ def _contract_to_json_schema(specification) -> dict:
         }
 
     if isinstance(specification, list):
+        if not specification:
+            return {"type": "array", "maxItems": 0}
         return {
             "type": "array",
             "items": _contract_to_json_schema(specification[0]),

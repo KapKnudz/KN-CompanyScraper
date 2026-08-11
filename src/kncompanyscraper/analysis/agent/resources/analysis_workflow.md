@@ -26,19 +26,23 @@ Estimate a defensible EBIT-margin path. If gross margin is available, investigat
 
 Do not use unsupported precision. Give ranges when the evidence only supports ranges.
 
-## 5. Build valuation scenarios
+## 5. Interpret the reverse DCF
 
-Create bear, base, and bull narratives using revenue, EBIT margin, net debt or cash, share count, and a defensible valuation assumption. Deterministic bear/base/bull FCFF calculations are supplied under `full_results.reverse_dcf.forward_scenarios` when available. Copy each scenario's `value_per_share` and `expected_return` exactly into the matching output fields. If those calculations are unavailable, use `null` and identify the required calculation.
+Use `full_results.reverse_dcf.expectation_curve` as the primary explanation of what the current price requires. Each point fixes revenue growth and solves the matching EBIT margin, so present the curve as alternative growth–margin combinations rather than one unique market forecast. Use the one-variable results under `full_results.reverse_dcf.implied_expectations` only as cross-checks; when a solve is outside bounds, report its `required_value_hint` instead of treating the bound as the answer. Terminal growth and the legacy scalar reverse-DCF score are diagnostic only and must not drive the verdict or ranking interpretation. Check `full_results.reverse_dcf.normalization` before relying on any solve; when confidence is low, show both supplied three- and five-year windows and explain the exact reliability flags.
 
-Every scalar in `expected_return_components` remains `null` until a deterministic decomposition engine is supplied. Do not calculate substitute P/E, EPS, DCF, return-component, or upside values yourself. Any valuation or upside number stated anywhere in the response must come directly from the supplied deterministic engine output.
+Classify the business as `noncyclical_recurring`, `slightly_cyclical`, or `cyclical_or_other_risk` only when supplied evidence supports the demand cyclicality, revenue recurrence, customer dependence, commodity exposure, or another material risk. Otherwise use `unclassified`. Put the exact supporting source IDs in `risk_profile_evidence` and calibrate `risk_profile_confidence` to the evidence quality.
 
-Deterministic valuation scenarios and implied expectations carry `source_id` values beginning with `valuation:`. Cite material valuation claims with those exact IDs. For other scalar deterministic metrics that do not carry a `source_id`, cite the exact supplied path beginning with `full_results.`; the execution boundary will normalize a resolvable path to a canonical `deterministic:` ID. Never invent or abbreviate a path.
+Use the matching profile under `full_results.reverse_dcf.discount_rate_sensitivities` when discussing that classification, and use that profile's `expectation_curve` rather than the baseline curve. If the risk profile is `unclassified`, retain the baseline slightly-cyclical curve and explicitly state that the selected discount-rate profile is unverified. The deterministic policy owns the risk-free rate, equity-risk premium, size adjustment, profile adjustments, and all sensitivity arithmetic. The classification selects a lens for discussion; it must not modify inputs or create a new valuation calculation.
 
-Treat `bear`, `base`, and `bull` as deterministic sensitivity labels, not probabilities. Do not call the base case conservative, realistic, likely, or probable. Copy the supplied assumptions without adding causal interpretations. In particular, a normalized 0% net-reinvestment input does not mean the company requires no reinvestment.
+`valuation_scenarios` must be empty and every scalar in `expected_return_components` must remain `null`. Do not calculate or state a forward fair value, target price, expected return, upside percentage, substitute P/E, EPS, or DCF value.
 
-Use supplied deterministic valuation-engine output as authoritative arithmetic. You may select or critique assumptions from the evidence and explain what the current price implies, but do not replace, silently modify, or independently invent calculated DCF values. If deterministic output is unavailable, identify the required inputs rather than presenting model-generated arithmetic as authoritative.
+Deterministic implied expectations carry `source_id` values beginning with `valuation:reverse_dcf:`. Cite material reverse-DCF claims with those exact IDs. For other scalar deterministic metrics that do not carry a `source_id`, cite the exact supplied path beginning with `full_results.`; the execution boundary will normalize a resolvable path to a canonical `deterministic:` ID. Never invent or abbreviate a path.
 
-Decompose the return into revenue growth, margin change, multiple change, balance-sheet change, and dilution. Flag dependence on multiple expansion.
+Compare each implied expectation with company history and cited business evidence. State whether it appears undemanding, demanding, or cannot be judged, and identify the assumption or missing evidence that drives that conclusion. Reported FCF is diagnostic only because Börsdata includes aggregate investing cash flow. A 0% net-reinvestment input means positive ROIC was unavailable or baseline growth was non-positive; it does not mean the company requires no reinvestment.
+
+Use supplied deterministic reverse-DCF output as authoritative arithmetic. You may critique assumptions and explain what the current price implies, but do not replace, silently modify, or independently invent calculated values. If deterministic output is unavailable, identify the required inputs rather than presenting model-generated arithmetic as authoritative.
+
+Discuss revenue growth, margin change, balance-sheet change, and dilution qualitatively. Do not invent a numerical return decomposition.
 
 ## 6. Assess management
 

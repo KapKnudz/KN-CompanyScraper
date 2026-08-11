@@ -32,14 +32,7 @@ def valid_result() -> StockAnalysisResult:
             "balance_sheet_change": None,
             "dilution": None,
         },
-        valuation_scenarios=[
-            ValuationScenario(
-                label="base",
-                implied_value_per_share=None,
-                expected_return=None,
-                assumptions=["Current evidence is insufficient"],
-            )
-        ],
+        valuation_scenarios=[],
         management_credibility_ledger=[
             ManagementClaimAssessment(
                 date="2026-Q2",
@@ -58,38 +51,11 @@ def valid_response() -> str:
     return json.dumps(valid_result().to_dict())
 
 
-def supplied_scenario(label, value_per_share, expected_return):
-    return {
-        "source_id": f"valuation:forward_dcf:{label}",
-        "assumptions": {
-            "projection_years": 5,
-            "revenue_growth": 0.05,
-            "ebit_margin": 0.15,
-            "tax_rate": 0.21,
-            "discount_rate": 0.10,
-            "terminal_growth": 0.02,
-            "net_reinvestment_rate": 0.0,
-        },
-        "assumption_sources": {
-            "projection_years": "fixed policy horizon",
-            "revenue_growth": "company history",
-            "ebit_margin": "company history",
-            "tax_rate": "fixed tax policy",
-            "discount_rate": "fixed return policy",
-            "terminal_growth": "fixed mature growth policy",
-            "net_reinvestment_rate": "normalized company-implied rate",
-        },
-        "value_per_share": value_per_share,
-        "expected_return": expected_return,
-        "terminal_value_share": 0.70,
-    }
-
-
 def test_parser_builds_nested_result_dataclasses():
     result = parse_stock_analysis_result(valid_response())
 
     assert result.verdict == "watch"
-    assert result.valuation_scenarios[0].label == "base"
+    assert result.valuation_scenarios == []
     assert result.management_credibility_ledger[0].result == "unverifiable"
 
 
@@ -151,10 +117,10 @@ def test_execution_boundary_persists_valid_response():
         created_by="test-model",
         metadata={
             "prompt_version": 1,
-            "validation_version": "agent-boundary-v6",
+            "validation_version": "agent-boundary-v8",
             "validation_status": "accepted",
             "deterministic_value_checks": [
-                "scenario values are null because deterministic forward DCF is unavailable",
+                "forward valuation scenarios are disabled",
                 "model-owned expected return components are null",
             ],
             "insider_checks": ["no-data insider assessment normalized"],
@@ -197,10 +163,11 @@ def test_execution_boundary_rejects_model_generated_valuation_arithmetic():
         research_evidence={"documents": [{"source_id": "news:21"}]},
     )
     payload = valid_result()
-    payload.valuation_scenarios[0].implied_value_per_share = 28.0
-    payload.valuation_scenarios[0].expected_return = 0.41
+    payload.valuation_scenarios = [
+        ValuationScenario("base", 28.0, 0.41, ["Model-generated forward value"])
+    ]
 
-    with pytest.raises(StockAnalysisValidationError, match="valuation scenario values"):
+    with pytest.raises(StockAnalysisValidationError, match="valuation_scenarios must be empty"):
         AgentExecutionBoundary(repository).persist_response(
             json.dumps(payload.to_dict()), candidate, created_by="test-model"
         )
@@ -221,6 +188,85 @@ def test_execution_boundary_rejects_model_generated_return_components():
     payload.expected_return_components["revenue_growth"] = 0.10
 
     with pytest.raises(StockAnalysisValidationError, match="expected return components"):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+
+def test_execution_boundary_accepts_evidence_based_risk_profile():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 103
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={
+            "reverse_dcf": {
+                "discount_rate_sensitivities": {
+                    "cyclical_or_other_risk": {
+                        "implied_expectations": {
+                            "revenue_growth": {
+                                "source_id": (
+                                    "valuation:reverse_dcf:cyclical_or_other_risk:"
+                                    "revenue_growth"
+                                )
+                            }
+                        },
+                        "expectation_curve": [
+                            {
+                                "revenue_growth": 0.10,
+                                "ebit_margin_expectation": {
+                                    "status": "solved",
+                                    "source_id": (
+                                        "valuation:reverse_dcf:"
+                                        "cyclical_or_other_risk:curve:"
+                                        "+1000bp:ebit_margin"
+                                    ),
+                                    "implied_value": 0.22,
+                                },
+                            }
+                        ],
+                    }
+                }
+            }
+        },
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.risk_profile = "cyclical_or_other_risk"
+    payload.risk_profile_confidence = "medium"
+    payload.risk_profile_evidence = ["news:21"]
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.risk_profile == "cyclical_or_other_risk"
+    assert persisted.result.risk_profile_evidence == ["news:21"]
+    curve = repository.save_stock_analysis.call_args.kwargs["metadata"][
+        "valuation_provenance"
+    ]["discount_rate_sensitivities"]["cyclical_or_other_risk"][
+        "expectation_curve"
+    ]
+    assert curve[0]["revenue_growth"] == pytest.approx(0.10)
+    assert curve[0]["ebit_margin_expectation"]["implied_value"] == pytest.approx(0.22)
+
+
+def test_execution_boundary_rejects_unsupported_risk_profile_classification():
+    repository = MagicMock()
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.risk_profile = "noncyclical_recurring"
+    payload.risk_profile_evidence = ["news:21"]
+
+    with pytest.raises(StockAnalysisValidationError, match="deterministic discount-rate"):
         AgentExecutionBoundary(repository).persist_response(
             json.dumps(payload.to_dict()), candidate, created_by="test-model"
         )
@@ -303,7 +349,7 @@ def test_execution_boundary_rejects_activated_case_without_deterministic_valuati
     payload = valid_result()
     payload.verdict = "activated_case"
 
-    with pytest.raises(StockAnalysisValidationError, match="forward valuation scenarios"):
+    with pytest.raises(StockAnalysisValidationError, match="reverse-DCF expectations"):
         AgentExecutionBoundary(repository).persist_response(
             json.dumps(payload.to_dict()), candidate, created_by="test-model"
         )
@@ -321,115 +367,112 @@ def test_execution_boundary_accepts_activated_case_with_available_reverse_dcf():
             "reverse_dcf": {
                 "status": "available",
                 "policy_version": "reverse-dcf-v2",
-                "forward_policy_version": "forward-dcf-scenarios-v1",
                 "price_date": "2026-08-09",
                 "current_price": 10.0,
-                "warnings": ["terminal value is material"],
-                "forward_scenarios": {
-                    "bear": supplied_scenario("bear", 8.0, -0.2),
-                    "base": supplied_scenario("base", 12.0, 0.2),
-                    "bull": supplied_scenario("bull", 16.0, 0.6),
+                "assumptions": {
+                    "projection_years": 5,
+                    "revenue_growth": 0.05,
+                    "ebit_margin": 0.15,
+                    "tax_rate": 0.21,
+                    "discount_rate": 0.10,
+                    "terminal_growth": 0.02,
+                    "net_reinvestment_rate": 0.01,
                 },
+                "assumption_sources": {"discount_rate": "fixed return policy"},
+                "implied_expectations": {
+                    "revenue_growth": {
+                        "status": "solved",
+                        "source_id": "valuation:reverse_dcf:revenue_growth",
+                        "lower_bound": -0.10,
+                        "upper_bound": 0.30,
+                        "implied_value": 0.08,
+                        "modeled_price": 10.0,
+                        "modeled_price_range": None,
+                        "reason": None,
+                    }
+                },
+                "warnings": ["terminal value is material"],
             }
         },
         research_evidence={"documents": [{"source_id": "news:21"}]},
     )
     payload = valid_result()
     payload.verdict = "activated_case"
-    payload.valuation_scenarios = [
-        ValuationScenario("bear", 8.0, -0.2, ["Historical downside"]),
-        ValuationScenario("base", 12.0, 0.2, ["Current operations"]),
-        ValuationScenario("bull", 16.0, 0.6, ["Historical upside"]),
-    ]
 
     persisted = AgentExecutionBoundary(repository).persist_response(
         json.dumps(payload.to_dict()), candidate, created_by="test-model"
     )
 
     assert persisted.analysis_id == 102
-    assert all(
-        "source:" in assumption
-        for scenario in persisted.result.valuation_scenarios
-        for assumption in scenario.assumptions
-    )
     saved_metadata = repository.save_stock_analysis.call_args.kwargs["metadata"]
-    assert saved_metadata["validation_version"] == "agent-boundary-v6"
+    assert saved_metadata["validation_version"] == "agent-boundary-v8"
     assert saved_metadata["valuation_provenance"] == {
         "status": "available",
         "reverse_dcf_policy_version": "reverse-dcf-v2",
-        "forward_dcf_policy_version": "forward-dcf-scenarios-v1",
         "price_date": "2026-08-09",
         "current_price": 10.0,
-        "scenarios": {
-            label: supplied_scenario(label, value, expected)
-            for label, value, expected in (
-                ("bear", 8.0, -0.2),
-                ("base", 12.0, 0.2),
-                ("bull", 16.0, 0.6),
-            )
+        "assumptions": {
+            "projection_years": 5,
+            "revenue_growth": 0.05,
+            "ebit_margin": 0.15,
+            "tax_rate": 0.21,
+            "discount_rate": 0.10,
+            "terminal_growth": 0.02,
+            "net_reinvestment_rate": 0.01,
+            "reinvestment_return": None,
         },
+        "assumption_sources": {"discount_rate": "fixed return policy"},
+        "normalized_fcf_margin": None,
+        "normalization": None,
+        "reinvestment_roic": None,
+        "required_return": {
+            "policy_version": None,
+            "risk_free_rate": None,
+            "risk_free_rate_date": None,
+            "risk_free_rate_source": None,
+            "equity_risk_premium": None,
+            "market_cap": None,
+            "size_bucket": None,
+            "size_adjustment": None,
+            "baseline_profile": None,
+        },
+        "discount_rate_profiles": {},
+        "implied_expectations": {
+            "revenue_growth": {
+                "status": "solved",
+                "source_id": "valuation:reverse_dcf:revenue_growth",
+                "lower_bound": -0.10,
+                "upper_bound": 0.30,
+                "implied_value": 0.08,
+                "modeled_price": 10.0,
+                "modeled_price_range": None,
+                "outside_direction": None,
+                "required_value_hint": None,
+                "reason": None,
+            }
+        },
+        "expectation_curve": [],
+        "discount_rate_sensitivities": {},
         "warnings": ["terminal value is material"],
     }
 
 
-def test_execution_boundary_rejects_prose_upside_not_in_forward_dcf():
+def test_execution_boundary_rejects_prose_upside_in_reverse_only_policy():
     repository = MagicMock()
     candidate = AgentCandidate(
         rank=1,
         company_id=42,
         ticker="TEST",
         name="Testbolaget",
-        full_results={
-            "reverse_dcf": {
-                "status": "available",
-                "forward_scenarios": {
-                    "base": supplied_scenario("base", 12.0, 0.2)
-                },
-            }
-        },
         research_evidence={"documents": [{"source_id": "news:21"}]},
     )
     payload = valid_result()
-    payload.valuation_scenarios[0] = ValuationScenario(
-        "base", 12.0, 0.2, ["Current operations"]
-    )
     payload.one_sentence_thesis = "The setup offers potential 50%+ upside."
 
     with pytest.raises(StockAnalysisValidationError, match="prose upside"):
         AgentExecutionBoundary(repository).persist_response(
             json.dumps(payload.to_dict()), candidate, created_by="test-model"
         )
-
-
-def test_execution_boundary_accepts_reasonably_rounded_deterministic_upside():
-    repository = MagicMock()
-    repository.save_stock_analysis.return_value = 104
-    candidate = AgentCandidate(
-        rank=1,
-        company_id=42,
-        ticker="TEST",
-        name="Testbolaget",
-        full_results={
-            "reverse_dcf": {
-                "status": "available",
-                "forward_scenarios": {
-                    "base": supplied_scenario("base", 91.296192, 3.610919)
-                },
-            }
-        },
-        research_evidence={"documents": [{"source_id": "news:21"}]},
-    )
-    payload = valid_result()
-    payload.valuation_scenarios[0] = ValuationScenario(
-        "base", 91.296192, 3.610919, ["Current operations"]
-    )
-    payload.one_sentence_thesis = "The setup offers approximately 350% upside."
-
-    persisted = AgentExecutionBoundary(repository).persist_response(
-        json.dumps(payload.to_dict()), candidate, created_by="test-model"
-    )
-
-    assert persisted.analysis_id == 104
 
 
 def test_execution_boundary_normalizes_deterministic_valuation_path_citations():
@@ -443,9 +486,6 @@ def test_execution_boundary_normalizes_deterministic_valuation_path_citations():
         full_results={
             "reverse_dcf": {
                 "status": "available",
-                "forward_scenarios": {
-                    "base": supplied_scenario("base", 12.0, 0.2)
-                },
                 "implied_expectations": {
                     "ebit_margin": {
                         "source_id": "valuation:reverse_dcf:ebit_margin"
@@ -456,14 +496,7 @@ def test_execution_boundary_normalizes_deterministic_valuation_path_citations():
         research_evidence={"documents": [{"source_id": "news:21"}]},
     )
     payload = valid_result()
-    payload.valuation_scenarios[0] = ValuationScenario(
-        "base", 12.0, 0.2, ["Current operations"]
-    )
     payload.citations = [
-        EvidenceCitation(
-            "full_results.reverse_dcf.forward_scenarios.base",
-            "The base scenario value is deterministic.",
-        ),
         EvidenceCitation(
             "full_results.reverse_dcf.implied_expectations.ebit_margin",
             "The market-implied margin is deterministic.",
@@ -475,7 +508,6 @@ def test_execution_boundary_normalizes_deterministic_valuation_path_citations():
     )
 
     assert [citation.source_id for citation in persisted.result.citations] == [
-        "valuation:forward_dcf:base",
         "valuation:reverse_dcf:ebit_margin",
     ]
 
@@ -554,26 +586,6 @@ def test_execution_boundary_rejects_misleading_scenario_characterization(thesis)
     payload.one_sentence_thesis = thesis
 
     with pytest.raises(StockAnalysisValidationError, match="scenario labels|reinvestment"):
-        AgentExecutionBoundary(repository).persist_response(
-            json.dumps(payload.to_dict()), candidate, created_by="test-model"
-        )
-
-
-def test_execution_boundary_rejects_buyback_as_unsupported_per_share_effect():
-    repository = MagicMock()
-    candidate = AgentCandidate(
-        rank=1,
-        company_id=42,
-        ticker="TEST",
-        name="Testbolaget",
-        research_evidence={"documents": [{"source_id": "news:21"}]},
-    )
-    payload = valid_result()
-    payload.valuation_scenarios[0].assumptions = [
-        "The synthetic buyback reduces share count and lifts EPS."
-    ]
-
-    with pytest.raises(StockAnalysisValidationError, match="unsupported per-share effect"):
         AgentExecutionBoundary(repository).persist_response(
             json.dumps(payload.to_dict()), candidate, created_by="test-model"
         )

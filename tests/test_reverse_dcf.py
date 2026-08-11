@@ -39,6 +39,35 @@ def test_values_fcff_and_equity_per_share_deterministically(inputs):
     assert result.value_per_share == pytest.approx(13.1885501)
 
 
+def test_terminal_reinvestment_is_recomputed_from_terminal_growth_and_roic(inputs):
+    assumptions = replace(inputs.assumptions, reinvestment_return=0.20)
+    result = ReverseDcfEngine().value(replace(inputs, assumptions=assumptions))
+
+    final_revenue = result.projected_cash_flows[-1].revenue
+    terminal_revenue = final_revenue * (1.0 + assumptions.terminal_growth)
+    terminal_nopat = (
+        terminal_revenue
+        * assumptions.ebit_margin
+        * (1.0 - assumptions.tax_rate)
+    )
+    terminal_fcff = terminal_nopat * (
+        1.0 - assumptions.terminal_growth / assumptions.reinvestment_return
+    )
+
+    assert result.terminal_value == pytest.approx(
+        terminal_fcff / (assumptions.discount_rate - assumptions.terminal_growth)
+    )
+
+
+def test_explicit_reinvestment_responds_to_solved_growth_when_roic_is_available(inputs):
+    assumptions = replace(inputs.assumptions, reinvestment_return=0.20)
+    result = ReverseDcfEngine().value(replace(inputs, assumptions=assumptions))
+
+    first = result.projected_cash_flows[0]
+    assert first.nopat == pytest.approx(126.0)
+    assert first.fcff == pytest.approx(126.0 * (1.0 - 0.05 / 0.20))
+
+
 @pytest.mark.parametrize(
     ("assumption", "known_value", "bounds"),
     [

@@ -12,7 +12,7 @@ from kncompanyscraper.analysis.valuation.valuation_result import ValuationResult
 from kncompanyscraper.models.company import Company
 
 
-def _analysis(*, revenue_growth, ebit_margin, terminal_growth):
+def _analysis(*, revenue_growth, ebit_margin, terminal_growth, confidence="high"):
     assumptions = DcfAssumptions(
         projection_years=5,
         revenue_growth=0.10,
@@ -30,6 +30,7 @@ def _analysis(*, revenue_growth, ebit_margin, terminal_growth):
         status="available",
         assumptions=assumptions,
         current_price=100.0,
+        normalization=SimpleNamespace(confidence=confidence),
         implied_expectations={
             name: SimpleNamespace(
                 status="solved",
@@ -76,7 +77,7 @@ def test_baseline_matching_expectations_are_neutral():
     )
 
     assert result["score"] == pytest.approx(50.0)
-    assert result["flags"] == []
+    assert result["flags"] == ["diagnostic_only_expectations"]
 
 
 def test_undemanding_expectations_score_high_on_materiality_scaled_median():
@@ -85,15 +86,33 @@ def test_undemanding_expectations_score_high_on_materiality_scaled_median():
     )
 
     assert result["score"] == pytest.approx(75.0)
-    assert result["flags"] == ["undemanding_expectations"]
+    assert result["flags"] == [
+        "undemanding_expectations",
+        "diagnostic_only_expectations",
+    ]
 
 
-def test_one_extreme_solver_does_not_dominate_the_correlated_signal():
+def test_terminal_growth_is_diagnostic_only_and_does_not_change_score():
     result = score_reverse_dcf(
-        _analysis(revenue_growth=-0.10, ebit_margin=0.20, terminal_growth=0.02)
+        _analysis(revenue_growth=0.10, ebit_margin=0.20, terminal_growth=-0.50)
     )
 
     assert result["score"] == pytest.approx(50.0)
+
+
+def test_low_normalization_confidence_is_preserved_in_diagnostic_output():
+    result = score_reverse_dcf(
+        _analysis(
+            revenue_growth=0.05,
+            ebit_margin=0.15,
+            terminal_growth=0.01,
+            confidence="low",
+        )
+    )
+
+    assert result["score"] == pytest.approx(75.0)
+    assert result["ranking_weight"] == 0.0
+    assert "low_confidence_expectations" in result["flags"]
 
 
 def test_price_below_entire_bounded_range_is_scored_as_censored_headroom():
@@ -119,7 +138,10 @@ def test_price_below_entire_bounded_range_is_scored_as_censored_headroom():
     expected = 100.0 / (1.0 + 9.0 ** -(boundary_gap + price_distance))
     assert result["score"] == pytest.approx(expected)
     assert result["score"] < 100.0
-    assert result["flags"] == ["undemanding_expectations"]
+    assert result["flags"] == [
+        "undemanding_expectations",
+        "diagnostic_only_expectations",
+    ]
 
 
 def test_smooth_mapping_differentiates_scores_that_previously_saturated():
@@ -178,7 +200,10 @@ def test_outside_bound_with_negative_modeled_equity_value_is_scored():
     result = score_reverse_dcf(analysis)
 
     assert 0.0 < result["score"] < 50.0
-    assert result["flags"] == ["demanding_expectations"]
+    assert result["flags"] == [
+        "demanding_expectations",
+        "diagnostic_only_expectations",
+    ]
 
 
 def test_unavailable_reverse_dcf_preserves_legacy_valuation_score():
@@ -191,7 +216,8 @@ def test_unavailable_reverse_dcf_preserves_legacy_valuation_score():
     assert unavailable["score"] == pytest.approx(legacy["score"])
 
 
-def test_available_reverse_dcf_changes_valuation_score_and_is_exposed():
+def test_available_reverse_dcf_is_exposed_but_does_not_change_valuation_score():
+    legacy = score_valuation(_valuation())
     low = score_valuation(
         _valuation(),
         reverse_dcf={"score": 0.0, "positives": [], "negatives": [], "flags": []},
@@ -201,11 +227,39 @@ def test_available_reverse_dcf_changes_valuation_score_and_is_exposed():
         reverse_dcf={"score": 100.0, "positives": [], "negatives": [], "flags": []},
     )
 
-    assert high["score"] > low["score"]
+    assert low["score"] == pytest.approx(legacy["score"])
+    assert high["score"] == pytest.approx(legacy["score"])
     assert high["reverse_dcf_score"] == 100.0
 
 
-def test_ranking_exposes_and_uses_expectation_headroom():
+def test_reverse_dcf_confidence_does_not_change_diagnostic_only_weight():
+    legacy = score_valuation(_valuation())["score"]
+    full = score_valuation(
+        _valuation(),
+        reverse_dcf={
+            "score": 0.0,
+            "confidence_weight": 1.0,
+            "positives": [],
+            "negatives": [],
+            "flags": [],
+        },
+    )["score"]
+    reduced = score_valuation(
+        _valuation(),
+        reverse_dcf={
+            "score": 0.0,
+            "confidence_weight": 0.25,
+            "positives": [],
+            "negatives": [],
+            "flags": [],
+        },
+    )["score"]
+
+    assert full == pytest.approx(legacy)
+    assert reduced == pytest.approx(legacy)
+
+
+def test_ranking_exposes_diagnostic_expectation_headroom():
     company = Company(1, "Test", "TST", None, None, None)
     financial = FinancialResult(
         operating_margin=0.20,
@@ -237,4 +291,5 @@ def test_ranking_exposes_and_uses_expectation_headroom():
 
     assert score.reverse_dcf_score == 75.0
     assert "undemanding_expectations" in score.flags
+    assert "diagnostic_only_expectations" in score.flags
     assert any("expectation headroom" in item for item in score.positives)
