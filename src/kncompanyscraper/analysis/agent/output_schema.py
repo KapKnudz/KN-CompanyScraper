@@ -4,6 +4,17 @@ from typing import Literal
 
 AnalysisVerdict = Literal["reject", "watch", "latent_case", "activated_case"]
 Confidence = Literal["low", "medium", "high"]
+PortfolioEligibility = Literal["investable", "not_investable"]
+PortfolioReasonCode = Literal[
+    "investable",
+    "valuation_only",
+    "business_quality",
+    "evidence_insufficient",
+    "thesis_not_activated",
+    "liquidity",
+    "balance_sheet",
+    "other",
+]
 ScenarioLabel = Literal["bear", "base", "bull"]
 ClaimResult = Literal["kept", "delayed", "missed", "changed", "unverifiable"]
 BusinessRiskProfile = Literal[
@@ -11,6 +22,12 @@ BusinessRiskProfile = Literal[
     "slightly_cyclical",
     "cyclical_or_other_risk",
     "unclassified",
+]
+ReverseDcfExpectationAssessment = Literal[
+    "plausible",
+    "demanding",
+    "unsupported",
+    "unassessable",
 ]
 
 
@@ -46,11 +63,16 @@ class StockAnalysisResult:
     verdict: AnalysisVerdict
     confidence: Confidence
     one_sentence_thesis: str
+    portfolio_eligibility: PortfolioEligibility = "not_investable"
+    portfolio_reason_code: PortfolioReasonCode = "evidence_insufficient"
+    reconsideration_trigger: str | None = None
 
     case_horizon_months: int | None = None
     activation_trigger: str | None = None
     business_model_assessment: str = ""
     revenue_growth_case: str = ""
+    reverse_dcf_expectation_assessment: ReverseDcfExpectationAssessment = "unassessable"
+    reverse_dcf_expectation_rationale: str = ""
     risk_profile: BusinessRiskProfile = "unclassified"
     risk_profile_confidence: Confidence = "low"
     risk_profile_evidence: list[str] = field(default_factory=list)
@@ -80,10 +102,20 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     "verdict": "reject | watch | latent_case | activated_case",
     "confidence": "low | medium | high",
     "one_sentence_thesis": "string",
+    "portfolio_eligibility": "investable | not_investable",
+    "portfolio_reason_code": (
+        "investable | valuation_only | business_quality | evidence_insufficient | "
+        "thesis_not_activated | liquidity | balance_sheet | other"
+    ),
+    "reconsideration_trigger": "string | null",
     "case_horizon_months": "integer | null",
     "activation_trigger": "string | null",
     "business_model_assessment": "string",
     "revenue_growth_case": "string",
+    "reverse_dcf_expectation_assessment": (
+        "plausible | demanding | unsupported | unassessable"
+    ),
+    "reverse_dcf_expectation_rationale": "string",
     "risk_profile": (
         "noncyclical_recurring | slightly_cyclical | "
         "cyclical_or_other_risk | unclassified"

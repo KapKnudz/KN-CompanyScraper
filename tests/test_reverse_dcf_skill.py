@@ -86,12 +86,16 @@ def test_skill_wires_policy_and_all_three_solvers_into_analysis_result():
     ).run(_company())
 
     assert result.status == "available"
-    assert result.policy_version == "reverse-dcf-v8"
+    assert result.policy_version == "reverse-dcf-v10"
     assert result.analysis_date == date.today().isoformat()
     assert result.baseline_valuation.value_per_share == pytest.approx(target)
     assert result.reinvestment_roic == pytest.approx(0.20)
     assert result.assumptions.reinvestment_return == pytest.approx(0.20)
+    assert result.assumptions.revenue_growth_fade_to == pytest.approx(0.02)
+    assert result.assumptions.ebit_margin_start == pytest.approx(0.15)
     assert result.normalization.confidence == "low"
+    assert result.operating_history.annuals[-1].year == 2025
+    assert result.operating_history.annuals[-1].ebit_margin == pytest.approx(0.15)
     assert set(result.implied_expectations) == {
         "revenue_growth",
         "ebit_margin",
@@ -139,6 +143,82 @@ def test_skill_wires_policy_and_all_three_solvers_into_analysis_result():
         assert expectation.source_id.startswith("valuation:reverse_dcf:")
     assert not hasattr(result, "forward_policy_version")
     assert not hasattr(result, "forward_scenarios")
+
+
+def test_skill_attributes_price_change_to_fundamental_change():
+    annual = _report(2025, 1_000.0, 150.0, 100.0)
+    annual.net_income = 100.0
+    baseline = _report(2022, 700.0, 70.0, 60.0)
+    baseline.net_income = 50.0
+    current_price = StockPrice(date(2026, 8, 12), 200.0, "SEK")
+    start_price = StockPrice(date(2023, 8, 11), 100.0, "SEK")
+
+    class AttributionValuationRepository(ValuationRepository):
+        def get_stock_price_on_date(self, company_id, target_date, max_age_days=None):
+            return start_price if target_date == date(2023, 8, 12) else None
+
+    result = ReverseDcfSkill(
+        AttributionValuationRepository(current_price),
+        FinancialRepository(annual, [baseline]),
+        as_of=date(2026, 8, 12),
+    ).run(_company())
+
+    attribution = result.price_fundamental_attribution
+    assert len(attribution) == 1
+    assert attribution[0].years == 3
+    assert attribution[0].price_return == pytest.approx(1.0)
+    assert attribution[0].annualized_revenue_growth == pytest.approx(
+        (1_000.0 / 700.0) ** (1 / 3) - 1
+    )
+    assert attribution[0].annualized_eps_growth == pytest.approx(
+        (100.0 / 50.0) ** (1 / 3) - 1
+    )
+    assert attribution[0].ebit_margin_change == pytest.approx(0.05)
+    assert attribution[0].share_count_change == pytest.approx(0.0)
+    assert attribution[0].pe_change == pytest.approx(0.0)
+
+
+def test_operating_history_exposes_company_specific_growth_and_margin_benchmarks():
+    revenues = {
+        2020: 100.0,
+        2021: 110.0,
+        2022: 121.0,
+        2023: 133.1,
+        2024: 146.41,
+        2025: 161.051,
+    }
+    margins = {
+        2020: 0.10,
+        2021: 0.12,
+        2022: 0.14,
+        2023: 0.16,
+        2024: 0.20,
+        2025: 0.18,
+    }
+    reports = [
+        _report(year, revenue, revenue * margins[year], revenue * 0.08)
+        for year, revenue in revenues.items()
+    ]
+
+    history = DcfAssumptionPolicy.build_operating_history(reports[-1], reports[:-1])
+
+    assert [point.year for point in history.annuals] == [2021, 2022, 2023, 2024, 2025]
+    assert all(
+        point.revenue_growth == pytest.approx(0.10)
+        for point in history.annuals
+    )
+    assert history.three_year_revenue_cagr == pytest.approx(0.10)
+    assert history.five_year_revenue_cagr == pytest.approx(0.10)
+    assert history.three_year_average_ebit_margin == pytest.approx(
+        sum(report.ebit for report in reports[-3:])
+        / sum(report.revenue for report in reports[-3:])
+    )
+    assert history.five_year_average_ebit_margin == pytest.approx(
+        sum(report.ebit for report in reports[-5:])
+        / sum(report.revenue for report in reports[-5:])
+    )
+    assert history.peak_ebit_margin == pytest.approx(0.20)
+    assert history.peak_ebit_margin_year == 2024
 
 
 @pytest.mark.parametrize(

@@ -46,6 +46,8 @@ def test_builds_explicit_assumptions_from_current_and_historical_reports():
     assert decision.required_return.risk_free_rate_date == "2026-07-24"
     assert decision.assumptions.tax_rate == 0.21
     assert decision.assumptions.terminal_growth == 0.02
+    assert decision.assumptions.revenue_growth_fade_to == 0.02
+    assert decision.assumptions.ebit_margin_start == pytest.approx(0.15)
     assert decision.assumptions.revenue_growth == pytest.approx(
         (1_100.0 / 800.0) ** (1 / 3) - 1
     )
@@ -55,6 +57,7 @@ def test_builds_explicit_assumptions_from_current_and_historical_reports():
     assert decision.assumption_sources["ebit_margin"] == (
         "revenue-weighted EBIT margin over annual years 2023-2025"
     )
+    assert "fades linearly" in decision.assumption_sources["ebit_margin_start"]
     assert any("five-year operating-margin history unavailable" in item for item in decision.warnings)
     assert decision.assumptions.net_reinvestment_rate == pytest.approx(
         decision.assumptions.ebit_margin

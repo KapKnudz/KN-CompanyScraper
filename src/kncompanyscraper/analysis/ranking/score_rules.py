@@ -356,7 +356,6 @@ def score_valuation(
     debt_to_equity: float | None = None,
     quality_score: float | None = None,
     growth_score: float | None = None,
-    reverse_dcf: dict | None = None,
 ) -> dict:
     if valuation is None:
         return {"score": 0.0, "positives": [], "negatives": [], "missing": ["valuation data not available"]}
@@ -441,14 +440,6 @@ def score_valuation(
         elif mos <= -0.03:
             negatives.append(f"Margin of safety {mos:.1%} — trading above required return")
 
-    if reverse_dcf is not None and reverse_dcf.get("score") is not None:
-        # Reverse DCF is expectation evidence, not a ranking input, until the
-        # portfolio-level distribution is calibrated.
-        positives.extend(reverse_dcf.get("positives", []))
-        negatives.extend(reverse_dcf.get("negatives", []))
-
-    # Reverse DCF remains diagnostic-only, so these are the legacy valuation
-    # weights normalized over whichever inputs are available.
     if scored:
         total_weight = sum(w for _, w in scored)
         score = sum(s * w for s, w in scored) / total_weight if total_weight > 0 else 0.0
@@ -457,11 +448,10 @@ def score_valuation(
 
     return {
         "score": score,
-        "reverse_dcf_score": reverse_dcf.get("score") if reverse_dcf else None,
         "positives": positives,
         "negatives": negatives,
         "missing": missing,
-        "flags": reverse_dcf.get("flags", []) if reverse_dcf else [],
+        "flags": [],
     }
 
 

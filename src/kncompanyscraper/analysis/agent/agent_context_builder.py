@@ -3,8 +3,9 @@ from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
 
 class AgentContextBuilder:
 
-    def __init__(self, evidence_builder=None):
+    def __init__(self, evidence_builder=None, cyclicality_repository=None):
         self.evidence_builder = evidence_builder
+        self.cyclicality_repository = cyclicality_repository
 
     def build(
         self,
@@ -14,7 +15,9 @@ class AgentContextBuilder:
         candidates: list[AgentCandidate] = []
 
         for rank, cs in enumerate(ranking.scores, 1):
-            full_results = results_by_company.get(cs.company_id, {})
+            full_results = self._full_results(
+                cs.company_id, results_by_company.get(cs.company_id, {})
+            )
 
             candidate = AgentCandidate(
                 rank=rank,
@@ -60,7 +63,9 @@ class AgentContextBuilder:
         for rank, cs in enumerate(ranking.scores, 1):
             if cs.company_id not in shortlist_ids:
                 continue
-            full_results = results_by_company.get(cs.company_id, {})
+            full_results = self._full_results(
+                cs.company_id, results_by_company.get(cs.company_id, {})
+            )
 
             candidate = AgentCandidate(
                 rank=rank,
@@ -96,3 +101,11 @@ class AgentContextBuilder:
         if self.evidence_builder is None:
             return {}
         return self.evidence_builder.build(company_id).to_dict()
+
+    def _full_results(self, company_id: int, results: dict) -> dict:
+        if self.cyclicality_repository is None:
+            return results
+        consensus = self.cyclicality_repository.get_consensus(company_id)
+        if consensus is None:
+            return results
+        return {**results, "cyclicality_consensus": consensus}

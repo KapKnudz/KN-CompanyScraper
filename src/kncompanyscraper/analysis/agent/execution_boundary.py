@@ -15,7 +15,7 @@ class PersistedStockAnalysis:
 
 
 class AgentExecutionBoundary:
-    VALIDATION_VERSION = "agent-boundary-v8"
+    VALIDATION_VERSION = "agent-boundary-v11"
     NO_INSIDER_ASSESSMENT = (
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
@@ -52,6 +52,7 @@ class AgentExecutionBoundary:
         valuation_source_aliases = {
             **self._deterministic_source_aliases(candidate),
             **self._valuation_source_aliases(candidate),
+            "research_evidence.insider_event_count": "research:insider_event_count",
         }
         for citation in result.citations:
             citation.source_id = valuation_source_aliases.get(
@@ -88,7 +89,9 @@ class AgentExecutionBoundary:
         self._validate_scenario_characterization(result)
         self._validate_management_sources(result, document_source_ids)
         self._validate_activated_case(result, candidate)
+        self._validate_portfolio_eligibility(result)
         self._validate_risk_profile(result, candidate)
+        self._validate_reverse_dcf_assessment(result, candidate)
 
         insider_checks = []
         warnings = list(deterministic_warnings)
@@ -185,6 +188,31 @@ class AgentExecutionBoundary:
                     "prose upside claims are not allowed by the reverse-only policy"
                 )
 
+    @classmethod
+    def _validate_reverse_dcf_assessment(cls, result, candidate):
+        rationale = result.reverse_dcf_expectation_rationale.strip()
+        if not rationale:
+            raise StockAnalysisValidationError(
+                "reverse-DCF expectation assessment requires a rationale"
+            )
+        if re.search(
+            r"\b(?:reverse[- ]?dcf\s+)?score\b|\b\d+(?:\.\d+)?\s*/\s*100\b",
+            rationale,
+            re.IGNORECASE,
+        ):
+            raise StockAnalysisValidationError(
+                "reverse-DCF expectation assessment cannot use a numerical score"
+            )
+
+        reverse_dcf = candidate.full_results.get("reverse_dcf")
+        status = cls._field(reverse_dcf, "status")
+        expectation_curve = cls._field(reverse_dcf, "expectation_curve") or ()
+        if status != "available" or not expectation_curve:
+            if result.reverse_dcf_expectation_assessment != "unassessable":
+                raise StockAnalysisValidationError(
+                    "unavailable reverse DCF must be assessed as unassessable"
+                )
+
     @staticmethod
     def _field(value, name):
         if isinstance(value, dict):
@@ -219,6 +247,8 @@ class AgentExecutionBoundary:
                     "terminal_growth",
                     "net_reinvestment_rate",
                     "reinvestment_return",
+                    "revenue_growth_fade_to",
+                    "ebit_margin_start",
                 )
             },
             "assumption_sources": cls._field(reverse_dcf, "assumption_sources") or {},
@@ -226,6 +256,33 @@ class AgentExecutionBoundary:
                 reverse_dcf, "normalized_fcf_margin"
             ),
             "normalization": cls._serialize_normalization(normalization),
+            "operating_history": cls._serialize_operating_history(
+                cls._field(reverse_dcf, "operating_history")
+            ),
+            "price_fundamental_attribution": [
+                {
+                    name: cls._field(period, name)
+                    for name in (
+                        "years",
+                        "start_price_date",
+                        "end_price_date",
+                        "start_report_year",
+                        "end_report_year",
+                        "price_return",
+                        "annualized_price_return",
+                        "annualized_revenue_growth",
+                        "annualized_ebit_growth",
+                        "annualized_net_income_growth",
+                        "annualized_eps_growth",
+                        "ebit_margin_change",
+                        "share_count_change",
+                        "pe_change",
+                    )
+                }
+                for period in cls._field(
+                    reverse_dcf, "price_fundamental_attribution"
+                ) or ()
+            ],
             "reinvestment_roic": cls._field(reverse_dcf, "reinvestment_roic"),
             "required_return": {
                 name: cls._field(required_return, name)
@@ -340,6 +397,31 @@ class AgentExecutionBoundary:
         return serialized
 
     @classmethod
+    def _serialize_operating_history(cls, history):
+        if history is None:
+            return None
+        return {
+            "annuals": [
+                {
+                    name: cls._field(point, name)
+                    for name in ("year", "revenue_growth", "ebit_margin")
+                }
+                for point in cls._field(history, "annuals") or ()
+            ],
+            **{
+                name: cls._field(history, name)
+                for name in (
+                    "three_year_revenue_cagr",
+                    "five_year_revenue_cagr",
+                    "three_year_average_ebit_margin",
+                    "five_year_average_ebit_margin",
+                    "peak_ebit_margin",
+                    "peak_ebit_margin_year",
+                )
+            },
+        }
+
+    @classmethod
     def _serialize_expectations(cls, expectations):
         return {
             name: cls._serialize_expectation(expectation)
@@ -421,21 +503,44 @@ class AgentExecutionBoundary:
 
     @classmethod
     def _validate_risk_profile(cls, result, candidate):
-        if result.risk_profile == "unclassified":
-            if result.risk_profile_evidence:
+        consensus = candidate.full_results.get("cyclicality_consensus") or {}
+        if cls._field(consensus, "status") != "complete":
+            if result.risk_profile != "unclassified" or result.risk_profile_evidence:
                 raise StockAnalysisValidationError(
-                    "unclassified risk profile cannot carry classification evidence"
+                    "model-selected risk profiles require a completed classifier consensus"
                 )
             return
-        if not result.risk_profile_evidence:
+
+        expected_profile = cls._field(consensus, "risk_profile")
+        expected_confidence = (
+            "high"
+            if cls._field(consensus, "consensus_strength") == "unanimous"
+            else "medium"
+        )
+        evidence = cls._field(consensus, "evidence") or ()
+        expected_evidence = {
+            cls._field(item, "source_id")
+            for item in evidence
+            if cls._field(item, "source_id")
+        }
+        if result.risk_profile != expected_profile:
             raise StockAnalysisValidationError(
-                "classified risk profile requires cited evidence"
+                "risk profile must match the completed classifier consensus"
             )
+        if result.risk_profile_confidence != expected_confidence:
+            raise StockAnalysisValidationError(
+                "risk profile confidence must match classifier consensus strength"
+            )
+        if set(result.risk_profile_evidence) != expected_evidence:
+            raise StockAnalysisValidationError(
+                "risk profile evidence must match classifier consensus evidence"
+            )
+
         reverse_dcf = candidate.full_results.get("reverse_dcf")
         sensitivities = cls._field(reverse_dcf, "discount_rate_sensitivities") or {}
-        if result.risk_profile not in sensitivities:
+        if expected_profile not in sensitivities:
             raise StockAnalysisValidationError(
-                "risk profile does not match a deterministic discount-rate sensitivity"
+                "classifier consensus has no matching deterministic discount-rate sensitivity"
             )
 
     @classmethod
@@ -462,6 +567,21 @@ class AgentExecutionBoundary:
             aliases["full_results." + ".".join(path)] = source_id
 
         visit(candidate.full_results, [])
+        reverse_dcf = candidate.full_results.get("reverse_dcf")
+        if cls._field(reverse_dcf, "normalization") is not None:
+            source_id = "deterministic:reverse_dcf:normalization"
+            aliases[source_id] = source_id
+            aliases["full_results.reverse_dcf.normalization"] = source_id
+        if cls._field(reverse_dcf, "operating_history") is not None:
+            source_id = "deterministic:reverse_dcf:operating_history"
+            aliases[source_id] = source_id
+            aliases["full_results.reverse_dcf.operating_history"] = source_id
+        if cls._field(reverse_dcf, "price_fundamental_attribution") is not None:
+            source_id = "deterministic:reverse_dcf:price_fundamental_attribution"
+            aliases[source_id] = source_id
+            aliases[
+                "full_results.reverse_dcf.price_fundamental_attribution"
+            ] = source_id
         return aliases
 
     @staticmethod
@@ -477,6 +597,35 @@ class AgentExecutionBoundary:
                     "management credibility claim cites unknown document source(s): "
                     + ", ".join(unknown_source_ids)
                 )
+
+    @staticmethod
+    def _validate_portfolio_eligibility(result):
+        if result.portfolio_eligibility == "investable":
+            if result.verdict != "activated_case":
+                raise StockAnalysisValidationError(
+                    "investable portfolio eligibility requires activated_case verdict"
+                )
+            if result.portfolio_reason_code != "investable":
+                raise StockAnalysisValidationError(
+                    "investable portfolio eligibility requires investable reason code"
+                )
+            if result.reconsideration_trigger is not None:
+                raise StockAnalysisValidationError(
+                    "investable cases cannot have a reconsideration trigger"
+                )
+            return
+
+        if result.portfolio_reason_code == "investable":
+            raise StockAnalysisValidationError(
+                "not_investable portfolio eligibility requires an exclusion reason"
+            )
+        if (
+            result.portfolio_reason_code in {"valuation_only", "thesis_not_activated"}
+            and not (result.reconsideration_trigger or "").strip()
+        ):
+            raise StockAnalysisValidationError(
+                "reconsiderable portfolio exclusions require a trigger"
+            )
 
     @staticmethod
     def _validate_activated_case(result, candidate):

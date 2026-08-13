@@ -78,17 +78,19 @@ forecast generator, or substitute for an investment decision.
 
 DCF arithmetic belongs to the deterministic valuation engine. Reverse DCF is
 implemented first. Its primary output is a growth–margin expectation curve:
-at a fixed set of revenue-growth rates it solves the EBIT margin needed to match
-the current price. The curve is also supplied for each deterministic business-risk
-profile so the agent can select a cited cyclicality lens. One-variable revenue-growth, EBIT-margin, and terminal-growth
+at a fixed set of year-one revenue-growth rates that fade to mature growth, it
+solves the year-five EBIT margin reached from the current reported margin and
+needed to match the current price. The curve is also supplied for each
+deterministic business-risk profile so the agent can select a cited cyclicality
+lens. One-variable revenue-growth, EBIT-margin, and terminal-growth
 solves remain diagnostic cross-checks. Reverse DCF has zero ranking weight. The FCFF implementation is
 for ordinary operating companies. Bank branches are rejected pending a
 residual-income/dividend model, and property companies are rejected pending a
 NAV/FFO-oriented model.
 
 For eligible operating companies, the analysis compares those implied
-expectations with the evidence-based DCF baseline. The legacy scalar score is
-retained for migration diagnostics but cannot change the ranking.
+expectations with the evidence-based DCF baseline. Reverse DCF produces no
+scalar score and cannot change the deterministic ranking.
 Reinvestment responds to each modeled growth rate through point-in-time ROIC rather than
 Börsdata's acquisition-contaminated reported FCF. Historical backtests reconstruct
 the same reverse DCF only from reports, KPI snapshots, and prices available on
@@ -133,6 +135,14 @@ validate each structured response, and persist it to PostgreSQL:
 python -m kncompanyscraper.main analyze-shortlist --max-candidates 1
 ```
 
+To retry or analyze exact shortlisted companies without rebilling earlier
+candidates, add `--company-ids`, for example:
+
+```
+python -m kncompanyscraper.main analyze-shortlist \
+  --provider deepseek --max-candidates 2 --company-ids 76 37
+```
+
 Use DeepSeek instead while keeping the same policy, evidence packet, local
 schema validation, citation checks, and persistence boundary:
 
@@ -144,6 +154,21 @@ This command makes paid API calls. It requires the selected provider's API key;
 the mandatory candidate limit prevents accidentally analyzing the entire shortlist.
 For the five-company shadow pilot, pass `--max-candidates 5` after inspecting
 the exported prompts.
+
+Build a durable portfolio-selection run from the latest accepted analyses:
+
+```
+python -m kncompanyscraper.main select-portfolio \
+  --target-size 5 \
+  --output ./analysis-results/portfolio-latest.json
+```
+
+Only analyses that explicitly mark an activated case as investable, have at
+least medium confidence, use evidence no older than 45 days, and carry a
+completed business-risk classification can be selected.
+Five qualifying cases receive equal 20% target weights. If fewer qualify, the
+run is `not_ready`, weights remain null, and exclusions identify the missing
+analysis, stale evidence, valuation, thesis, or risk-concentration reason.
 
 ## Development
 

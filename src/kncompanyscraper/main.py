@@ -64,7 +64,6 @@ def _cmd_rank_watchlist():
             f"quality={cs.quality_score:>5.1f}  "
             f"growth={cs.growth_score:>5.1f}  "
             f"valuation={cs.valuation_score:>5.1f}  "
-            f"expectations={cs.reverse_dcf_score if cs.reverse_dcf_score is not None else '—':>5}  "
             f"balance={cs.balance_sheet_score:>5.1f}  "
             f"model={cs.ranking_model:<8}  "
             f"eligible={'yes' if cs.rank_eligible else 'no ':<3}  "
@@ -185,11 +184,10 @@ def _cmd_import_watchlist(csv_path: Path):
 
 def _cmd_export_agent_prompts(output_dir: Path, max_candidates: int):
     """Export model-ready prompts for the deterministic shortlist."""
-    from kncompanyscraper.analysis.agent.agent_context_builder import AgentContextBuilder
     from kncompanyscraper.analysis.agent.prompt_exporter import AgentPromptExporter
 
     run = _build_watchlist_analysis_service().analyze_watchlist()
-    candidates = AgentContextBuilder(_build_research_evidence_builder()).build_shortlist(
+    candidates = _build_agent_context_builder().build_shortlist(
         run.ranking,
         run.results_by_company,
         limit=max_candidates,
@@ -203,10 +201,10 @@ def _cmd_analyze_shortlist(
     provider: str,
     model: str | None,
     reasoning_effort: str | None,
+    company_ids: list[int] | None = None,
 ):
     """Analyze and persist a spend-bounded subset of the current shortlist."""
     from kncompanyscraper.analysis.agent.agent_analysis_service import AgentAnalysisService
-    from kncompanyscraper.analysis.agent.agent_context_builder import AgentContextBuilder
     from kncompanyscraper.analysis.agent.execution_boundary import AgentExecutionBoundary
     from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
 
@@ -223,21 +221,64 @@ def _cmd_analyze_shortlist(
         raise SystemExit(str(exc)) from exc
 
     run = _build_watchlist_analysis_service().analyze_watchlist()
-    candidates = AgentContextBuilder(_build_research_evidence_builder()).build_shortlist(
+    candidates = _build_agent_context_builder().build_shortlist(
         run.ranking,
         run.results_by_company,
-        limit=max_candidates,
     )
+    if company_ids:
+        requested = set(company_ids)
+        candidates = [
+            candidate for candidate in candidates if candidate.company_id in requested
+        ]
+        missing = requested - {candidate.company_id for candidate in candidates}
+        if missing:
+            raise SystemExit(
+                "Requested company IDs are not in the current agent shortlist: "
+                + ", ".join(str(company_id) for company_id in sorted(missing))
+            )
+    candidates = candidates[:max_candidates]
     if not candidates:
         print("No companies available in the agent shortlist.")
         return
 
+    analysis_repository = AnalysisRepository()
     service = AgentAnalysisService(
         model_adapter,
-        AgentExecutionBoundary(AnalysisRepository()),
+        AgentExecutionBoundary(analysis_repository),
+        raw_response_repository=analysis_repository,
     )
     persisted = service.analyze(candidates)
     print(f"Persisted {len(persisted)} stock analyses.")
+
+
+def _cmd_select_portfolio(target_size: int, output: Path):
+    """Select an equal-weight portfolio from validated investable analyses."""
+    import json
+    from datetime import date
+
+    from kncompanyscraper.analysis.portfolio_selection import PortfolioSelectionService
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
+    from kncompanyscraper.repositories.portfolio_repository import PortfolioRepository
+
+    run = _build_watchlist_analysis_service().analyze_watchlist()
+    selection = PortfolioSelectionService().select(
+        run.ranking,
+        AnalysisRepository().get_latest_validated_stock_analyses(),
+        as_of=date.today(),
+        target_size=target_size,
+    )
+    payload = selection.to_dict()
+    portfolio_run_id = PortfolioRepository().save_run(payload)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    print(
+        f"Portfolio run {portfolio_run_id}: {selection.status}, "
+        f"{len(selection.selected)}/{selection.target_size} cases selected."
+    )
+    print(f"Saved {output}.")
 
 
 def _build_research_evidence_builder():
@@ -254,6 +295,16 @@ def _build_research_evidence_builder():
         NewsRepository(),
         InsiderRepository(),
         ValuationRepository(),
+    )
+
+
+def _build_agent_context_builder():
+    from kncompanyscraper.analysis.agent.agent_context_builder import AgentContextBuilder
+    from kncompanyscraper.repositories.cyclicality_repository import CyclicalityRepository
+
+    return AgentContextBuilder(
+        _build_research_evidence_builder(),
+        CyclicalityRepository(),
     )
 
 
@@ -433,10 +484,27 @@ def main():
     )
     analyze_parser.add_argument("--max-candidates", required=True, type=_positive_int)
     analyze_parser.add_argument(
+        "--company-ids",
+        nargs="+",
+        type=_positive_int,
+        help="Optional exact company IDs within the current agent shortlist",
+    )
+    analyze_parser.add_argument(
         "--provider",
         choices=("openai", "deepseek"),
         default="openai",
     )
+    portfolio_parser = subparsers.add_parser(
+        "select-portfolio",
+        help="Build a validated equal-weight portfolio selection artifact",
+    )
+    portfolio_parser.add_argument(
+        "--target-size",
+        type=_positive_int,
+        default=5,
+        help="Number of equal-weight holdings (default: 5)",
+    )
+    portfolio_parser.add_argument("--output", required=True, type=Path)
     analyze_parser.add_argument("--model")
     analyze_parser.add_argument(
         "--reasoning-effort",
@@ -483,7 +551,10 @@ def main():
             args.provider,
             args.model,
             args.reasoning_effort,
+            args.company_ids,
         )
+    elif args.command == "select-portfolio":
+        _cmd_select_portfolio(args.target_size, args.output)
     elif args.command == "sync-agent-evidence":
         _cmd_sync_agent_evidence(args.max_candidates)
     elif args.command == "backtest":

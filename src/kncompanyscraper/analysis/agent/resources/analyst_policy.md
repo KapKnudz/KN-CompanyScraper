@@ -30,8 +30,7 @@ Express every viable case in one falsifiable sentence containing:
 - the horizon;
 - the revenue mechanism;
 - the current and expected profitability;
-- the valuation assumption;
-- the market-implied operating expectation; and
+- the current price and market-implied operating expectation; and
 - the principal thesis-break condition.
 
 Use a default horizon of two to three years for a fundamental case. Do not defend a failed quarterly setup with a newly invented three-year narrative, and do not reject a genuine multi-year case because of ordinary short-term volatility.
@@ -52,7 +51,7 @@ Analyze expected return through three separate engines:
 2. Margin expansion: EBIT margin moving toward a defensible steady-state or peak level.
 3. Multiple change: the market becoming willing or able to pay more per unit of earnings.
 
-Decompose the expected return across these engines, plus changes in net debt and share count. Flag a case as fragile when it depends mainly on multiple expansion.
+Assess qualitatively how the case depends on these engines, plus changes in net debt and share count. Do not invent a numerical return decomposition. Flag a case as fragile when it depends mainly on multiple expansion.
 
 ## Peak-margin discipline
 
@@ -73,11 +72,13 @@ Do not select a peak margin merely because it makes the valuation attractive. Lo
 
 ## Reverse-DCF valuation
 
-Use the deterministic reverse DCF to identify what the current price requires. Focus first on the supplied growth–margin expectation curve, whose points are alternative combinations consistent with price rather than a unique forecast. Use the one-variable implied growth and margin solves as cross-checks, together with the supplied discount rate, terminal growth, net debt or cash, and share count. Treat terminal-growth output and the legacy scalar reverse-DCF score as diagnostic only with no ranking or verdict weight. Check the supplied normalization confidence and show both three- and five-year windows when they materially disagree.
+Use the deterministic reverse DCF to identify alternative growth–margin combinations consistent with the current price, not one unique market forecast. Treat terminal-growth output as diagnostic only. Account for the supplied normalization confidence before relying on the result.
 
-Assess cyclicality separately from the deterministic arithmetic. Classify a business only from cited evidence about recurring revenue, demand sensitivity, customer or project concentration, commodity exposure, or other material risks. Use `unclassified` when that evidence is absent. Compare the conclusion with the matching supplied discount-rate sensitivity and its growth–margin curve; never invent an intermediate rate or alter the policy components. If unclassified, use the baseline slightly-cyclical curve and disclose that the profile remains unverified.
+Assess cyclicality separately from the arithmetic. Use only a supplied completed classifier consensus to select a deterministic risk profile; otherwise remain unclassified and use the baseline profile. Never invent an intermediate rate or alter policy components.
 
 Do not produce forward fair values, price targets, expected returns, upside percentages, or bear/base/bull intrinsic-value scenarios. Compare implied expectations with defensible historical and prospective operating ranges instead. Historical valuation can provide context but does not establish an entitlement to a multiple.
+
+Describe reverse-DCF expectations only as `plausible`, `demanding`, `unsupported`, or `unassessable`, using company-specific historical and prospective evidence. Never translate these labels into a score or apply generic numerical cutoffs. Missing comparative evidence means `unassessable`, not `unsupported`.
 
 Treat missing data as uncertainty, never as neutral or favorable evidence. Do not invent values. State what is missing and how it affects the verdict.
 

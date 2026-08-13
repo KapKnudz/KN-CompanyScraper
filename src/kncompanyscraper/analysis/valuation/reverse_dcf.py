@@ -29,6 +29,8 @@ class DcfAssumptions:
     terminal_growth: float
     net_reinvestment_rate: float = 0.0
     reinvestment_return: float | None = None
+    revenue_growth_fade_to: float | None = None
+    ebit_margin_start: float | None = None
 
 
 @dataclass(frozen=True)
@@ -44,7 +46,9 @@ class ReverseDcfInputs:
 @dataclass(frozen=True)
 class ProjectedCashFlow:
     year: int
+    revenue_growth: float
     revenue: float
+    ebit_margin: float
     ebit: float
     nopat: float
     fcff: float
@@ -85,16 +89,30 @@ class ReverseDcfEngine:
         present_value = 0.0
 
         for year in range(1, assumptions.projection_years + 1):
-            revenue *= 1.0 + assumptions.revenue_growth
-            ebit = revenue * assumptions.ebit_margin
+            revenue_growth = self._fade(
+                assumptions.revenue_growth,
+                assumptions.revenue_growth_fade_to,
+                year,
+                assumptions.projection_years,
+            )
+            ebit_margin = self._fade(
+                assumptions.ebit_margin_start,
+                assumptions.ebit_margin,
+                year,
+                assumptions.projection_years,
+            )
+            revenue *= 1.0 + revenue_growth
+            ebit = revenue * ebit_margin
             nopat = ebit * (1.0 - assumptions.tax_rate)
-            fcff = self._fcff(revenue, nopat, assumptions)
+            fcff = self._fcff(revenue, nopat, assumptions, revenue_growth)
             discounted_fcff = fcff / (1.0 + assumptions.discount_rate) ** year
             present_value += discounted_fcff
             projected.append(
                 ProjectedCashFlow(
                     year=year,
+                    revenue_growth=revenue_growth,
                     revenue=revenue,
+                    ebit_margin=ebit_margin,
                     ebit=ebit,
                     nopat=nopat,
                     fcff=fcff,
@@ -194,10 +212,36 @@ class ReverseDcfEngine:
         raise RuntimeError("reverse DCF solver did not converge")
 
     @staticmethod
-    def _fcff(revenue: float, nopat: float, assumptions: DcfAssumptions) -> float:
+    def _fade(
+        start: float | None,
+        end: float | None,
+        year: int,
+        projection_years: int,
+    ) -> float:
+        if start is None:
+            if end is None:
+                raise ValueError("fade path requires at least one endpoint")
+            return end
+        if end is None or projection_years == 1:
+            return start
+        progress = (year - 1) / (projection_years - 1)
+        return start + (end - start) * progress
+
+    @staticmethod
+    def _fcff(
+        revenue: float,
+        nopat: float,
+        assumptions: DcfAssumptions,
+        revenue_growth: float | None = None,
+    ) -> float:
         if assumptions.reinvestment_return is not None:
             reinvestment_share_of_nopat = min(
-                max(assumptions.revenue_growth, 0.0)
+                max(
+                    assumptions.revenue_growth
+                    if revenue_growth is None
+                    else revenue_growth,
+                    0.0,
+                )
                 / assumptions.reinvestment_return,
                 1.0,
             )
@@ -278,6 +322,10 @@ class ReverseDcfEngine:
         )
         if assumptions.reinvestment_return is not None:
             numeric_assumptions += (assumptions.reinvestment_return,)
+        if assumptions.revenue_growth_fade_to is not None:
+            numeric_assumptions += (assumptions.revenue_growth_fade_to,)
+        if assumptions.ebit_margin_start is not None:
+            numeric_assumptions += (assumptions.ebit_margin_start,)
         if not all(isfinite(value) for value in numeric_inputs + numeric_assumptions):
             raise ValueError("all DCF inputs must be finite")
         if inputs.current_price <= 0:
@@ -290,6 +338,11 @@ class ReverseDcfEngine:
             raise ValueError("projection_years must be a positive integer")
         if assumptions.revenue_growth <= -1.0:
             raise ValueError("revenue_growth must exceed -1")
+        if (
+            assumptions.revenue_growth_fade_to is not None
+            and assumptions.revenue_growth_fade_to <= -1.0
+        ):
+            raise ValueError("revenue_growth_fade_to must exceed -1")
         if not 0.0 <= assumptions.tax_rate <= 1.0:
             raise ValueError("tax_rate must be between 0 and 1")
         if assumptions.discount_rate <= assumptions.terminal_growth:

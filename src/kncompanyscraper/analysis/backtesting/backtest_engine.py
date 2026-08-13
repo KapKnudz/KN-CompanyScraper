@@ -37,7 +37,6 @@ _CATEGORIES = (
     "quality_score",
     "growth_score",
     "valuation_score",
-    "reverse_dcf_score",
     "balance_sheet_score",
     "total_score",
 )

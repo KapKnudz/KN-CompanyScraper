@@ -41,6 +41,24 @@ class NormalizationDiagnostics:
 
 
 @dataclass(frozen=True)
+class HistoricalOperatingYear:
+    year: int | None
+    revenue_growth: float | None
+    ebit_margin: float
+
+
+@dataclass(frozen=True)
+class HistoricalOperatingBenchmarks:
+    annuals: tuple[HistoricalOperatingYear, ...]
+    three_year_revenue_cagr: float | None
+    five_year_revenue_cagr: float | None
+    three_year_average_ebit_margin: float | None
+    five_year_average_ebit_margin: float | None
+    peak_ebit_margin: float
+    peak_ebit_margin_year: int | None
+
+
+@dataclass(frozen=True)
 class DcfPolicyDecision:
     available: bool
     policy_version: str
@@ -58,7 +76,7 @@ class DcfPolicyDecision:
 class DcfAssumptionPolicy:
     """Build auditable FCFF assumptions only from stored company evidence."""
 
-    VERSION = "reverse-dcf-v8"
+    VERSION = "reverse-dcf-v10"
     PROJECTION_YEARS = 5
     TAX_RATE = 0.21
     TERMINAL_GROWTH = 0.02
@@ -188,6 +206,8 @@ class DcfAssumptionPolicy:
             terminal_growth=self.TERMINAL_GROWTH,
             net_reinvestment_rate=reinvestment,
             reinvestment_return=roic_fraction,
+            revenue_growth_fade_to=self.TERMINAL_GROWTH,
+            ebit_margin_start=current_report.ebit / current_report.revenue,
         )
         return DcfPolicyDecision(
             available=True,
@@ -213,6 +233,14 @@ class DcfAssumptionPolicy:
                     "positive Börsdata ROIC used to recompute mature-state "
                     "reinvestment from terminal growth"
                 ),
+                "revenue_growth_fade_to": (
+                    "year-one revenue growth fades linearly to fixed mature "
+                    "terminal growth by the final explicit year"
+                ),
+                "ebit_margin_start": (
+                    "current R12 or latest annual EBIT margin; fades linearly "
+                    "to the modeled final-year EBIT margin"
+                ),
             },
             normalized_fcf_margin=fcf_margin,
             normalization=self._with_reinvestment_confidence(
@@ -223,6 +251,72 @@ class DcfAssumptionPolicy:
             required_return=required_return,
             warnings=tuple(warnings),
         )
+
+    @classmethod
+    def build_operating_history(
+        cls,
+        latest_annual_report: Report | None,
+        historical_annual_reports: list[Report],
+    ) -> HistoricalOperatingBenchmarks | None:
+        reports = [*historical_annual_reports, latest_annual_report]
+        valid = [report for report in reports if cls._has_valid_operating_economics(report)]
+        dated = {report.year: report for report in valid if report.year is not None}
+        annuals = [dated[year] for year in sorted(dated)] if dated else valid
+        if not annuals:
+            return None
+
+        points = []
+        previous = None
+        for report in annuals:
+            growth = cls._annualized_growth(previous, report) if previous else None
+            points.append(
+                HistoricalOperatingYear(
+                    year=report.year,
+                    revenue_growth=growth,
+                    ebit_margin=report.ebit / report.revenue,
+                )
+            )
+            previous = report
+
+        latest_five = annuals[-5:]
+        peak = max(latest_five, key=lambda report: report.ebit / report.revenue)
+        return HistoricalOperatingBenchmarks(
+            annuals=tuple(points[-5:]),
+            three_year_revenue_cagr=cls._exact_revenue_cagr(annuals, 3),
+            five_year_revenue_cagr=cls._exact_revenue_cagr(annuals, 5),
+            three_year_average_ebit_margin=(
+                cls._window(annuals[-3:]).ebit_margin if len(annuals) >= 3 else None
+            ),
+            five_year_average_ebit_margin=(
+                cls._window(latest_five).ebit_margin if len(annuals) >= 5 else None
+            ),
+            peak_ebit_margin=peak.ebit / peak.revenue,
+            peak_ebit_margin_year=peak.year,
+        )
+
+    @staticmethod
+    def _annualized_growth(previous: Report, current: Report) -> float | None:
+        if previous.revenue <= 0 or current.revenue <= 0:
+            return None
+        periods = 1
+        if previous.year is not None and current.year is not None:
+            periods = current.year - previous.year
+            if periods <= 0:
+                return None
+        return (current.revenue / previous.revenue) ** (1.0 / periods) - 1.0
+
+    @staticmethod
+    def _exact_revenue_cagr(reports: list[Report], years: int) -> float | None:
+        latest = reports[-1]
+        if latest.year is None:
+            return None
+        baseline = next(
+            (report for report in reports if report.year == latest.year - years),
+            None,
+        )
+        if baseline is None or baseline.revenue <= 0 or latest.revenue <= 0:
+            return None
+        return (latest.revenue / baseline.revenue) ** (1.0 / years) - 1.0
 
     @staticmethod
     def _missing_operating_inputs(report: Report | None) -> list[str]:

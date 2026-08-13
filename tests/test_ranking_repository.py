@@ -128,7 +128,7 @@ def test_get_run_returns_none_for_missing_id():
 
 def test_ranking_engine_has_model_version():
     engine = RankingEngine()
-    assert engine.RANKING_MODEL_VERSION == "2026-08-11-reverse-dcf-v8"
+    assert engine.RANKING_MODEL_VERSION == "2026-08-12-reverse-dcf-v10"
 
 
 def test_ranking_engine_persists_when_repository_provided():
@@ -177,7 +177,7 @@ def test_ranking_engine_persists_when_repository_provided():
 
     repository.save_ranking_run.assert_called_once()
     call_args = repository.save_ranking_run.call_args
-    assert call_args.kwargs["model_version"] == "2026-08-11-reverse-dcf-v8"
+    assert call_args.kwargs["model_version"] == "2026-08-12-reverse-dcf-v10"
     assert call_args.kwargs["company_count"] == 1
     assert call_args.kwargs["eligible_count"] == 1
     assert len(call_args.kwargs["scores"]) == 1

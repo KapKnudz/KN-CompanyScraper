@@ -5,7 +5,6 @@ from kncompanyscraper.analysis.ranking.score_rules import (
     score_valuation,
     score_balance_sheet,
 )
-from kncompanyscraper.analysis.ranking.reverse_dcf_score import score_reverse_dcf
 from kncompanyscraper.analysis.ranking.sector_score_rules import (
     ranking_model_for_branch,
     score_bank,
@@ -130,7 +129,7 @@ def _compute_candidate_reason(quality: dict, growth: dict, val: dict, balance: d
 
 class RankingEngine:
 
-    RANKING_MODEL_VERSION = "2026-08-11-reverse-dcf-v8"
+    RANKING_MODEL_VERSION = "2026-08-12-reverse-dcf-v10"
 
     def __init__(self, ranking_repository=None):
         self.ranking_repository = ranking_repository
@@ -144,7 +143,6 @@ class RankingEngine:
             valuation = results.get("valuation")
             sector_kpis = results.get("sector_kpis") or {}
             fundamental_kpis = results.get("fundamental_kpis")
-            reverse_dcf = score_reverse_dcf(results.get("reverse_dcf"))
             ranking_model = ranking_model_for_branch(company.branch_id)
             rank_eligible, eligibility_reasons = _rank_eligibility(
                 ranking_model,
@@ -178,7 +176,6 @@ class RankingEngine:
                     debt_to_equity=dte,
                     quality_score=quality["score"] if quality else None,
                     growth_score=growth["score"] if growth else None,
-                    reverse_dcf=reverse_dcf,
                 )
 
             if ranking_model == "property":
@@ -212,11 +209,6 @@ class RankingEngine:
                 quality_score=round(quality["score"], 1),
                 growth_score=round(growth["score"], 1),
                 valuation_score=round(val["score"], 1),
-                reverse_dcf_score=(
-                    round(val["reverse_dcf_score"], 1)
-                    if val.get("reverse_dcf_score") is not None
-                    else None
-                ),
                 balance_sheet_score=round(balance["score"], 1),
                 total_score=round(total, 1),
                 positives=quality["positives"] + growth["positives"] + val["positives"] + balance["positives"],

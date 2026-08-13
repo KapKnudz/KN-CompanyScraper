@@ -31,11 +31,13 @@ clean recurring FCFF calculation. See
 
 ## Baseline assumptions
 
-| Assumption | v8 policy | Source |
+| Assumption | v10 policy | Source |
 |---|---:|---|
 | Explicit forecast period | 5 years | Fixed policy |
-| Revenue growth | -5% to 15% | Annual revenue CAGR over up to three years; disclosed 0% fallback |
-| EBIT margin | Unclamped | Revenue-weighted five-year annual margin, then 3y/latest annual/R12 fallback |
+| Year-one revenue growth | -5% to 15% | Annual revenue CAGR over up to three years; disclosed 0% fallback |
+| Year-five revenue growth | 2% | Linear fade to fixed mature nominal growth |
+| Current EBIT margin | Unclamped | Current R12 or latest annual report |
+| Year-five EBIT margin | Unclamped | Revenue-weighted five-year annual margin, then 3y/latest annual/R12 fallback |
 | Normalized tax rate | 21% | Fixed Nordic modeling proxy |
 | Discount rate | Required-return policy | Dated currency rate + 5% ERP + size + baseline business-risk adjustment |
 | Perpetual growth | 2% | Fixed mature nominal-growth policy |
@@ -67,18 +69,21 @@ is `low` when any of these deterministic checks fires:
 - missing/non-positive ROIC.
 
 Confidence controls how prominently the expectations may be interpreted. It does
-not alter a ranking score because reverse DCF has zero ranking weight in v8.
+does not alter the deterministic ranking because reverse DCF has zero ranking
+weight.
 
 ## Deterministic calculation
 
 For each explicit forecast year:
 
-1. `revenue[t] = revenue[t-1] × (1 + revenue growth)`
-2. `EBIT[t] = revenue[t] × EBIT margin`
-3. `NOPAT[t] = EBIT[t] × (1 − tax rate)`
-4. `reinvestment share[t] = min(max(revenue growth, 0) / ROIC, 100%)`
-5. `FCFF[t] = NOPAT[t] × (1 − reinvestment share[t])`
-6. Discount FCFF using the required return.
+1. Linearly interpolate revenue growth from the year-one rate to 2% in year five.
+2. `revenue[t] = revenue[t-1] × (1 + revenue growth[t])`
+3. Linearly interpolate EBIT margin from the current margin to the year-five margin.
+4. `EBIT[t] = revenue[t] × EBIT margin[t]`
+5. `NOPAT[t] = EBIT[t] × (1 − tax rate)`
+6. `reinvestment share[t] = min(max(revenue growth[t], 0) / ROIC, 100%)`
+7. `FCFF[t] = NOPAT[t] × (1 − reinvestment share[t])`
+8. Discount FCFF using the required return.
 
 Terminal FCFF recomputes the share of NOPAT reinvested as
 `terminal growth / ROIC` rather than carrying the higher explicit-growth
@@ -88,8 +93,11 @@ Börsdata net debt and divides by current shares outstanding.
 
 ## Reverse solvers
 
-Each solver changes exactly one assumption while holding the other baseline
-assumptions fixed:
+Each solver changes exactly one path endpoint while holding the other baseline
+assumptions fixed. Explicit revenue growth starts at the supplied or solved rate
+in year one and fades linearly to mature terminal growth in year five. EBIT
+margin starts at the current reported margin and fades linearly to the supplied
+or solved year-five margin.
 
 | Solved assumption | Bounds | Use |
 |---|---:|---|
@@ -105,24 +113,19 @@ sensitivity made it outside bounds for 95.5% of the prior 111-company cohort.
 
 ## Growth–margin expectation curve
 
-The primary output fixes revenue growth at -5%, 0%, 5%, 10%, 15%, 20%, 25%, and
-30%, then solves the EBIT margin required to reproduce the current price. Each
-solved pair is one combination of operating expectations consistent with price,
-not a forecast and not a claim that the market expects one unique combination.
+The primary output fixes year-one revenue growth at -5%, 0%, 5%, 10%, 15%, 20%,
+25%, and 30%, fades it linearly to mature terminal growth in year five, then
+solves the year-five EBIT margin reached linearly from the current reported
+margin and required to reproduce the current price. Each solved pair is one
+fading path of operating expectations consistent with price, not a forecast and
+not a claim that the market expects one unique combination.
 The same curve is calculated independently for each supplied discount-rate risk
 profile. The one-variable solvers remain visible as cross-checks.
 
-## Diagnostic score and ranking policy
+## Ranking policy
 
-Revenue-growth and EBIT-margin headroom are scaled over ±10 percentage points.
-The median normalized headroom is mapped to 0–100 with
-`100 / (1 + 9^(-normalized headroom))`. Outside-bound observations are censored
-at the bound and adjusted by log-scaled endpoint price distance.
-
-The legacy scalar score remains exposed for migration diagnostics, but its
-ranking weight is zero. Reverse DCF must not affect the total or valuation score
-until portfolio evidence demonstrates a stable, economically defensible mapping
-from multidimensional expectations to ranking value.
+Reverse DCF produces no scalar score and does not affect the deterministic
+ranking. It supplies auditable expectation paths for qualitative case analysis.
 
 Any change to constants, eligibility, source hierarchy, confidence thresholds,
 or formulas requires a new policy version. Historical evaluation must use only

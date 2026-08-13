@@ -25,6 +25,8 @@ def valid_result() -> StockAnalysisResult:
         verdict="watch",
         confidence="medium",
         one_sentence_thesis="Evidence is incomplete.",
+        reverse_dcf_expectation_assessment="unassessable",
+        reverse_dcf_expectation_rationale="Reverse-DCF inputs are unavailable.",
         expected_return_components={
             "revenue_growth": None,
             "margin_change": None,
@@ -117,7 +119,7 @@ def test_execution_boundary_persists_valid_response():
         created_by="test-model",
         metadata={
             "prompt_version": 1,
-            "validation_version": "agent-boundary-v8",
+            "validation_version": "agent-boundary-v11",
             "validation_status": "accepted",
             "deterministic_value_checks": [
                 "forward valuation scenarios are disabled",
@@ -131,6 +133,138 @@ def test_execution_boundary_persists_valid_response():
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
     )
+
+
+def test_execution_boundary_accepts_aggregate_operating_history_citation():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 100
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={
+            "reverse_dcf": {
+                "operating_history": {
+                    "three_year_revenue_cagr": 0.10,
+                    "five_year_average_ebit_margin": 0.08,
+                }
+            }
+        },
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.citations = [
+        EvidenceCitation(
+            source_id="full_results.reverse_dcf.operating_history",
+            claim="Three-year growth was 10% and the five-year margin averaged 8%.",
+        )
+    ]
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.citations[0].source_id == (
+        "deterministic:reverse_dcf:operating_history"
+    )
+
+
+def test_execution_boundary_accepts_aggregate_normalization_citation():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 100
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={
+            "reverse_dcf": {
+                "normalization": {
+                    "confidence": "low",
+                    "reasons": ["volatile cash flow"],
+                }
+            }
+        },
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.citations = [
+        EvidenceCitation(
+            source_id="full_results.reverse_dcf.normalization",
+            claim="Normalization confidence is low.",
+        )
+    ]
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.citations[0].source_id == (
+        "deterministic:reverse_dcf:normalization"
+    )
+
+
+def test_execution_boundary_accepts_aggregate_price_attribution_citation():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 102
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={
+            "reverse_dcf": {
+                "price_fundamental_attribution": [
+                    {"period": "3y", "price_cagr": 0.12}
+                ]
+            }
+        },
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.citations = [
+        EvidenceCitation(
+            source_id="full_results.reverse_dcf.price_fundamental_attribution",
+            claim="The recent rerating exceeded fundamental growth.",
+        )
+    ]
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.citations[0].source_id == (
+        "deterministic:reverse_dcf:price_fundamental_attribution"
+    )
+
+
+def test_execution_boundary_accepts_supplied_insider_event_count_citation():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 101
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={
+            "documents": [{"source_id": "news:21"}],
+            "insider_event_count": 0,
+        },
+    )
+    payload = valid_result()
+    payload.citations = [
+        EvidenceCitation(
+            source_id="research_evidence.insider_event_count",
+            claim="No insider events were supplied.",
+        )
+    ]
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.citations[0].source_id == "research:insider_event_count"
 
 
 def test_execution_boundary_rejects_unknown_citation_source():
@@ -193,7 +327,109 @@ def test_execution_boundary_rejects_model_generated_return_components():
         )
 
 
-def test_execution_boundary_accepts_evidence_based_risk_profile():
+def test_execution_boundary_requires_unassessable_when_reverse_dcf_is_unavailable():
+    repository = MagicMock()
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={"reverse_dcf": {"status": "unavailable"}},
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.reverse_dcf_expectation_assessment = "plausible"
+
+    with pytest.raises(StockAnalysisValidationError, match="must be assessed as unassessable"):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+
+def test_execution_boundary_rejects_reverse_dcf_score_in_qualitative_rationale():
+    repository = MagicMock()
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.reverse_dcf_expectation_rationale = "The reverse DCF score is 72/100."
+
+    with pytest.raises(StockAnalysisValidationError, match="cannot use a numerical score"):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+
+def test_execution_boundary_requires_activated_case_for_investable_output():
+    repository = MagicMock()
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.portfolio_eligibility = "investable"
+    payload.portfolio_reason_code = "investable"
+
+    with pytest.raises(StockAnalysisValidationError, match="requires activated_case"):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+
+def test_execution_boundary_allows_activated_case_excluded_from_portfolio():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 104
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={
+            "reverse_dcf": {
+                "status": "available",
+                "expectation_curve": [{"revenue_growth": 0.10}],
+                "implied_expectations": {"revenue_growth": {}},
+            }
+        },
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.verdict = "activated_case"
+    payload.portfolio_reason_code = "liquidity"
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.analysis_id == 104
+
+
+def test_execution_boundary_requires_trigger_for_valuation_only_exclusion():
+    repository = MagicMock()
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.portfolio_reason_code = "valuation_only"
+
+    with pytest.raises(StockAnalysisValidationError, match="require a trigger"):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+
+def test_execution_boundary_rejects_model_selected_risk_profile():
     repository = MagicMock()
     repository.save_stock_analysis.return_value = 103
     candidate = AgentCandidate(
@@ -238,19 +474,49 @@ def test_execution_boundary_accepts_evidence_based_risk_profile():
     payload.risk_profile_confidence = "medium"
     payload.risk_profile_evidence = ["news:21"]
 
+    with pytest.raises(StockAnalysisValidationError, match="model-selected"):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+    repository.save_stock_analysis.assert_not_called()
+
+
+def test_execution_boundary_accepts_completed_classifier_consensus():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 104
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={
+            "cyclicality_consensus": {
+                "status": "complete",
+                "risk_profile": "cyclical_or_other_risk",
+                "consensus_strength": "majority",
+                "evidence": [{"source_id": "news:21"}],
+            },
+            "reverse_dcf": {
+                "status": "available",
+                "expectation_curve": [{"revenue_growth": 0.10}],
+                "discount_rate_sensitivities": {
+                    "cyclical_or_other_risk": {"expectation_curve": []}
+                },
+            },
+        },
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.risk_profile = "cyclical_or_other_risk"
+    payload.risk_profile_confidence = "medium"
+    payload.risk_profile_evidence = ["news:21"]
+
     persisted = AgentExecutionBoundary(repository).persist_response(
         json.dumps(payload.to_dict()), candidate, created_by="test-model"
     )
 
     assert persisted.result.risk_profile == "cyclical_or_other_risk"
-    assert persisted.result.risk_profile_evidence == ["news:21"]
-    curve = repository.save_stock_analysis.call_args.kwargs["metadata"][
-        "valuation_provenance"
-    ]["discount_rate_sensitivities"]["cyclical_or_other_risk"][
-        "expectation_curve"
-    ]
-    assert curve[0]["revenue_growth"] == pytest.approx(0.10)
-    assert curve[0]["ebit_margin_expectation"]["implied_value"] == pytest.approx(0.22)
 
 
 def test_execution_boundary_rejects_unsupported_risk_profile_classification():
@@ -266,7 +532,7 @@ def test_execution_boundary_rejects_unsupported_risk_profile_classification():
     payload.risk_profile = "noncyclical_recurring"
     payload.risk_profile_evidence = ["news:21"]
 
-    with pytest.raises(StockAnalysisValidationError, match="deterministic discount-rate"):
+    with pytest.raises(StockAnalysisValidationError, match="model-selected"):
         AgentExecutionBoundary(repository).persist_response(
             json.dumps(payload.to_dict()), candidate, created_by="test-model"
         )
@@ -348,6 +614,8 @@ def test_execution_boundary_rejects_activated_case_without_deterministic_valuati
     )
     payload = valid_result()
     payload.verdict = "activated_case"
+    payload.portfolio_eligibility = "investable"
+    payload.portfolio_reason_code = "investable"
 
     with pytest.raises(StockAnalysisValidationError, match="reverse-DCF expectations"):
         AgentExecutionBoundary(repository).persist_response(
@@ -398,6 +666,8 @@ def test_execution_boundary_accepts_activated_case_with_available_reverse_dcf():
     )
     payload = valid_result()
     payload.verdict = "activated_case"
+    payload.portfolio_eligibility = "investable"
+    payload.portfolio_reason_code = "investable"
 
     persisted = AgentExecutionBoundary(repository).persist_response(
         json.dumps(payload.to_dict()), candidate, created_by="test-model"
@@ -405,7 +675,7 @@ def test_execution_boundary_accepts_activated_case_with_available_reverse_dcf():
 
     assert persisted.analysis_id == 102
     saved_metadata = repository.save_stock_analysis.call_args.kwargs["metadata"]
-    assert saved_metadata["validation_version"] == "agent-boundary-v8"
+    assert saved_metadata["validation_version"] == "agent-boundary-v11"
     assert saved_metadata["valuation_provenance"] == {
         "status": "available",
         "reverse_dcf_policy_version": "reverse-dcf-v2",
@@ -418,13 +688,17 @@ def test_execution_boundary_accepts_activated_case_with_available_reverse_dcf():
             "tax_rate": 0.21,
             "discount_rate": 0.10,
             "terminal_growth": 0.02,
-            "net_reinvestment_rate": 0.01,
-            "reinvestment_return": None,
+                "net_reinvestment_rate": 0.01,
+                "reinvestment_return": None,
+                "revenue_growth_fade_to": None,
+                "ebit_margin_start": None,
         },
         "assumption_sources": {"discount_rate": "fixed return policy"},
         "normalized_fcf_margin": None,
         "normalization": None,
-        "reinvestment_roic": None,
+            "operating_history": None,
+            "price_fundamental_attribution": [],
+            "reinvestment_roic": None,
         "required_return": {
             "policy_version": None,
             "risk_free_rate": None,

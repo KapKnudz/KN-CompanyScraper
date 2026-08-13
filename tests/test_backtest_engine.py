@@ -150,7 +150,7 @@ class TestBacktestEngine:
         assert result.deciles == []
         assert result.top_decile_spread_6m is None
         assert result.top_decile_spread_12m is None
-        assert len(result.correlations) == 6  # reverse DCF is a standalone signal too
+        assert len(result.correlations) == 5
         financial_repo.get_latest_report_as_of.assert_has_calls(
             [
                 call(1, "year", period_date, availability_lag_days=90),

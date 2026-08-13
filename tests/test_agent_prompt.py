@@ -54,7 +54,7 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "Three return engines" in prompt.system
     assert "Follow the steps in order" in prompt.system
     assert prompt.policy_name == "nordic-case-investing-policy"
-    assert prompt.policy_version == "1.9.0"
+    assert prompt.policy_version == "1.17.0"
     assert prompt.policy_sha256 == hashlib.sha256(
         (
             AgentPromptBuilder._read_resource("resources/analyst_policy.md")
@@ -68,12 +68,22 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "full_results.reverse_dcf.implied_expectations" in prompt.system
     assert "Do not calculate or state a forward fair value" in prompt.system
     assert "alternative growth–margin combinations" in prompt.system
-    assert "legacy scalar reverse-DCF score are diagnostic only" in prompt.system
-    assert "Terminal growth and the legacy scalar reverse-DCF score are diagnostic only" in prompt.system
-    assert "noncyclical_recurring" in prompt.system
+    assert "price_fundamental_attribution" in prompt.system
+    assert "year-one revenue growth" in prompt.system
+    assert "year-five EBIT margin" in prompt.system
+    assert "Reverse DCF produces no scalar score" in prompt.system
+    assert "copy its `risk_profile` exactly" in prompt.system
+    assert "consensus is absent or incomplete" in prompt.system
+    assert "Do not independently classify cyclicality" in prompt.system
     assert "discount_rate_sensitivities" in prompt.system
     assert "must not modify inputs" in prompt.system
+    assert "Do not invent a numerical return decomposition" in prompt.system
+    assert "current price and market-implied operating expectation" in prompt.system
+    assert "the valuation assumption" not in prompt.system
     assert "does not mean the company requires no reinvestment" in prompt.system
+    assert "plausible`, `demanding`, `unsupported`, or `unassessable`" in prompt.system
+    assert "Never apply a universal growth or margin cutoff" in prompt.system
+    assert "never scores, probabilities, or generic valuation grades" in prompt.system
     assert "normalize a resolvable path" in prompt.system
     assert "Never invent or abbreviate a path" in prompt.system
     assert "A company buyback is capital allocation" in prompt.system
@@ -84,6 +94,9 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert '"source_id": "news:21"' in prompt.user
     assert '"verdict": "reject | watch | latent_case | activated_case"' in prompt.user
     assert '"risk_profile"' in prompt.user
+    assert '"reverse_dcf_expectation_assessment"' in prompt.user
+    assert '"portfolio_eligibility": "investable | not_investable"' in prompt.user
+    assert "`activated_case` may be `investable`" in prompt.system
 
 
 def test_stock_analysis_result_serializes_nested_evidence():

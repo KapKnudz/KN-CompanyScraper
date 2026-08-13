@@ -68,6 +68,32 @@ def test_explicit_reinvestment_responds_to_solved_growth_when_roic_is_available(
     assert first.fcff == pytest.approx(126.0 * (1.0 - 0.05 / 0.20))
 
 
+def test_growth_and_margin_follow_explicit_linear_fade_paths(inputs):
+    assumptions = replace(
+        inputs.assumptions,
+        revenue_growth=0.10,
+        revenue_growth_fade_to=0.02,
+        ebit_margin_start=0.10,
+        ebit_margin=0.20,
+        reinvestment_return=0.25,
+    )
+
+    result = ReverseDcfEngine().value(replace(inputs, assumptions=assumptions))
+
+    assert [point.revenue_growth for point in result.projected_cash_flows] == pytest.approx(
+        [0.10, 0.08, 0.06, 0.04, 0.02]
+    )
+    assert [point.ebit_margin for point in result.projected_cash_flows] == pytest.approx(
+        [0.10, 0.125, 0.15, 0.175, 0.20]
+    )
+    assert result.projected_cash_flows[0].fcff == pytest.approx(
+        result.projected_cash_flows[0].nopat * (1.0 - 0.10 / 0.25)
+    )
+    assert result.projected_cash_flows[-1].fcff == pytest.approx(
+        result.projected_cash_flows[-1].nopat * (1.0 - 0.02 / 0.25)
+    )
+
+
 @pytest.mark.parametrize(
     ("assumption", "known_value", "bounds"),
     [

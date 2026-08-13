@@ -7,6 +7,7 @@ from typing import Literal
 from kncompanyscraper.analysis.base.skill import Skill
 from kncompanyscraper.analysis.valuation.dcf_assumption_policy import (
     DcfAssumptionPolicy,
+    HistoricalOperatingBenchmarks,
     NormalizationDiagnostics,
 )
 from kncompanyscraper.analysis.valuation.reverse_dcf import (
@@ -66,6 +67,24 @@ class GrowthMarginExpectation:
 
 
 @dataclass(frozen=True)
+class PriceFundamentalAttributionPeriod:
+    years: int
+    start_price_date: str
+    end_price_date: str
+    start_report_year: int
+    end_report_year: int
+    price_return: float
+    annualized_price_return: float
+    annualized_revenue_growth: float | None
+    annualized_ebit_growth: float | None
+    annualized_net_income_growth: float | None
+    annualized_eps_growth: float | None
+    ebit_margin_change: float
+    share_count_change: float | None
+    pe_change: float | None
+
+
+@dataclass(frozen=True)
 class ReverseDcfAnalysis:
     status: AnalysisStatus
     policy_version: str
@@ -78,6 +97,8 @@ class ReverseDcfAnalysis:
     assumption_sources: dict[str, str] | None = None
     normalized_fcf_margin: float | None = None
     normalization: NormalizationDiagnostics | None = None
+    operating_history: HistoricalOperatingBenchmarks | None = None
+    price_fundamental_attribution: tuple[PriceFundamentalAttributionPeriod, ...] = ()
     reinvestment_roic: float | None = None
     required_return: RequiredReturnDecision | None = None
     baseline_valuation: DcfValue | None = None
@@ -107,7 +128,8 @@ class ReverseDcfSkill(Skill):
         "Börsdata does not separate maintenance capex, growth capex, acquisitions, "
         "disposals, or annual working-capital changes",
         "Report.total_debt contains the Börsdata net_Debt field",
-        "the model holds growth and margin constant during the explicit projection",
+        "year-one revenue growth fades linearly to mature growth and the current "
+        "EBIT margin fades linearly to the modeled final-year margin",
     )
 
     def __init__(
@@ -172,6 +194,14 @@ class ReverseDcfSkill(Skill):
             return self._unsupported("nav_or_ffo", as_of)
 
         current_report = latest_r12 or latest_annual
+        operating_history = self.policy.build_operating_history(latest_annual, history)
+        price_fundamental_attribution = self._build_price_fundamental_attribution(
+            company.id,
+            price,
+            current_report,
+            latest_annual,
+            history,
+        )
         missing: list[str] = []
         if price is None:
             missing.append("latest stock price unavailable")
@@ -233,6 +263,8 @@ class ReverseDcfSkill(Skill):
                 assumption_sources=decision.assumption_sources,
                 normalized_fcf_margin=decision.normalized_fcf_margin,
                 normalization=decision.normalization,
+                operating_history=operating_history,
+                price_fundamental_attribution=price_fundamental_attribution,
                 reinvestment_roic=decision.reinvestment_roic,
                 required_return=decision.required_return,
                 missing_information=tuple(dict.fromkeys(missing)),
@@ -278,6 +310,8 @@ class ReverseDcfSkill(Skill):
             assumption_sources=decision.assumption_sources,
             normalized_fcf_margin=decision.normalized_fcf_margin,
             normalization=decision.normalization,
+            operating_history=operating_history,
+            price_fundamental_attribution=price_fundamental_attribution,
             reinvestment_roic=decision.reinvestment_roic,
             required_return=decision.required_return,
             baseline_valuation=baseline,
@@ -418,6 +452,138 @@ class ReverseDcfSkill(Skill):
             revenue_growth=revenue_growth,
             ebit_margin_expectation=expectation,
         )
+
+    def _build_price_fundamental_attribution(
+        self,
+        company_id: int,
+        current_price,
+        current_report,
+        latest_annual,
+        history,
+    ) -> tuple[PriceFundamentalAttributionPeriod, ...]:
+        if current_price is None or current_report is None:
+            return ()
+        get_price = getattr(self.valuation_repository, "get_stock_price_on_date", None)
+        if get_price is None:
+            return ()
+
+        annuals = {
+            report.year: report
+            for report in [*history, latest_annual]
+            if report is not None and report.year is not None
+        }
+        if current_report.year is None:
+            return ()
+
+        periods = []
+        for years in (1, 3, 5):
+            baseline = annuals.get(current_report.year - years)
+            if baseline is None:
+                continue
+            target_date = self._subtract_years(current_price.date, years)
+            start_price = get_price(company_id, target_date, max_age_days=7)
+            if (
+                start_price is None
+                or not isinstance(getattr(start_price, "close", None), (int, float))
+                or start_price.close <= 0
+            ):
+                continue
+            if not self._has_attribution_inputs(current_report, baseline):
+                continue
+
+            current_eps = self._eps(current_report)
+            baseline_eps = self._eps(baseline)
+            current_pe = (
+                current_price.close / current_eps
+                if current_eps is not None and current_eps > 0
+                else None
+            )
+            baseline_pe = (
+                start_price.close / baseline_eps
+                if baseline_eps is not None and baseline_eps > 0
+                else None
+            )
+            periods.append(
+                PriceFundamentalAttributionPeriod(
+                    years=years,
+                    start_price_date=start_price.date.isoformat(),
+                    end_price_date=current_price.date.isoformat(),
+                    start_report_year=baseline.year,
+                    end_report_year=current_report.year,
+                    price_return=current_price.close / start_price.close - 1.0,
+                    annualized_price_return=self._cagr(
+                        start_price.close, current_price.close, years
+                    ),
+                    annualized_revenue_growth=self._cagr(
+                        baseline.revenue, current_report.revenue, years
+                    ),
+                    annualized_ebit_growth=self._cagr(
+                        baseline.ebit, current_report.ebit, years
+                    ),
+                    annualized_net_income_growth=self._cagr(
+                        baseline.net_income, current_report.net_income, years
+                    ),
+                    annualized_eps_growth=self._cagr(
+                        baseline_eps, current_eps, years
+                    ),
+                    ebit_margin_change=(
+                        current_report.ebit / current_report.revenue
+                        - baseline.ebit / baseline.revenue
+                    ),
+                    share_count_change=(
+                        current_report.shares_outstanding
+                        / baseline.shares_outstanding
+                        - 1.0
+                        if current_report.shares_outstanding is not None
+                        and baseline.shares_outstanding is not None
+                        and baseline.shares_outstanding > 0
+                        else None
+                    ),
+                    pe_change=(
+                        current_pe / baseline_pe - 1.0
+                        if current_pe is not None
+                        and baseline_pe is not None
+                        and baseline_pe > 0
+                        else None
+                    ),
+                )
+            )
+        return tuple(periods)
+
+    @staticmethod
+    def _subtract_years(value: date, years: int) -> date:
+        try:
+            return value.replace(year=value.year - years)
+        except ValueError:
+            return value.replace(year=value.year - years, day=28)
+
+    @staticmethod
+    def _has_attribution_inputs(current, baseline) -> bool:
+        return all(
+            value is not None and value > 0
+            for value in (
+                current.revenue,
+                baseline.revenue,
+                current.ebit,
+                baseline.ebit,
+            )
+        )
+
+    @staticmethod
+    def _eps(report) -> float | None:
+        if (
+            report.net_income is None
+            or report.shares_outstanding is None
+            or report.shares_outstanding <= 0
+        ):
+            return None
+        return report.net_income / report.shares_outstanding
+
+    @staticmethod
+    def _cagr(start: float | None, end: float | None, years: int) -> float | None:
+        if start is None or end is None or start <= 0 or end <= 0:
+            return None
+        return (end / start) ** (1.0 / years) - 1.0
 
     @staticmethod
     def _outside_direction(

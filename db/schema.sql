@@ -143,6 +143,19 @@ ALTER SEQUENCE public.companies_id_seq OWNED BY public.companies.id;
 
 
 --
+-- Name: company_cyclicality_consensus; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.company_cyclicality_consensus (
+    company_id integer NOT NULL,
+    classifier_policy_version text CONSTRAINT company_cyclicality_consensu_classifier_policy_version_not_null NOT NULL,
+    consensus_policy_version text NOT NULL,
+    consensus jsonb NOT NULL,
+    classified_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: company_profiles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -410,6 +423,41 @@ ALTER SEQUENCE public.news_releases_id_seq OWNED BY public.news_releases.id;
 
 
 --
+-- Name: portfolio_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.portfolio_runs (
+    id bigint NOT NULL,
+    as_of date NOT NULL,
+    target_size integer NOT NULL,
+    status text NOT NULL,
+    content jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT portfolio_runs_status_check CHECK ((status = ANY (ARRAY['ready'::text, 'not_ready'::text]))),
+    CONSTRAINT portfolio_runs_target_size_check CHECK ((target_size > 0))
+);
+
+
+--
+-- Name: portfolio_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.portfolio_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: portfolio_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.portfolio_runs_id_seq OWNED BY public.portfolio_runs.id;
+
+
+--
 -- Name: ranking_runs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -652,6 +700,13 @@ ALTER TABLE ONLY public.news_releases ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: portfolio_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.portfolio_runs ALTER COLUMN id SET DEFAULT nextval('public.portfolio_runs_id_seq'::regclass);
+
+
+--
 -- Name: ranking_runs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -725,6 +780,14 @@ ALTER TABLE ONLY public.companies
 
 ALTER TABLE ONLY public.companies
     ADD CONSTRAINT companies_ticker_key UNIQUE (ticker);
+
+
+--
+-- Name: company_cyclicality_consensus company_cyclicality_consensus_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_cyclicality_consensus
+    ADD CONSTRAINT company_cyclicality_consensus_pkey PRIMARY KEY (company_id);
 
 
 --
@@ -805,6 +868,14 @@ ALTER TABLE ONLY public.news_releases
 
 ALTER TABLE ONLY public.news_releases
     ADD CONSTRAINT news_releases_url_key UNIQUE (url);
+
+
+--
+-- Name: portfolio_runs portfolio_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.portfolio_runs
+    ADD CONSTRAINT portfolio_runs_pkey PRIMARY KEY (id);
 
 
 --
@@ -991,6 +1062,13 @@ CREATE INDEX idx_news_releases_slug ON public.news_releases USING btree (slug);
 
 
 --
+-- Name: idx_portfolio_runs_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_portfolio_runs_created_at ON public.portfolio_runs USING btree (created_at DESC);
+
+
+--
 -- Name: idx_research_documents_company_published; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1053,6 +1131,14 @@ ALTER TABLE ONLY public.analysis
 
 ALTER TABLE ONLY public.annual_reports
     ADD CONSTRAINT annual_reports_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: company_cyclicality_consensus company_cyclicality_consensus_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_cyclicality_consensus
+    ADD CONSTRAINT company_cyclicality_consensus_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
 
 
 --
@@ -1184,4 +1270,7 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260808120000'),
     ('20260808143000'),
     ('20260809120000'),
-    ('20260809143000');
+    ('20260809143000'),
+    ('20260812120000'),
+    ('20260812130000'),
+    ('20260812140000');
