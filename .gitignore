@@ -1,9 +1,13 @@
 .env
 .idea/
 venv/
+.venv/
+.pytest_cache/
 __pycache__/
 *.pyc
 logs/
+agent-prompts*/
+analysis-results/
 .DS_Store
 dist/
 *.egg-info/
