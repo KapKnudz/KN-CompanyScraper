@@ -4,7 +4,8 @@ Audit date: 2026-08-11
 
 ## Sources inspected
 
-- Local `borsdata-swagger.json` report, report-metadata, KPI-metadata, and KPI-history schemas.
+- Local [`reference/borsdata-swagger.json`](reference/borsdata-swagger.json)
+  report, report-metadata, KPI-metadata, and KPI-history schemas.
 - Live `/v1/instruments/reports/metadata` response: 37 report fields.
 - Live `/v1/instruments/kpis/metadata` response: 234 KPI-history fields.
 - Stored annual reports and live KPI histories for Betsson, Better Collective,
