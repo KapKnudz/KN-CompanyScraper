@@ -1,4 +1,7 @@
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPromptBuilder
+from kncompanyscraper.analysis.agent.context_provenance import (
+    deterministic_context_sha256,
+)
 
 
 class AgentAnalysisService:
@@ -32,6 +35,7 @@ class AgentAnalysisService:
                     for key in ("documents", "insider_transactions")
                     for source in candidate.research_evidence.get(key, [])
                 ],
+                "deterministic_context_sha256": deterministic_context_sha256(candidate),
             }
             raw_analysis_id = None
             if self.raw_response_repository is not None:

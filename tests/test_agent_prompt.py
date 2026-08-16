@@ -54,7 +54,8 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "Three return engines" in prompt.system
     assert "Follow the steps in order" in prompt.system
     assert prompt.policy_name == "nordic-case-investing-policy"
-    assert prompt.policy_version == "1.17.0"
+    assert prompt.policy_version == "1.18.0"
+    assert "company_fact_ledger" in prompt.user
     assert prompt.policy_sha256 == hashlib.sha256(
         (
             AgentPromptBuilder._read_resource("resources/analyst_policy.md")

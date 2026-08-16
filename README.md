@@ -155,6 +155,30 @@ the mandatory candidate limit prevents accidentally analyzing the entire shortli
 For the five-company shadow pilot, pass `--max-candidates 5` after inspecting
 the exported prompts.
 
+Each accepted stock analysis also creates a versioned company-thesis revision.
+Its structured fact ledger keeps concise observations under fixed business-model,
+revenue, margin, balance-sheet, management, ownership, valuation, and risk headings.
+Every populated fact retains its original evidence source IDs and distinguishes
+reported facts, management claims, and analyst inferences. Older accepted analyses
+are retained as initial thesis revisions, so later evidence updates can compare
+against the current thesis without rebuilding the case from an empty state.
+
+After syncing new reports, releases, insiders, and deterministic inputs, update
+existing theses without resending their original document packets:
+
+```
+python -m kncompanyscraper.main update-shortlist \
+  --provider deepseek --max-candidates 5
+```
+
+The update command calls the model only when it finds a previously unseen source
+ID or a changed deterministic-context hash. It supplies the current thesis and
+fact ledger, persists a complete linked snapshot for accepted incremental updates,
+and reports when a company instead requires a full reassessment.
+If a response was rejected because a local validation defect was subsequently
+fixed, add `--retry-rejected` to revalidate the stored response without another
+paid model call.
+
 Build a durable portfolio-selection run from the latest accepted analyses:
 
 ```

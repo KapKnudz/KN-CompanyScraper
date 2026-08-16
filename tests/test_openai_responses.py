@@ -79,6 +79,28 @@ def test_adapter_requests_strict_structured_output_without_api_storage():
     assert captured["timeout"] == 120
 
 
+def test_adapter_uses_prompt_specific_output_schema():
+    captured = {}
+
+    def request(url, **kwargs):
+        captured.update(kwargs)
+        return FakeHTTPResponse(completed_payload())
+
+    adapter = OpenAIResponsesAdapter(api_key="test-key", request_func=request)
+    custom_schema = {"type": "object", "properties": {}, "additionalProperties": False}
+    adapter.generate(
+        AgentPrompt(
+            system="policy",
+            user="candidate",
+            output_schema=custom_schema,
+            schema_name="thesis_update",
+        )
+    )
+
+    assert captured["json"]["text"]["format"]["name"] == "thesis_update"
+    assert captured["json"]["text"]["format"]["schema"] == custom_schema
+
+
 def test_adapter_requires_api_key(monkeypatch):
     monkeypatch.setattr("kncompanyscraper.analysis.agent.openai_responses.config.OPENAI_API_KEY", None)
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):

@@ -1,0 +1,475 @@
+{
+  "as_of": "2026-08-12",
+  "classifier_policy": {
+    "name": "cyclicality-evaluation",
+    "version": "2.1.0"
+  },
+  "sample": [
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "document_count": 12
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "document_count": 12
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "document_count": 12
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "document_count": 10
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "document_count": 12
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "document_count": 9
+    }
+  ],
+  "summary": {
+    "run_count": 0,
+    "company_count": 0,
+    "comparable_company_count": 0,
+    "validation_pass_rate": null,
+    "material_escalation_count": 0,
+    "normalization_warning_count": 0,
+    "unanimous_company_rate": null,
+    "pairwise_profile_agreement": null,
+    "companies": []
+  },
+  "negative_control_pass_rate": 1.0,
+  "runs": [],
+  "negative_controls": [
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 0,
+      "response_id": "1558b81c-76f9-46b0-9a1d-b2141f9a6bfc",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 483,
+        "completion_tokens": 902,
+        "total_tokens": 1385,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 539
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 227
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence about recurring revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence about economic demand sensitivity.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence about customer concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence about project dependence.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence about order phasing.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence about commodity or financing exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"The passages array is empty. Absence of evidence means unclassified for all six business-risk dimensions.\",\n  \"missing_information\": [\n    \"No passages were supplied for Lime Technologies (LIME) to assess revenue recurrence, economic demand sensitivity, customer concentration, project dependence, order phasing, or commodity/financing exposure.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "The passages array is empty. Absence of evidence means unclassified for all six business-risk dimensions.",
+        "evidence": [],
+        "missing_information": [
+          "No passages were supplied for Lime Technologies (LIME) to assess revenue recurrence, economic demand sensitivity, customer concentration, project dependence, order phasing, or commodity/financing exposure."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence about recurring revenue.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence about economic demand sensitivity.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence about customer concentration.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence about project dependence.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence about order phasing.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence about commodity or financing exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 0,
+      "response_id": "30f0896e-b801-495f-a4bc-745a2c399276",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 486,
+        "completion_tokens": 917,
+        "total_tokens": 1403,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 624
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 230
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"The supplied passages array is empty, so no evidence is available to assess any dimension.\",\n  \"missing_information\": [\n    \"Passages containing information about revenue recurrence, economic demand sensitivity, customer concentration, project dependence, order phasing, and commodity or financing exposure.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "The supplied passages array is empty, so no evidence is available to assess any dimension.",
+        "evidence": [],
+        "missing_information": [
+          "Passages containing information about revenue recurrence, economic demand sensitivity, customer concentration, project dependence, order phasing, and commodity or financing exposure."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 0,
+      "response_id": "5fee75a9-c70c-47b7-b667-74ef6e274f8c",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 484,
+        "completion_tokens": 624,
+        "total_tokens": 1108,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 235
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 228
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied for Byggpartner; absence of evidence means unclassified.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied for Byggpartner; absence of evidence means unclassified.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied for Byggpartner; absence of evidence means unclassified.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied for Byggpartner; absence of evidence means unclassified.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied for Byggpartner; absence of evidence means unclassified.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied for Byggpartner; absence of evidence means unclassified.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No passages were supplied for Byggpartner, so no evidence is available to assess any business-risk dimension.\",\n  \"missing_information\": [\n    \"No passages provided for Byggpartner.\",\n    \"No evidence on revenue recurrence.\",\n    \"No evidence on economic demand sensitivity.\",\n    \"No evidence on customer concentration.\",\n    \"No evidence on project dependence.\",\n    \"No evidence on order phasing.\",\n    \"No evidence on commodity or financing exposure.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "No passages were supplied for Byggpartner, so no evidence is available to assess any business-risk dimension.",
+        "evidence": [],
+        "missing_information": [
+          "No passages provided for Byggpartner.",
+          "No evidence on revenue recurrence.",
+          "No evidence on economic demand sensitivity.",
+          "No evidence on customer concentration.",
+          "No evidence on project dependence.",
+          "No evidence on order phasing.",
+          "No evidence on commodity or financing exposure."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied for Byggpartner; absence of evidence means unclassified.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied for Byggpartner; absence of evidence means unclassified.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied for Byggpartner; absence of evidence means unclassified.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied for Byggpartner; absence of evidence means unclassified.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied for Byggpartner; absence of evidence means unclassified.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied for Byggpartner; absence of evidence means unclassified.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 0,
+      "response_id": "4ca7c312-3fbd-4522-96d5-c4a63df7c8db",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 484,
+        "completion_tokens": 448,
+        "total_tokens": 932,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 119
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 228
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided; absence of evidence.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided; absence of evidence.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided; absence of evidence.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided; absence of evidence.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided; absence of evidence.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided; absence of evidence.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No passages were provided for Scandic Hotels (SHOT), so no evidence exists to classify any business-risk dimension.\",\n  \"missing_information\": [\n    \"Revenue recurrence information\",\n    \"Economic demand sensitivity evidence\",\n    \"Customer concentration data\",\n    \"Project dependence details\",\n    \"Order phasing information\",\n    \"Commodity or financing exposure evidence\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "No passages were provided for Scandic Hotels (SHOT), so no evidence exists to classify any business-risk dimension.",
+        "evidence": [],
+        "missing_information": [
+          "Revenue recurrence information",
+          "Economic demand sensitivity evidence",
+          "Customer concentration data",
+          "Project dependence details",
+          "Order phasing information",
+          "Commodity or financing exposure evidence"
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided; absence of evidence.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided; absence of evidence.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided; absence of evidence.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided; absence of evidence.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided; absence of evidence.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided; absence of evidence.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 0,
+      "response_id": "c016fccf-2df5-4bcc-8acf-c6d3e6ff5048",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 485,
+        "completion_tokens": 1169,
+        "total_tokens": 1654,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 806
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 229
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence about the amount of recurring revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence of realized significant damage or a material exposure to economic demand sensitivity.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence of material customer concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence of a project-based business or material reliance on projects or contracts.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence of order timing fluctuations.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied, so there is no evidence of commodity or financing exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No passages were provided for BioGaia, so all dimensions are unclassified due to absence of evidence.\",\n  \"missing_information\": [\n    \"No passages were supplied for company_id 41 (BioGaia).\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "No passages were provided for BioGaia, so all dimensions are unclassified due to absence of evidence.",
+        "evidence": [],
+        "missing_information": [
+          "No passages were supplied for company_id 41 (BioGaia)."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence about the amount of recurring revenue.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence of realized significant damage or a material exposure to economic demand sensitivity.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence of material customer concentration.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence of a project-based business or material reliance on projects or contracts.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence of order timing fluctuations.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied, so there is no evidence of commodity or financing exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 0,
+      "response_id": "1e533caf-19fe-4a59-8710-4c95a0358d5c",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 484,
+        "completion_tokens": 504,
+        "total_tokens": 988,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 137
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 228
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied to determine the amount of recurring revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied to determine economic demand sensitivity.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied to determine customer concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied to determine reliance on material projects or contracts.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied to determine order timing fluctuations.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied to determine commodity or financing exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"missing_information\": [\n    \"Supply passages containing company disclosures or operational data for Norsk Titanium (NTI).\",\n    \"Need information on revenue mix and recurring revenue sources.\",\n    \"Need information on demand cyclicality or economic sensitivity.\",\n    \"Need information on customer revenue concentration.\",\n    \"Need information on project-based revenue or major contracts relative to company size.\",\n    \"Need information on order timing or backlog fluctuations.\",\n    \"Need information on commodity price exposure or financing exposure.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "Dimension assessments derived from the supplied passages.",
+        "evidence": [],
+        "missing_information": [
+          "Supply passages containing company disclosures or operational data for Norsk Titanium (NTI).",
+          "Need information on revenue mix and recurring revenue sources.",
+          "Need information on demand cyclicality or economic sensitivity.",
+          "Need information on customer revenue concentration.",
+          "Need information on project-based revenue or major contracts relative to company size.",
+          "Need information on order timing or backlog fluctuations.",
+          "Need information on commodity price exposure or financing exposure."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied to determine the amount of recurring revenue.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied to determine economic demand sensitivity.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied to determine customer concentration.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied to determine reliance on material projects or contracts.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied to determine order timing fluctuations.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied to determine commodity or financing exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": [
+          "missing or empty top-level rationale normalized"
+        ]
+      },
+      "error": null
+    }
+  ]
+}

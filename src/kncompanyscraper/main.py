@@ -208,17 +208,7 @@ def _cmd_analyze_shortlist(
     from kncompanyscraper.analysis.agent.execution_boundary import AgentExecutionBoundary
     from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
 
-    try:
-        if provider == "deepseek":
-            from kncompanyscraper.analysis.agent.deepseek_chat import DeepSeekChatAdapter
-
-            model_adapter = DeepSeekChatAdapter(model=model, reasoning_effort=reasoning_effort)
-        else:
-            from kncompanyscraper.analysis.agent.openai_responses import OpenAIResponsesAdapter
-
-            model_adapter = OpenAIResponsesAdapter(model=model, reasoning_effort=reasoning_effort)
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
+    model_adapter = _build_agent_model_adapter(provider, model, reasoning_effort)
 
     run = _build_watchlist_analysis_service().analyze_watchlist()
     candidates = _build_agent_context_builder().build_shortlist(
@@ -249,6 +239,80 @@ def _cmd_analyze_shortlist(
     )
     persisted = service.analyze(candidates)
     print(f"Persisted {len(persisted)} stock analyses.")
+
+
+def _cmd_update_shortlist(
+    max_candidates: int,
+    provider: str,
+    model: str | None,
+    reasoning_effort: str | None,
+    company_ids: list[int] | None = None,
+    retry_rejected: bool = False,
+):
+    """Incrementally update existing theses using only changed evidence."""
+    from kncompanyscraper.analysis.agent.execution_boundary import AgentExecutionBoundary
+    from kncompanyscraper.analysis.agent.thesis_update import ThesisUpdateContextBuilder
+    from kncompanyscraper.analysis.agent.thesis_update_service import (
+        ThesisUpdateExecutionBoundary,
+        ThesisUpdateService,
+    )
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
+    from kncompanyscraper.repositories.thesis_repository import ThesisRepository
+
+    model_adapter = (
+        None
+        if retry_rejected
+        else _build_agent_model_adapter(provider, model, reasoning_effort)
+    )
+    run = _build_watchlist_analysis_service().analyze_watchlist()
+    candidates = _build_agent_context_builder().build_shortlist(
+        run.ranking,
+        run.results_by_company,
+    )
+    if company_ids:
+        requested = set(company_ids)
+        candidates = [
+            candidate for candidate in candidates if candidate.company_id in requested
+        ]
+        missing = requested - {candidate.company_id for candidate in candidates}
+        if missing:
+            raise SystemExit(
+                "Requested company IDs are not in the current agent shortlist: "
+                + ", ".join(str(company_id) for company_id in sorted(missing))
+            )
+    candidates = candidates[:max_candidates]
+    if not candidates:
+        print("No companies available in the agent shortlist.")
+        return
+
+    analysis_repository = AnalysisRepository()
+    service = ThesisUpdateService(
+        model_adapter,
+        ThesisUpdateContextBuilder(ThesisRepository()),
+        ThesisUpdateExecutionBoundary(AgentExecutionBoundary(analysis_repository)),
+        raw_response_repository=analysis_repository,
+    )
+    outcomes = (
+        service.revalidate_rejected(candidates)
+        if retry_rejected
+        else service.update(candidates)
+    )
+    for candidate, outcome in zip(candidates, outcomes):
+        detail = f", impact={outcome.impact}" if outcome.impact else ""
+        print(f"{candidate.ticker}: {outcome.status}{detail}")
+
+
+def _build_agent_model_adapter(provider, model, reasoning_effort):
+    try:
+        if provider == "deepseek":
+            from kncompanyscraper.analysis.agent.deepseek_chat import DeepSeekChatAdapter
+
+            return DeepSeekChatAdapter(model=model, reasoning_effort=reasoning_effort)
+        from kncompanyscraper.analysis.agent.openai_responses import OpenAIResponsesAdapter
+
+        return OpenAIResponsesAdapter(model=model, reasoning_effort=reasoning_effort)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _cmd_select_portfolio(target_size: int, output: Path):
@@ -510,6 +574,32 @@ def main():
         "--reasoning-effort",
         choices=("low", "medium", "high", "xhigh", "max"),
     )
+    update_parser = subparsers.add_parser(
+        "update-shortlist",
+        help="Incrementally update current theses from new evidence",
+    )
+    update_parser.add_argument("--max-candidates", required=True, type=_positive_int)
+    update_parser.add_argument(
+        "--company-ids",
+        nargs="+",
+        type=_positive_int,
+        help="Optional exact company IDs within the current agent shortlist",
+    )
+    update_parser.add_argument(
+        "--provider",
+        choices=("openai", "deepseek"),
+        default="openai",
+    )
+    update_parser.add_argument("--model")
+    update_parser.add_argument(
+        "--reasoning-effort",
+        choices=("low", "medium", "high", "xhigh", "max"),
+    )
+    update_parser.add_argument(
+        "--retry-rejected",
+        action="store_true",
+        help="Revalidate the latest stored rejected incremental response without a model call",
+    )
     evidence_parser = subparsers.add_parser(
         "sync-agent-evidence",
         help="Backfill MFN release text and report PDFs for a bounded shortlist subset",
@@ -552,6 +642,15 @@ def main():
             args.model,
             args.reasoning_effort,
             args.company_ids,
+        )
+    elif args.command == "update-shortlist":
+        _cmd_update_shortlist(
+            args.max_candidates,
+            args.provider,
+            args.model,
+            args.reasoning_effort,
+            args.company_ids,
+            args.retry_rejected,
         )
     elif args.command == "select-portfolio":
         _cmd_select_portfolio(args.target_size, args.output)

@@ -1,0 +1,800 @@
+{
+  "as_of": "2026-08-11",
+  "sample": [
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "document_count": 12
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "document_count": 12
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "document_count": 0
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "document_count": 0
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "document_count": 12
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "document_count": 9
+    }
+  ],
+  "summary": {
+    "run_count": 18,
+    "company_count": 6,
+    "validation_pass_rate": 0.4444444444444444,
+    "supported_classification_count": 3,
+    "unanimous_company_rate": 0.16666666666666666,
+    "pairwise_profile_agreement": 1.0,
+    "companies": [
+      {
+        "ticker": "LIME",
+        "company_name": "Lime Technologies",
+        "profiles": [
+          "noncyclical_recurring"
+        ],
+        "invalid_runs": 2,
+        "unanimous": false,
+        "pairwise_agreement": null
+      },
+      {
+        "ticker": "CLAS B",
+        "company_name": "Clas Ohlson",
+        "profiles": [
+          "slightly_cyclical"
+        ],
+        "invalid_runs": 2,
+        "unanimous": false,
+        "pairwise_agreement": null
+      },
+      {
+        "ticker": "BYGGP",
+        "company_name": "Byggpartner",
+        "profiles": [
+          "unclassified",
+          "unclassified"
+        ],
+        "invalid_runs": 1,
+        "unanimous": false,
+        "pairwise_agreement": 1.0
+      },
+      {
+        "ticker": "SHOT",
+        "company_name": "Scandic Hotels",
+        "profiles": [
+          "unclassified",
+          "unclassified",
+          "unclassified"
+        ],
+        "invalid_runs": 0,
+        "unanimous": true,
+        "pairwise_agreement": 1.0
+      },
+      {
+        "ticker": "BIOG B",
+        "company_name": "BioGaia",
+        "profiles": [
+          "slightly_cyclical"
+        ],
+        "invalid_runs": 2,
+        "unanimous": false,
+        "pairwise_agreement": null
+      },
+      {
+        "ticker": "NTI",
+        "company_name": "Norsk Titanium",
+        "profiles": [],
+        "invalid_runs": 3,
+        "unanimous": false,
+        "pairwise_agreement": null
+      }
+    ]
+  },
+  "negative_control_pass_rate": 0.8333333333333334,
+  "runs": [
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 1,
+      "response_id": "be3ccfd6-7b22-4901-add9-ba9f7b9e765e",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 24857,
+        "completion_tokens": 1253,
+        "total_tokens": 26110,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1071
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 24729
+      },
+      "classification": null,
+      "error": "evidence quote is not present in source: document:89"
+    },
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 2,
+      "response_id": "41fb168f-c3ab-425d-9880-891a792bbe8b",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 24857,
+        "completion_tokens": 1034,
+        "total_tokens": 25891,
+        "prompt_tokens_details": {
+          "cached_tokens": 24832
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 752
+        },
+        "prompt_cache_hit_tokens": 24832,
+        "prompt_cache_miss_tokens": 25
+      },
+      "classification": {
+        "risk_profile": "noncyclical_recurring",
+        "confidence": "high",
+        "rationale": "Lime Technologies operates a SaaS business model with a high proportion of recurring subscription revenue, indicating limited sensitivity to economic cycles. The documents show consistent growth in Annual Recurring Revenue (ARR) and recurring revenue, and the CEO notes that software revenue is expected to increase as a share of total revenue. While some market caution is mentioned, the core business is based on long-term customer relationships and essential CRM software, which is generally non-discretionary.",
+        "evidence": [
+          {
+            "source_id": "document:89",
+            "quote": "Recurring revenue increased to MSEK 136.7 (124.2), rendering a growth of 10 %"
+          },
+          {
+            "source_id": "document:89",
+            "quote": "The 12-month recalculated recurring revenue, Annual Recurring Revenue (ARR), at the end of the second quarter was MSEK 552.2 (501.7), rendering an ARR growth of 10 %."
+          },
+          {
+            "source_id": "document:103",
+            "quote": "The business model is based on offering subscription agreements (Software as a Service or “SaaS”)"
+          }
+        ],
+        "missing_information": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 3,
+      "response_id": "227f74a7-1242-4360-be6e-eb699bf9b6de",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 24857,
+        "completion_tokens": 1122,
+        "total_tokens": 25979,
+        "prompt_tokens_details": {
+          "cached_tokens": 24832
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 904
+        },
+        "prompt_cache_hit_tokens": 24832,
+        "prompt_cache_miss_tokens": 25
+      },
+      "classification": null,
+      "error": "evidence quote is not present in source: document:89"
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 1,
+      "response_id": "df878776-5091-4522-a9be-8cbf14333a35",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 23715,
+        "completion_tokens": 1869,
+        "total_tokens": 25584,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1602
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 23587
+      },
+      "classification": null,
+      "error": "evidence quote is not present in source: document:106"
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 2,
+      "response_id": "ab732c3a-1519-41a2-97c6-c0959fa4880b",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 23715,
+        "completion_tokens": 1277,
+        "total_tokens": 24992,
+        "prompt_tokens_details": {
+          "cached_tokens": 23680
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1102
+        },
+        "prompt_cache_hit_tokens": 23680,
+        "prompt_cache_miss_tokens": 35
+      },
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "high",
+        "rationale": "Clas Ohlson sells everyday home products that are somewhat non-discretionary, but management acknowledges potential demand sensitivity due to economic uncertainty. The company has built an all-weather portfolio and has a loyal customer base, indicating moderate cyclicality.",
+        "evidence": [
+          {
+            "source_id": "document:110",
+            "quote": "Our strategy to build an all-weather portfolio of need-based products continues to yield results."
+          },
+          {
+            "source_id": "document:110",
+            "quote": "Increased material costs, freight costs and uncertainty about customers' willingness and space to consume are some of the concerns we may see in the future."
+          }
+        ],
+        "missing_information": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 3,
+      "response_id": "f52e28bf-ef35-4829-a45d-ac6aed1ee4f9",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 23715,
+        "completion_tokens": 1707,
+        "total_tokens": 25422,
+        "prompt_tokens_details": {
+          "cached_tokens": 23680
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1489
+        },
+        "prompt_cache_hit_tokens": 23680,
+        "prompt_cache_miss_tokens": 35
+      },
+      "classification": null,
+      "error": "evidence quote is not present in source: document:106"
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 1,
+      "response_id": "e9e1ddc3-b9fd-463f-a6f8-47a1f2143647",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 192,
+        "completion_tokens": 192,
+        "total_tokens": 384,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 123
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 64
+      },
+      "classification": {
+        "risk_profile": "unclassified",
+        "confidence": "low",
+        "rationale": "No documents were provided for Byggpartner, making it impossible to assess business cyclicality defensibly.",
+        "evidence": [],
+        "missing_information": [
+          "Insufficient documents: No documents supplied for classification."
+        ]
+      },
+      "error": null
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 2,
+      "response_id": "95ccaab8-cd37-47c7-a579-231b8299b9c4",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 192,
+        "completion_tokens": 245,
+        "total_tokens": 437,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 187
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 64
+      },
+      "classification": {
+        "risk_profile": "unclassified",
+        "confidence": "low",
+        "rationale": "No documents provided; unable to determine cyclicality classification.",
+        "evidence": [],
+        "missing_information": [
+          "Company documents required to assess business cyclicality."
+        ]
+      },
+      "error": null
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 3,
+      "response_id": "0b9f2259-4401-4ae9-abf7-f1684f4d0def",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 192,
+        "completion_tokens": 251,
+        "total_tokens": 443,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 172
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 64
+      },
+      "classification": null,
+      "error": "response fields do not match the evaluation contract"
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 1,
+      "response_id": "e0ba54b1-3c45-4e09-8276-694893ceca22",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 192,
+        "completion_tokens": 329,
+        "total_tokens": 521,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 200
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 64
+      },
+      "classification": {
+        "risk_profile": "unclassified",
+        "confidence": "low",
+        "rationale": "No documents were supplied for Scandic Hotels, so a defensible cyclicality classification cannot be made. Although the hotel industry is generally cyclical, specific evidence of recurring revenue, demand sensitivity, or project/customer exposure is required to assign a profile.",
+        "evidence": [],
+        "missing_information": [
+          "Annual report or financial filings describing revenue composition and demand drivers",
+          "Industry analysis or management discussion on sensitivity to economic cycles",
+          "Details on customer base, contract structures, and geographic exposure"
+        ]
+      },
+      "error": null
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 2,
+      "response_id": "35fe2819-a81a-4d10-b162-2a0459fdb873",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 192,
+        "completion_tokens": 301,
+        "total_tokens": 493,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 212
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 64
+      },
+      "classification": {
+        "risk_profile": "unclassified",
+        "confidence": "low",
+        "rationale": "No documents were provided to assess the company's business cyclicality. Without any evidence, a defensible classification cannot be made.",
+        "evidence": [],
+        "missing_information": [
+          "No documents supplied. Annual reports, earnings calls, or industry analyses are needed to determine demand sensitivity and revenue characteristics."
+        ]
+      },
+      "error": null
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 3,
+      "response_id": "b1b02faf-2842-46e2-b0cd-4b4fe92aec90",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 192,
+        "completion_tokens": 273,
+        "total_tokens": 465,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 213
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 64
+      },
+      "classification": {
+        "risk_profile": "unclassified",
+        "confidence": "low",
+        "rationale": "No documents were supplied, making it impossible to determine cyclicality classification.",
+        "evidence": [],
+        "missing_information": [
+          "Insufficient data: empty document list"
+        ]
+      },
+      "error": null
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 1,
+      "response_id": "6793a399-f958-439d-b39b-4f3fb2e99086",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 32245,
+        "completion_tokens": 1784,
+        "total_tokens": 34029,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1622
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 32117
+      },
+      "classification": null,
+      "error": "evidence quote is not present in source: document:125"
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 2,
+      "response_id": "46f0284d-5426-4009-ab94-66b3516dc274",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 32245,
+        "completion_tokens": 1030,
+        "total_tokens": 33275,
+        "prompt_tokens_details": {
+          "cached_tokens": 32128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 867
+        },
+        "prompt_cache_hit_tokens": 32128,
+        "prompt_cache_miss_tokens": 117
+      },
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "medium",
+        "rationale": "The company faces moderate demand sensitivity due to order timing variations across regions and occasional quarterly fluctuations, though overall demand for probiotics is relatively stable.",
+        "evidence": [
+          {
+            "source_id": "document:121",
+            "quote": "Regionen fortsätter att påverkas av variationer i tidpunkterna för inkomna order, vilket leder till fluktuationer under året."
+          },
+          {
+            "source_id": "news:192",
+            "quote": "We experienced some order variability in the fourth quarter, amounting to approximately SEK 35 million in net sales."
+          }
+        ],
+        "missing_information": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 3,
+      "response_id": "3c623458-e3d0-4a50-9fcc-4a5b9899353a",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 32245,
+        "completion_tokens": 1752,
+        "total_tokens": 33997,
+        "prompt_tokens_details": {
+          "cached_tokens": 32128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1592
+        },
+        "prompt_cache_hit_tokens": 32128,
+        "prompt_cache_miss_tokens": 117
+      },
+      "classification": null,
+      "error": "evidence quote is not present in source: document:122"
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 1,
+      "response_id": "4eaeb2c2-1c65-48e1-85d5-4800f5675f87",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 13918,
+        "completion_tokens": 1596,
+        "total_tokens": 15514,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1384
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 13790
+      },
+      "classification": null,
+      "error": "evidence quote is not present in source: document:127"
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 2,
+      "response_id": "d1d9e16e-e9c8-4dce-8959-f786761599a4",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 13918,
+        "completion_tokens": 1308,
+        "total_tokens": 15226,
+        "prompt_tokens_details": {
+          "cached_tokens": 13824
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1117
+        },
+        "prompt_cache_hit_tokens": 13824,
+        "prompt_cache_miss_tokens": 94
+      },
+      "classification": null,
+      "error": "evidence quote is not present in source: document:127"
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 3,
+      "response_id": "66b26bfd-103c-40ff-a73b-169a20eb4fe4",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 13918,
+        "completion_tokens": 443,
+        "total_tokens": 14361,
+        "prompt_tokens_details": {
+          "cached_tokens": 13824
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 189
+        },
+        "prompt_cache_hit_tokens": 13824,
+        "prompt_cache_miss_tokens": 94
+      },
+      "classification": null,
+      "error": "evidence quote is not present in source: document:127"
+    }
+  ],
+  "negative_controls": [
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 0,
+      "response_id": "dd6d1063-d9d4-444b-b05e-83705bffcfc3",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 191,
+        "completion_tokens": 173,
+        "total_tokens": 364,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 113
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 63
+      },
+      "classification": {
+        "risk_profile": "unclassified",
+        "confidence": "low",
+        "rationale": "No documents were provided, so there is no evidence to support any classification.",
+        "evidence": [],
+        "missing_information": [
+          "No documents were supplied for analysis."
+        ]
+      },
+      "error": null
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 0,
+      "response_id": "b8ab009c-cb48-41f6-b8d5-b7b54f933581",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 194,
+        "completion_tokens": 165,
+        "total_tokens": 359,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 112
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 66
+      },
+      "classification": {
+        "risk_profile": "unclassified",
+        "confidence": "low",
+        "rationale": "No documents provided to support classification.",
+        "evidence": [],
+        "missing_information": [
+          "Supply documents to enable cyclicality classification."
+        ]
+      },
+      "error": null
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 0,
+      "response_id": "59a98ecc-34fa-4222-ae9c-eb63d7513aac",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 192,
+        "completion_tokens": 210,
+        "total_tokens": 402,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 153
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 64
+      },
+      "classification": {
+        "risk_profile": "unclassified",
+        "confidence": "low",
+        "rationale": "No documents provided to assess cyclicality.",
+        "evidence": [],
+        "missing_information": [
+          "Financial statements or descriptions of revenue streams and demand sensitivity."
+        ]
+      },
+      "error": null
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 0,
+      "response_id": "ee84894d-93b2-4cd3-a9e2-bd66e71e1eb7",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 192,
+        "completion_tokens": 407,
+        "total_tokens": 599,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 292
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 64
+      },
+      "classification": null,
+      "error": "response fields do not match the evaluation contract"
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 0,
+      "response_id": "5ead6006-4508-42fb-978b-7ae040a074dc",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 193,
+        "completion_tokens": 253,
+        "total_tokens": 446,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 175
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 65
+      },
+      "classification": {
+        "risk_profile": "unclassified",
+        "confidence": "low",
+        "rationale": "No documents were supplied for BioGaia, so a defensible cyclicality classification cannot be made.",
+        "evidence": [],
+        "missing_information": [
+          "Company documents such as annual reports, investor presentations, or industry analyses are required to assess cyclicality."
+        ]
+      },
+      "error": null
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 0,
+      "response_id": "30f326c2-a487-495e-ad77-db7918b055b0",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 192,
+        "completion_tokens": 165,
+        "total_tokens": 357,
+        "prompt_tokens_details": {
+          "cached_tokens": 128
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 112
+        },
+        "prompt_cache_hit_tokens": 128,
+        "prompt_cache_miss_tokens": 64
+      },
+      "classification": {
+        "risk_profile": "unclassified",
+        "confidence": "low",
+        "rationale": "No documents were provided to assess business cyclicality.",
+        "evidence": [],
+        "missing_information": [
+          "No documents supplied for analysis"
+        ]
+      },
+      "error": null
+    }
+  ]
+}

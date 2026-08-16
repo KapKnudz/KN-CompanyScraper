@@ -63,9 +63,9 @@ class OpenAIResponsesAdapter:
                 "text": {
                     "format": {
                         "type": "json_schema",
-                        "name": "stock_analysis",
+                        "name": prompt.schema_name,
                         "strict": True,
-                        "schema": stock_analysis_json_schema(),
+                        "schema": prompt.output_schema or stock_analysis_json_schema(),
                     }
                 },
                 "store": False,

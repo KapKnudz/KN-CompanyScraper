@@ -4,6 +4,7 @@ import pytest
 
 from kncompanyscraper.analysis.agent.agent_analysis_service import AgentAnalysisService
 from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
+from kncompanyscraper.analysis.agent.context_provenance import deterministic_context_sha256
 from kncompanyscraper.analysis.agent.openai_responses import OpenAIModelResponse
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt
 from tests.test_agent_result_boundary import valid_response
@@ -47,6 +48,7 @@ def test_agent_analysis_service_routes_model_output_through_persistence_boundary
             "candidate_rank": 1,
             "evidence_as_of": None,
             "evidence_source_ids": [],
+            "deterministic_context_sha256": deterministic_context_sha256(candidate),
         },
     )
 

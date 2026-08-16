@@ -2,10 +2,14 @@ import json
 import math
 
 from kncompanyscraper.analysis.agent.output_schema import (
+    CompanyFact,
+    CompanyFactLedger,
     EvidenceCitation,
     ManagementClaimAssessment,
     STOCK_ANALYSIS_OUTPUT_CONTRACT,
     StockAnalysisResult,
+    THESIS_UPDATE_OUTPUT_CONTRACT,
+    ThesisUpdateResult,
     ValuationScenario,
 )
 
@@ -15,14 +19,38 @@ class StockAnalysisValidationError(ValueError):
 
 
 def parse_stock_analysis_result(raw_response: str) -> StockAnalysisResult:
+    payload = _parse_contract(raw_response, STOCK_ANALYSIS_OUTPUT_CONTRACT, "stock-analysis")
+    return _stock_analysis_from_payload(payload)
+
+
+def parse_thesis_update_result(raw_response: str) -> ThesisUpdateResult:
+    payload = _parse_contract(raw_response, THESIS_UPDATE_OUTPUT_CONTRACT, "thesis-update")
+    return ThesisUpdateResult(
+        impact=payload["impact"],
+        summary=payload["summary"],
+        changed_sections=payload["changed_sections"],
+        thesis=_stock_analysis_from_payload(payload["thesis"]),
+    )
+
+
+def _parse_contract(raw_response: str, contract: dict, label: str) -> dict:
     try:
         payload = json.loads(raw_response, object_pairs_hook=_object_without_duplicates)
     except (json.JSONDecodeError, StockAnalysisValidationError) as exc:
-        raise StockAnalysisValidationError(f"Invalid stock-analysis JSON: {exc}") from exc
+        raise StockAnalysisValidationError(f"Invalid {label} JSON: {exc}") from exc
 
-    _validate_value(payload, STOCK_ANALYSIS_OUTPUT_CONTRACT, "result")
+    _validate_value(payload, contract, "result")
+    return payload
 
+
+def _stock_analysis_from_payload(payload: dict) -> StockAnalysisResult:
     result_data = dict(payload)
+    result_data["company_fact_ledger"] = CompanyFactLedger(
+        **{
+            heading: [CompanyFact(**fact) for fact in facts]
+            for heading, facts in payload["company_fact_ledger"].items()
+        }
+    )
     result_data["valuation_scenarios"] = [
         ValuationScenario(**scenario) for scenario in payload["valuation_scenarios"]
     ]

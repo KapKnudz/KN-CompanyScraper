@@ -156,6 +156,47 @@ CREATE TABLE public.company_cyclicality_consensus (
 
 
 --
+-- Name: company_facts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.company_facts (
+    id bigint NOT NULL,
+    company_id integer NOT NULL,
+    thesis_revision_id bigint NOT NULL,
+    heading text NOT NULL,
+    statement text NOT NULL,
+    evidence_kind text NOT NULL,
+    source_ids text[] NOT NULL,
+    source_date date,
+    reporting_period text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT company_facts_evidence_kind_check CHECK ((evidence_kind = ANY (ARRAY['fact'::text, 'management_claim'::text, 'analyst_inference'::text]))),
+    CONSTRAINT company_facts_heading_check CHECK ((heading = ANY (ARRAY['business_model'::text, 'revenue_drivers'::text, 'margins_and_operating_leverage'::text, 'balance_sheet_and_capital_allocation'::text, 'management_and_execution'::text, 'ownership_and_insiders'::text, 'valuation_expectations'::text, 'risks_and_disconfirming_evidence'::text]))),
+    CONSTRAINT company_facts_source_ids_check CHECK ((cardinality(source_ids) > 0)),
+    CONSTRAINT company_facts_statement_check CHECK ((length(TRIM(BOTH FROM statement)) > 0))
+);
+
+
+--
+-- Name: company_facts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.company_facts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: company_facts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.company_facts_id_seq OWNED BY public.company_facts.id;
+
+
+--
 -- Name: company_profiles; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -173,6 +214,49 @@ CREATE TABLE public.company_profiles (
     ceo character varying(255),
     board_members text[]
 );
+
+
+--
+-- Name: company_thesis_revisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.company_thesis_revisions (
+    id bigint NOT NULL,
+    company_id integer NOT NULL,
+    revision integer NOT NULL,
+    previous_revision_id bigint,
+    source_analysis_id integer NOT NULL,
+    change_type text NOT NULL,
+    evidence_as_of date,
+    confidence text NOT NULL,
+    confidence_limitations text[] DEFAULT '{}'::text[] NOT NULL,
+    content jsonb NOT NULL,
+    created_by text NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT company_thesis_revisions_change_type_check CHECK ((change_type = ANY (ARRAY['initial'::text, 'full_reassessment'::text, 'incremental_update'::text]))),
+    CONSTRAINT company_thesis_revisions_confidence_check CHECK ((confidence = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text]))),
+    CONSTRAINT company_thesis_revisions_revision_check CHECK ((revision > 0))
+);
+
+
+--
+-- Name: company_thesis_revisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.company_thesis_revisions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: company_thesis_revisions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.company_thesis_revisions_id_seq OWNED BY public.company_thesis_revisions.id;
 
 
 --
@@ -665,6 +749,20 @@ ALTER TABLE ONLY public.companies ALTER COLUMN id SET DEFAULT nextval('public.co
 
 
 --
+-- Name: company_facts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_facts ALTER COLUMN id SET DEFAULT nextval('public.company_facts_id_seq'::regclass);
+
+
+--
+-- Name: company_thesis_revisions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_thesis_revisions ALTER COLUMN id SET DEFAULT nextval('public.company_thesis_revisions_id_seq'::regclass);
+
+
+--
 -- Name: events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -791,11 +889,51 @@ ALTER TABLE ONLY public.company_cyclicality_consensus
 
 
 --
+-- Name: company_facts company_facts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_facts
+    ADD CONSTRAINT company_facts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: company_facts company_facts_thesis_revision_id_heading_statement_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_facts
+    ADD CONSTRAINT company_facts_thesis_revision_id_heading_statement_key UNIQUE (thesis_revision_id, heading, statement);
+
+
+--
 -- Name: company_profiles company_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.company_profiles
     ADD CONSTRAINT company_profiles_pkey PRIMARY KEY (company_id);
+
+
+--
+-- Name: company_thesis_revisions company_thesis_revisions_company_id_revision_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_thesis_revisions
+    ADD CONSTRAINT company_thesis_revisions_company_id_revision_key UNIQUE (company_id, revision);
+
+
+--
+-- Name: company_thesis_revisions company_thesis_revisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_thesis_revisions
+    ADD CONSTRAINT company_thesis_revisions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: company_thesis_revisions company_thesis_revisions_source_analysis_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_thesis_revisions
+    ADD CONSTRAINT company_thesis_revisions_source_analysis_id_key UNIQUE (source_analysis_id);
 
 
 --
@@ -985,6 +1123,20 @@ CREATE INDEX idx_companies_ticker ON public.companies USING btree (ticker);
 
 
 --
+-- Name: idx_company_facts_company_heading; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_company_facts_company_heading ON public.company_facts USING btree (company_id, heading, thesis_revision_id DESC);
+
+
+--
+-- Name: idx_company_thesis_revisions_latest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_company_thesis_revisions_latest ON public.company_thesis_revisions USING btree (company_id, revision DESC);
+
+
+--
 -- Name: idx_events_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1142,11 +1294,51 @@ ALTER TABLE ONLY public.company_cyclicality_consensus
 
 
 --
+-- Name: company_facts company_facts_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_facts
+    ADD CONSTRAINT company_facts_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: company_facts company_facts_thesis_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_facts
+    ADD CONSTRAINT company_facts_thesis_revision_id_fkey FOREIGN KEY (thesis_revision_id) REFERENCES public.company_thesis_revisions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: company_profiles company_profiles_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.company_profiles
     ADD CONSTRAINT company_profiles_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: company_thesis_revisions company_thesis_revisions_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_thesis_revisions
+    ADD CONSTRAINT company_thesis_revisions_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: company_thesis_revisions company_thesis_revisions_previous_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_thesis_revisions
+    ADD CONSTRAINT company_thesis_revisions_previous_revision_id_fkey FOREIGN KEY (previous_revision_id) REFERENCES public.company_thesis_revisions(id);
+
+
+--
+-- Name: company_thesis_revisions company_thesis_revisions_source_analysis_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_thesis_revisions
+    ADD CONSTRAINT company_thesis_revisions_source_analysis_id_fkey FOREIGN KEY (source_analysis_id) REFERENCES public.analysis(id);
 
 
 --
@@ -1273,4 +1465,6 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260809143000'),
     ('20260812120000'),
     ('20260812130000'),
-    ('20260812140000');
+    ('20260812140000'),
+    ('20260816120000'),
+    ('20260816123000');

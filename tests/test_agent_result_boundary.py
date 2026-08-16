@@ -6,6 +6,7 @@ import pytest
 from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
 from kncompanyscraper.analysis.agent.execution_boundary import AgentExecutionBoundary
 from kncompanyscraper.analysis.agent.output_schema import (
+    CompanyFact,
     EvidenceCitation,
     ManagementClaimAssessment,
     StockAnalysisResult,
@@ -119,13 +120,18 @@ def test_execution_boundary_persists_valid_response():
         created_by="test-model",
         metadata={
             "prompt_version": 1,
-            "validation_version": "agent-boundary-v11",
+            "validation_version": "agent-boundary-v12",
             "validation_status": "accepted",
             "deterministic_value_checks": [
                 "forward valuation scenarios are disabled",
                 "model-owned expected return components are null",
             ],
             "insider_checks": ["no-data insider assessment normalized"],
+            "confidence_checks": [
+                "model proposed medium confidence",
+                "deterministic confidence cap is medium",
+                "accepted confidence is medium",
+            ],
             "warnings": ["model insider assessment replaced because no events were supplied"],
         },
     )
@@ -133,6 +139,85 @@ def test_execution_boundary_persists_valid_response():
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
     )
+
+
+def test_execution_boundary_normalizes_and_accepts_sourced_company_fact():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 103
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={"financial": {"operating_margin": 0.08}},
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.company_fact_ledger.business_model = [
+        CompanyFact(
+            statement=" The company sells subscriptions. ",
+            evidence_kind="fact",
+            source_ids=["news:21"],
+            source_date="2026-08-01",
+            reporting_period="2026-Q2",
+        )
+    ]
+    payload.company_fact_ledger.margins_and_operating_leverage = [
+        CompanyFact(
+            statement="Operating margin was 8%.",
+            evidence_kind="fact",
+            source_ids=["full_results.financial.operating_margin"],
+        )
+    ]
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.company_fact_ledger.business_model[0].statement == (
+        "The company sells subscriptions."
+    )
+    assert persisted.result.company_fact_ledger.margins_and_operating_leverage[
+        0
+    ].source_ids == ["deterministic:financial:operating_margin"]
+
+
+def test_execution_boundary_rejects_company_fact_without_evidence():
+    repository = MagicMock()
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.company_fact_ledger.revenue_drivers = [
+        CompanyFact("Growth will accelerate.", "analyst_inference", [])
+    ]
+
+    with pytest.raises(StockAnalysisValidationError, match="must cite evidence"):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+
+def test_execution_boundary_caps_confidence_when_textual_evidence_is_absent():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 104
+    candidate = AgentCandidate(rank=1, company_id=42, ticker="TEST", name="Testbolaget")
+    payload = valid_result()
+    payload.confidence = "high"
+    payload.management_credibility_ledger = []
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.confidence == "low"
+    assert persisted.result.confidence_limitations == [
+        "No textual company reports or releases were supplied."
+    ]
 
 
 def test_execution_boundary_accepts_aggregate_operating_history_citation():
@@ -239,6 +324,39 @@ def test_execution_boundary_accepts_aggregate_price_attribution_citation():
     )
 
 
+def test_execution_boundary_accepts_aggregate_reverse_dcf_missing_information():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 102
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={
+            "reverse_dcf": {
+                "status": "unavailable",
+                "missing_information": ["latest stock price unavailable"],
+            }
+        },
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.citations = [
+        EvidenceCitation(
+            source_id="full_results.reverse_dcf.missing_information",
+            claim="The latest stock price is unavailable.",
+        )
+    ]
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.citations[0].source_id == (
+        "deterministic:reverse_dcf:missing_information"
+    )
+
+
 def test_execution_boundary_accepts_supplied_insider_event_count_citation():
     repository = MagicMock()
     repository.save_stock_analysis.return_value = 101
@@ -265,6 +383,37 @@ def test_execution_boundary_accepts_supplied_insider_event_count_citation():
     )
 
     assert persisted.result.citations[0].source_id == "research:insider_event_count"
+
+
+def test_execution_boundary_accepts_supplied_insider_status_fact():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 101
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={
+            "documents": [{"source_id": "news:21"}],
+            "insider_status": "unavailable",
+        },
+    )
+    payload = valid_result()
+    payload.company_fact_ledger.ownership_and_insiders = [
+        CompanyFact(
+            statement="Insider evidence is unavailable.",
+            evidence_kind="fact",
+            source_ids=["research_evidence.insider_status"],
+        )
+    ]
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.company_fact_ledger.ownership_and_insiders[0].source_ids == [
+        "research:insider_status"
+    ]
 
 
 def test_execution_boundary_rejects_unknown_citation_source():
@@ -519,6 +668,40 @@ def test_execution_boundary_accepts_completed_classifier_consensus():
     assert persisted.result.risk_profile == "cyclical_or_other_risk"
 
 
+def test_completed_classifier_consensus_does_not_require_unavailable_dcf_sensitivity():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 105
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={
+            "cyclicality_consensus": {
+                "status": "complete",
+                "risk_profile": "cyclical_or_other_risk",
+                "consensus_strength": "majority",
+                "evidence": [{"source_id": "news:21"}],
+            },
+            "reverse_dcf": {
+                "status": "unavailable",
+                "discount_rate_sensitivities": {},
+            },
+        },
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.risk_profile = "cyclical_or_other_risk"
+    payload.risk_profile_confidence = "medium"
+    payload.risk_profile_evidence = ["news:21"]
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.analysis_id == 105
+
+
 def test_execution_boundary_rejects_unsupported_risk_profile_classification():
     repository = MagicMock()
     candidate = AgentCandidate(
@@ -675,7 +858,7 @@ def test_execution_boundary_accepts_activated_case_with_available_reverse_dcf():
 
     assert persisted.analysis_id == 102
     saved_metadata = repository.save_stock_analysis.call_args.kwargs["metadata"]
-    assert saved_metadata["validation_version"] == "agent-boundary-v11"
+    assert saved_metadata["validation_version"] == "agent-boundary-v12"
     assert saved_metadata["valuation_provenance"] == {
         "status": "available",
         "reverse_dcf_policy_version": "reverse-dcf-v2",

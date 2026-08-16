@@ -1,0 +1,681 @@
+{
+  "as_of": "2026-08-12",
+  "sample": [
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "document_count": 12
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "document_count": 12
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "document_count": 12
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "document_count": 10
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "document_count": 12
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "document_count": 9
+    }
+  ],
+  "summary": {
+    "run_count": 18,
+    "company_count": 6,
+    "comparable_company_count": 0,
+    "validation_pass_rate": 0.0,
+    "supported_classification_count": 0,
+    "unanimous_company_rate": 0.0,
+    "pairwise_profile_agreement": null,
+    "companies": [
+      {
+        "ticker": "LIME",
+        "company_name": "Lime Technologies",
+        "profiles": [],
+        "invalid_runs": 3,
+        "unanimous": false,
+        "pairwise_agreement": null
+      },
+      {
+        "ticker": "CLAS B",
+        "company_name": "Clas Ohlson",
+        "profiles": [],
+        "invalid_runs": 3,
+        "unanimous": false,
+        "pairwise_agreement": null
+      },
+      {
+        "ticker": "BYGGP",
+        "company_name": "Byggpartner",
+        "profiles": [],
+        "invalid_runs": 3,
+        "unanimous": false,
+        "pairwise_agreement": null
+      },
+      {
+        "ticker": "SHOT",
+        "company_name": "Scandic Hotels",
+        "profiles": [],
+        "invalid_runs": 3,
+        "unanimous": false,
+        "pairwise_agreement": null
+      },
+      {
+        "ticker": "BIOG B",
+        "company_name": "BioGaia",
+        "profiles": [],
+        "invalid_runs": 3,
+        "unanimous": false,
+        "pairwise_agreement": null
+      },
+      {
+        "ticker": "NTI",
+        "company_name": "Norsk Titanium",
+        "profiles": [],
+        "invalid_runs": 3,
+        "unanimous": false,
+        "pairwise_agreement": null
+      }
+    ]
+  },
+  "negative_control_pass_rate": 0.0,
+  "runs": [
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 1,
+      "response_id": "1f41a276-8250-4562-91a1-89a65552ce98",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6164,
+        "completion_tokens": 1705,
+        "total_tokens": 7869,
+        "prompt_tokens_details": {
+          "cached_tokens": 6144
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1361
+        },
+        "prompt_cache_hit_tokens": 6144,
+        "prompt_cache_miss_tokens": 20
+      },
+      "raw_response": "{\n  \"company_id\": 101,\n  \"ticker\": \"LIME\",\n  \"company_name\": \"Lime Technologies\",\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"The company has a high proportion of recurring revenue from software subscriptions, with all software-related revenue being recurring and ARR growing steadily.\",\n      \"passage_ids\": [\"document:89#p2\", \"document:89#p8\"]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"moderate\",\n      \"rationale\": \"Passages indicate cautious customer behaviour with postponed decisions and longer sales cycles, suggesting sensitivity to economic conditions, though demand for business-critical processes provides some resilience.\",\n      \"passage_ids\": [\"document:89#p23\", \"document:91#p13\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No evidence in the provided passages regarding customer concentration or reliance on a few customers.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"While the company has recurring revenue and mentions professional services, there is no explicit evidence of large, irregular project-based revenue or order lumpiness.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No evidence in the provided passages regarding exposure to commodity prices or financing conditions.\",\n      \"passage_ids\": []\n    }\n  }\n}",
+      "classification": null,
+      "error": "response fields do not match the evaluation contract"
+    },
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 2,
+      "response_id": "3f0aa31a-7561-4db9-a603-d34503c70d1b",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6164,
+        "completion_tokens": 1900,
+        "total_tokens": 8064,
+        "prompt_tokens_details": {
+          "cached_tokens": 6144
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1534
+        },
+        "prompt_cache_hit_tokens": 6144,
+        "prompt_cache_miss_tokens": 20
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"The company generates significant recurring revenue, as evidenced by ARR growth and recurring revenue figures.\",\n      \"passage_ids\": [\"document:89#p2\", \"document:89#p8\"]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"moderate\",\n      \"rationale\": \"Customers exhibit cautious behavior with postponed decisions and longer sales cycles, but the business remains stable with no dramatic headwinds.\",\n      \"passage_ids\": [\"document:89#p23\", \"document:91#p13\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information on customer concentration is provided in the passages.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information on project or order lumpiness is provided in the passages.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information on commodity or financing exposure is provided in the passages.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based on the provided passages. Revenue recurrence is low due to high recurring revenue. Economic demand sensitivity is moderate as noted customer caution. Customer concentration, project lumpiness, and commodity/financing exposure lack evidence and are therefore unclassified.\",\n  \"missing_information\": \"Passages lack details on customer concentration, project or order lumpiness, and commodity or financing exposure.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 3,
+      "response_id": "a2f0f6fa-7359-4783-ae5f-4fb8d794d9af",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6164,
+        "completion_tokens": 3379,
+        "total_tokens": 9543,
+        "prompt_tokens_details": {
+          "cached_tokens": 6144
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2977
+        },
+        "prompt_cache_hit_tokens": 6144,
+        "prompt_cache_miss_tokens": 20
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"The company reports significant recurring revenue with metrics such as ARR growth of 10% (MSEK 552.2) and recurring revenue increasing to 136.7 MSEK.\",\n      \"passage_ids\": [\"document:89#p2\", \"document:89#p8\", \"document:91#p2\"]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"moderate\",\n      \"rationale\": \"Management notes a return to more cautious customer behavior, with postponed decisions and longer sales cycles affecting order intake, indicating sensitivity to economic conditions.\",\n      \"passage_ids\": [\"document:89#p23\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No evidence in the passages regarding customer concentration or dependency on a limited number of customers.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No evidence of large, irregular projects or orders causing revenue lumpiness; the business is predominantly recurring revenue-based.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information on exposure to commodity prices, interest rates, or financing conditions found in the passages.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Based on the provided passages, revenue recurrence is clearly evidenced and economic demand sensitivity is indicated by cautious customer behavior. Sufficient evidence for customer concentration, project lumpiness, or commodity/financing exposure is absent.\",\n  \"missing_information\": \"Passages lack data on customer concentration, project/order timing patterns, and exposure to commodities or financing costs.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 1,
+      "response_id": "42e783f0-89ea-426e-b6dd-e13e8ba714f9",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 5050,
+        "completion_tokens": 2985,
+        "total_tokens": 8035,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2641
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5050
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No explicit mention of recurring revenue or subscription model.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"moderate\",\n      \"rationale\": \"Passage mentions uncertainty about customers' willingness and space to consume, indicating sensitivity to economic conditions.\",\n      \"passage_ids\": [\"document:110#p35\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"Large dispersed customer base with 6.2 million loyalty club members suggests no reliance on major customers.\",\n      \"passage_ids\": [\"document:106#p15\", \"document:110#p24\"]\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"Hundreds of millions of annual customer interactions indicate many small transactions, not large one-off projects.\",\n      \"passage_ids\": [\"document:106#p15\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"moderate\",\n      \"rationale\": \"Explicit mention of increased material costs and freight costs as concerns.\",\n      \"passage_ids\": [\"document:110#p35\"]\n    }\n  },\n  \"rationale\": \"Assessments based solely on provided passages, using explicit evidence where available; otherwise unclassified.\",\n  \"missing_information\": \"Specific data on revenue recurrence percentage, customer concentration ratios, and detailed cost structure exposure to commodities or financing are missing.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 2,
+      "response_id": "b4fef5c5-c6f2-4943-9ba7-ede74b7eb769",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 5050,
+        "completion_tokens": 2239,
+        "total_tokens": 7289,
+        "prompt_tokens_details": {
+          "cached_tokens": 4992
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1908
+        },
+        "prompt_cache_hit_tokens": 4992,
+        "prompt_cache_miss_tokens": 58
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No evidence of recurring revenue streams such as subscriptions or long-term contracts.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"moderate\",\n      \"rationale\": \"Management notes uncertainty about customers' willingness and space to consume as a future concern, indicating sensitivity to economic conditions.\",\n      \"passage_ids\": [\"document:110#p35\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"The loyalty club has over 6.2 million members, demonstrating a large, diversified customer base.\",\n      \"passage_ids\": [\"document:106#p15\"]\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"The company handles hundreds of millions of customer interactions annually, indicating many small transactions without lumpiness.\",\n      \"passage_ids\": [\"document:106#p15\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"moderate\",\n      \"rationale\": \"Increased material costs and freight costs are highlighted as concerns, reflecting exposure to commodity price fluctuations.\",\n      \"passage_ids\": [\"document:110#p35\"]\n    }\n  },\n  \"missing_information\": \"No subscription or recurring revenue model is mentioned, so revenue_recurrence remains unclassified. For other dimensions, the available information allowed for moderate or low assessments.\"\n}",
+      "classification": null,
+      "error": "response fields do not match the evaluation contract"
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 3,
+      "response_id": "d0ec0c61-3fdb-41b4-9881-8096dc2e93fc",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 5050,
+        "completion_tokens": 2675,
+        "total_tokens": 7725,
+        "prompt_tokens_details": {
+          "cached_tokens": 4992
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2201
+        },
+        "prompt_cache_hit_tokens": 4992,
+        "prompt_cache_miss_tokens": 58
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage provides explicit information on the degree to which revenue is recurring, such as subscription-based sales or contractual obligations.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"moderate\",\n      \"rationale\": \"Management cites concern about customers' willingness to consume (document:110#p35), indicating demand is somewhat sensitive to economic conditions, despite a needs-driven assortment.\",\n      \"passage_ids\": [\"document:110#p35\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"The customer base is broad with over 6.2 million loyalty members and hundreds of millions of interactions annually, indicating no significant reliance on a limited number of customers.\",\n      \"passage_ids\": [\"document:106#p15\", \"document:110#p24\"]\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"The retail model features constant product turnover, thousands of new products yearly, and millions of small-scale transactions, resulting in non-lumpy revenue streams.\",\n      \"passage_ids\": [\"document:106#p15\", \"document:106#p26\", \"document:106#p59\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"moderate\",\n      \"rationale\": \"Management acknowledges risks from increased material and freight costs (document:110#p35), indicating exposure to commodity price fluctuations, though no explicit financing exposure is mentioned.\",\n      \"passage_ids\": [\"document:110#p35\"]\n    }\n  },\n  \"rationale\": \"Assessment based solely on the supplied passages. Revenue recurrence is unclassified due to absent data. Remaining dimensions are informed by explicit mentions of customer base breadth, transaction volumes, management concerns about costs and demand, and retail characteristics.\",\n  \"missing_information\": \"No data on the composition of revenue by type (e.g., subscription vs. one-off), contractual customer agreements, detailed customer concentration metrics beyond loyalty club membership, or specific financing structure that would clarify recurrence or financing exposure.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 1,
+      "response_id": "50bf5497-a84a-4175-8dc2-5d682597f58a",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6992,
+        "completion_tokens": 2653,
+        "total_tokens": 9645,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2275
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 6992
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"The company is a pure builder earning revenue from project-based orders, with no indication of recurring revenue streams.\",\n      \"passage_ids\": [\"document:128#p56\", \"document:128#p17\"]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"high\",\n      \"rationale\": \"The market development is explicitly stated to be sensitive to interest rate changes and the general economic climate.\",\n      \"passage_ids\": [\"document:128#p71\", \"document:128#p67\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information is provided on revenue share or dependence on specific customers; the order book appears diversified but lacks quantitative evidence.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"high\",\n      \"rationale\": \"Large project payments cause significant quarterly fluctuations in cash flows and revenue, as noted by management.\",\n      \"passage_ids\": [\"document:128#p34\", \"document:128#p17\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No direct evidence of exposure to commodity price fluctuations or financing costs; the company reports a net cash position and low leverage.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments derived solely from the provided passages, with absence of evidence leading to unclassified for customer concentration and commodity/financing exposure.\",\n  \"missing_information\": \"Customer revenue breakdown and details on material cost sensitivity or debt structure not found in passages.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 2,
+      "response_id": "78f6ebfd-12bc-4f77-8e3a-24d59327dbeb",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6992,
+        "completion_tokens": 2572,
+        "total_tokens": 9564,
+        "prompt_tokens_details": {
+          "cached_tokens": 6912
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2112
+        },
+        "prompt_cache_hit_tokens": 6912,
+        "prompt_cache_miss_tokens": 80
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"The company is a pure construction firm with revenue derived entirely from individual project contracts, as evidenced by the reporting of order intake and net sales and the statement that they are a 'renodlad byggare' (pure builder) without own project development (p56). No recurring revenue streams are mentioned.\",\n      \"passage_ids\": [\"document:128#p56\", \"document:128#p2\"]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"high\",\n      \"rationale\": \"The market development is explicitly stated to be sensitive to changes in interest rates and the general economic climate (p71), and improved macroeconomic conditions are noted to contribute to strengthened demand (p67).\",\n      \"passage_ids\": [\"document:128#p71\", \"document:128#p67\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"The passages list various projects across multiple sectors and clients but provide no information on the share of revenue from any single customer, making the level of customer concentration unclassifiable.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"high\",\n      \"rationale\": \"Cash flows are reported to fluctuate heavily between quarters due to large project payments (p34), and order intake varies significantly between quarters (e.g., Q2 2026: 3,339 Mkr vs Q1 2026: 1,800 Mkr), indicating lumpy project-based revenue.\",\n      \"passage_ids\": [\"document:128#p34\", \"document:128#p73\", \"document:129#p5\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"There is no mention of exposure to commodity prices or financing costs in the provided passages, beyond a general sensitivity of market demand to interest rates (p71), which does not directly indicate company-level financing exposure.\",\n      \"passage_ids\": []\n    }\n  }\n}",
+      "classification": null,
+      "error": "response fields do not match the evaluation contract"
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 3,
+      "response_id": "ceb7e09f-520c-4fc3-be36-e1f26a2e51d8",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6992,
+        "completion_tokens": 2148,
+        "total_tokens": 9140,
+        "prompt_tokens_details": {
+          "cached_tokens": 6912
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1865
+        },
+        "prompt_cache_hit_tokens": 6912,
+        "prompt_cache_miss_tokens": 80
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provide evidence of recurring revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"high\",\n      \"rationale\": \"The report explicitly states market development is sensitive to interest rates and general economic climate, and improved macroeconomic conditions strengthen demand.\",\n      \"passage_ids\": [\"document:128#p71\", \"document:128#p67\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages indicate the degree of revenue concentration among a small number of customers.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"high\",\n      \"rationale\": \"Cash flows fluctuate greatly due to large project payments, and individual orders can exceed 1 billion SEK, indicating high lumpiness.\",\n      \"passage_ids\": [\"document:128#p34\", \"document:128#p17\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages mention exposure to commodity prices or financing costs.\",\n      \"passage_ids\": []\n    }\n  }\n}",
+      "classification": null,
+      "error": "response fields do not match the evaluation contract"
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 1,
+      "response_id": "3ed469c8-239b-4f1e-be63-f3bb18184cbc",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 4738,
+        "completion_tokens": 2154,
+        "total_tokens": 6892,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1738
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4738
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages discuss recurring revenue from repeat customers or subscription-like models. Hotel stays are typically one-off transactions, but evidence of recurrence is absent.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"high\",\n      \"rationale\": \"Passages indicate demand is sensitive to economic conditions: weak demand in Finland (document:142#p24) and expectation that economic improvement will boost demand (document:142#p42).\",\n      \"passage_ids\": [\"document:142#p24\", \"document:142#p42\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages mention major customers or revenue concentration. Hotel revenue appears diversified across many individual guests.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No evidence of large project-based or lumpy revenue streams; operations seem to involve steady daily bookings.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"Interest-bearing net liabilities to EBITDA is only 0.2x (document:138#p3), indicating low leverage. The new long-term financing framework (news:274#p2) further enhances financial flexibility, suggesting low exposure.\",\n      \"passage_ids\": [\"document:138#p3\", \"news:274#p2\"]\n    }\n  },\n  \"rationale\": \"Assessments based solely on the provided passages. No overall risk profile is produced.\",\n  \"missing_information\": \"Missing details on customer contracts, commodity price exposure, and recurring revenue models. Passages lacked information to assess customer concentration, project lumpiness, and revenue recurrence.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 2,
+      "response_id": "59f55523-b1a7-4184-80b8-c283271edc08",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 4738,
+        "completion_tokens": 2747,
+        "total_tokens": 7485,
+        "prompt_tokens_details": {
+          "cached_tokens": 4736
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2364
+        },
+        "prompt_cache_hit_tokens": 4736,
+        "prompt_cache_miss_tokens": 2
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provide specific information on the proportion of recurring revenue versus one-time revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"moderate\",\n      \"rationale\": \"Passages indicate demand weakness in Finland due to a cautious market and link expected demand improvement to a gradual economic improvement, suggesting sensitivity to economic conditions. However, demand in other regions remains strong.\",\n      \"passage_ids\": [\"document:138#p16\", \"document:142#p23\", \"document:142#p42\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information found regarding customer concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No evidence of revenue being dependent on large, irregular projects or orders. The business model is based on daily hotel bookings.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"Interest-bearing net liabilities to adjusted EBITDA is only 0.2x, indicating very low exposure to interest rate fluctuations. No evidence of significant commodity exposure.\",\n      \"passage_ids\": [\"document:138#p3\"]\n    }\n  },\n  \"rationale\": \"Assessments are based on available passages. Dimensions with no relevant information are classified as unclassified.\",\n  \"missing_information\": \"Information on revenue recurrence, customer concentration, and project lumpiness was not found. No specific data on commodity exposure, though financing exposure appears low based on leverage.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 3,
+      "response_id": "bb29a91e-487f-490f-ad3c-e401ea8886dc",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 4738,
+        "completion_tokens": 2541,
+        "total_tokens": 7279,
+        "prompt_tokens_details": {
+          "cached_tokens": 4736
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2137
+        },
+        "prompt_cache_hit_tokens": 4736,
+        "prompt_cache_miss_tokens": 2
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage explicitly discusses recurring revenue or the nature of revenue streams. Absence of evidence.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"high\",\n      \"rationale\": \"Demand weakness in Finland is explicitly linked to economic conditions, and management expects economic improvement to boost demand, indicating sensitivity to economic cycles.\",\n      \"passage_ids\": [\"document:142#p42\", \"document:138#p16\", \"document:142#p24\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage indicates reliance on a limited number of customers or significant concentration risk. Absence of evidence.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage refers to revenue lumpiness from projects, large orders, or irregular contract timing. Absence of evidence.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"Interest-bearing net liabilities/adjusted EBITDA of 0.2x indicates low financing exposure. No mention of commodity price exposure.\",\n      \"passage_ids\": [\"document:138#p3\"]\n    }\n  },\n  \"rationale\": \"Assessments are based solely on the provided passages. Economic demand sensitivity is high due to explicit links between economic conditions and demand. Financing exposure is low given very low leverage. Other dimensions lack sufficient evidence and are unclassified.\",\n  \"missing_information\": \"No information on recurring revenue composition, customer concentration (e.g., major client dependence), or revenue lumpiness from projects/orders. Commodity exposure not addressed.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 1,
+      "response_id": "8d6eca3f-84e2-462f-aa75-4e45b3173a32",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 4390,
+        "completion_tokens": 4919,
+        "total_tokens": 9309,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 4422
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4390
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provide evidence of recurring revenue models, subscription services, or repeat purchase agreements. While some passages mention best-selling products and growing demand, these do not directly confirm revenue recurrence.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages discuss sensitivity to economic cycles, recessions, or macroeconomic factors. Market growth and rising demand are noted, but this does not indicate cyclicality or sensitivity.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages disclose customer identities, revenue shares, or dependence on major customers. Sales data is reported by region/country, not by customer.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"high\",\n      \"rationale\": \"Multiple passages consistently attribute quarterly sales fluctuations to variations in the timing of individual orders. For instance, one passage quantifies the impact at approximately SEK 35 million in net sales, highlighting significant lumpiness.\",\n      \"passage_ids\": [\n        \"document:121#p34\",\n        \"document:121#p68\",\n        \"document:122#p39\",\n        \"document:122#p58\",\n        \"news:199#p30\",\n        \"news:199#p36\",\n        \"news:192#p35\",\n        \"news:207#p3\"\n      ]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages mention exposure to commodity prices, raw material costs, interest rates, or financing risks. The company is not in a commodity-based industry.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based solely on the provided passages, with 'unclassified' where evidence is absent per the instruction. Order lumpiness is clearly indicated as a high risk due to frequent mentions and quantified impact.\",\n  \"missing_information\": \"Missing details on recurring revenue structures, economic sensitivity indicators, customer concentration metrics, and commodity/financing exposures prevent complete risk assessment for four dimensions.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 2,
+      "response_id": "2a8c99c2-f06a-4fab-b196-a0d49703d542",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 4390,
+        "completion_tokens": 3745,
+        "total_tokens": 8135,
+        "prompt_tokens_details": {
+          "cached_tokens": 4352
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3381
+        },
+        "prompt_cache_hit_tokens": 4352,
+        "prompt_cache_miss_tokens": 38
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information provided on whether revenue is recurring or based on long-term contracts.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No direct evidence on sensitivity to economic cycles; passages discuss market growth but do not address cyclicality.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information on customer concentration; multiple regions and channels mentioned but no data on revenue share by customer.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"high\",\n      \"rationale\": \"Multiple passages indicate significant quarterly variations due to timing of individual orders, order variability, and order phasing.\",\n      \"passage_ids\": [\n        \"document:121#p34\",\n        \"document:121#p68\",\n        \"document:122#p58\",\n        \"news:190#p45\",\n        \"news:199#p30\",\n        \"news:199#p36\",\n        \"news:192#p35\",\n        \"news:192#p54\",\n        \"news:192#p59\",\n        \"news:207#p3\"\n      ]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No mention of exposure to commodity prices or financing needs.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"\",\n  \"missing_information\": \"\"\n}",
+      "classification": null,
+      "error": "rationale must be a non-empty string"
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 3,
+      "response_id": "2d43ebf8-627f-4f31-ab78-c0071730cd06",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 4390,
+        "completion_tokens": 4688,
+        "total_tokens": 9078,
+        "prompt_tokens_details": {
+          "cached_tokens": 4352
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 4303
+        },
+        "prompt_cache_hit_tokens": 4352,
+        "prompt_cache_miss_tokens": 38
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages indicate recurring revenue or subscription-based models.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages discuss the impact of economic cycles on demand.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information on customer concentration or reliance on major customers.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"high\",\n      \"rationale\": \"Multiple passages indicate sales are affected by quarterly variations in individual orders, leading to fluctuations.\",\n      \"passage_ids\": [\n        \"document:121#p34\",\n        \"document:121#p68\",\n        \"document:122#p58\",\n        \"document:124#p83\",\n        \"news:199#p36\",\n        \"news:192#p35\",\n        \"news:192#p54\",\n        \"news:192#p59\",\n        \"news:207#p3\"\n      ]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages discuss commodity exposure or financing risks.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based solely on the provided passages. Only project_or_order_lumpiness has evidence of high risk; other dimensions lack evidence and are unclassified.\",\n  \"missing_information\": \"Information on revenue recurrence, economic demand sensitivity, customer concentration, and commodity/financing exposure is not present in the provided passages.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 1,
+      "response_id": "3cb9a9a7-5467-4ded-854b-371e15524908",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6638,
+        "completion_tokens": 2478,
+        "total_tokens": 9116,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2195
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 6638
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provide evidence on the recurring nature of revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages directly address sensitivity to economic cycles.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages indicate the level of customer concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Insufficient evidence to determine if revenue is lumpy from large orders.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages explicitly discuss commodity or financing exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"All dimensions assessed as unclassified because the provided passages lack specific evidence to assign low, moderate, or high risk.\",\n  \"missing_information\": \"Detailed revenue breakdown, customer concentration data, historical revenue patterns, commodity cost structure, and economic sensitivity analysis.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 2,
+      "response_id": "6050bc24-ce63-434d-b874-d10ef32f74e5",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6638,
+        "completion_tokens": 3589,
+        "total_tokens": 10227,
+        "prompt_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3172
+        },
+        "prompt_cache_hit_tokens": 6528,
+        "prompt_cache_miss_tokens": 110
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"low\",\n      \"rationale\": \"Revenue appears to be primarily project- or order-based, as evidenced by specific purchase orders and program milestones rather than recurring contractual revenue streams.\",\n      \"passage_ids\": [\n        \"news:220#p1\",\n        \"document:127#p38\"\n      ]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provide direct evidence of the company's sensitivity to economic cycles or recessionary impacts.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention 'large defense and industrial customers' and 'prime defense contractors' but do not provide specifics on revenue concentration among a few customers.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"While the company receives purchase orders and works on programs, there is insufficient information to determine the lumpiness of revenue between periods, especially given mentions of shorter-cycle industrial applications that could smooth revenue.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages directly address the company's exposure to commodity price fluctuations or financing market conditions. The technology reduces raw material usage, but the impact of input cost volatility is unclear.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessment based solely on provided passages. Most dimensions lack explicit evidence, resulting in unclassified assessments. Revenue recurrence is low due to evidence of order-based revenue.\",\n  \"missing_information\": \"Financial statements with revenue breakdown by type, customer concentration percentages, sensitivity analysis to commodity prices and economic cycles, and quarterly revenue granularity would be needed to fully assess these dimensions.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 3,
+      "response_id": "66c37890-8795-4961-b1cd-575e879570af",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6638,
+        "completion_tokens": 2363,
+        "total_tokens": 9001,
+        "prompt_tokens_details": {
+          "cached_tokens": 6528
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1860
+        },
+        "prompt_cache_hit_tokens": 6528,
+        "prompt_cache_miss_tokens": 110
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages explicitly describe recurring revenue streams or contract structures that would indicate repeatable, predictable revenue. References to programs and customer pull do not guarantee recurrence.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention defense growth and industrial short-cycle potential but provide no direct evidence of how demand correlates with economic cycles. Order timing or growth statements do not prove cyclicality.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No data on customer concentration is provided. References to 'large defense and industrial customers' and one purchase order from Hittech do not quantify dependence on a small number of customers.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"moderate\",\n      \"rationale\": \"The announcement of a purchase order of USD1.5 million with a non‑binding 2027 forecast suggests revenue can be influenced by individual large orders, indicating some lumpiness. However, without information on total revenue or order frequency, the degree of lumpiness cannot be classified as high.\",\n      \"passage_ids\": [\"news:220#p1\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Although the technology reduces raw material usage, there is no evidence of the company's exposure to commodity price fluctuations or financing conditions (e.g., interest rates, capital availability). The subsequent offering only shows capital‑raising activity, not sensitivity to financing risks.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"The available passages provide limited insight into most business‑risk dimensions. Only project/order lumpiness shows moderate evidence due to a specific large purchase order. All other dimensions lack direct evidence and are therefore unclassified.\",\n  \"missing_information\": \"To accurately assess these risks, additional data would be required, such as: revenue composition (recurring vs. one‑time), customer concentration metrics, historical correlation of demand with economic indicators, the scale of the purchase order relative to total revenue, and details on input cost volatility or financing structure.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    }
+  ],
+  "negative_controls": [
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 0,
+      "response_id": "f4ab954f-56af-42d5-a5c1-95ff007e4621",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 211,
+        "completion_tokens": 851,
+        "total_tokens": 1062,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 645
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 211
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No passages provided; unable to assess any dimension.\",\n  \"missing_information\": \"All dimensions unclassified due to absence of evidence.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 0,
+      "response_id": "c475f3e3-a690-4420-97cd-c043047741b5",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 214,
+        "completion_tokens": 884,
+        "total_tokens": 1098,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 640
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 214
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided for analysis.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided for analysis.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided for analysis.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided for analysis.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided for analysis.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No information was supplied in the passages to assess any of the risk dimensions.\",\n  \"missing_information\": \"All passages; no data available for Clas Ohlson.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 0,
+      "response_id": "c1837aa1-aaee-402e-b24b-1ffc8625abfb",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 212,
+        "completion_tokens": 702,
+        "total_tokens": 914,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 469
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 212
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information provided in passages.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information provided in passages.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information provided in passages.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information provided in passages.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information provided in passages.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"All assessments are unclassified because no passages were supplied.\",\n  \"missing_information\": \"No passages provided for analysis.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 0,
+      "response_id": "60dd6a15-b197-4e0d-b75f-af9d37d910ba",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 212,
+        "completion_tokens": 1049,
+        "total_tokens": 1261,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 818
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 212
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information provided.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information provided.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information provided.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information provided.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No information provided.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"The passages array is empty, so no information is available to assess any business-risk dimensions.\",\n  \"missing_information\": \"No passages were provided for analysis.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 0,
+      "response_id": "4adb9ca9-3f83-4375-ae53-cd88a0207088",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 213,
+        "completion_tokens": 395,
+        "total_tokens": 608,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 165
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 213
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No passages were supplied, so all risk dimensions are unclassified due to absence of evidence.\",\n  \"missing_information\": \"All dimensions lack supporting passages.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 0,
+      "response_id": "5494efe3-015c-44d7-86b4-51877be6d013",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 212,
+        "completion_tokens": 1065,
+        "total_tokens": 1277,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 765
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 212
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided, so revenue recurrence cannot be assessed.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided, so economic demand sensitivity cannot be assessed.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided, so customer concentration cannot be assessed.\",\n      \"passage_ids\": []\n    },\n    \"project_or_order_lumpiness\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided, so project or order lumpiness cannot be assessed.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided, so commodity or financing exposure cannot be assessed.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No passages were supplied for analysis, so all risk dimensions are unclassified.\",\n  \"missing_information\": \"Passages containing relevant business information about revenue streams, demand drivers, customer base, order patterns, and exposure to commodities or financing are required to assess the risk dimensions.\"\n}",
+      "classification": null,
+      "error": "missing_information must contain strings"
+    }
+  ]
+}

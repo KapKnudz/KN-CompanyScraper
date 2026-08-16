@@ -1,0 +1,2215 @@
+{
+  "as_of": "2026-08-12",
+  "sample": [
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "document_count": 12
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "document_count": 12
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "document_count": 12
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "document_count": 10
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "document_count": 12
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "document_count": 9
+    }
+  ],
+  "summary": {
+    "run_count": 18,
+    "company_count": 6,
+    "comparable_company_count": 6,
+    "validation_pass_rate": 0.9444444444444444,
+    "material_escalation_count": 9,
+    "normalization_warning_count": 1,
+    "unanimous_company_rate": 0.6666666666666666,
+    "pairwise_profile_agreement": 0.875,
+    "companies": [
+      {
+        "ticker": "LIME",
+        "company_name": "Lime Technologies",
+        "profiles": [
+          "cyclical_or_other_risk",
+          "cyclical_or_other_risk"
+        ],
+        "invalid_runs": 1,
+        "warning_count": 0,
+        "unanimous": false,
+        "pairwise_agreement": 1.0
+      },
+      {
+        "ticker": "CLAS B",
+        "company_name": "Clas Ohlson",
+        "profiles": [
+          "slightly_cyclical",
+          "slightly_cyclical",
+          "slightly_cyclical"
+        ],
+        "invalid_runs": 0,
+        "warning_count": 0,
+        "unanimous": true,
+        "pairwise_agreement": 1.0
+      },
+      {
+        "ticker": "BYGGP",
+        "company_name": "Byggpartner",
+        "profiles": [
+          "cyclical_or_other_risk",
+          "cyclical_or_other_risk",
+          "cyclical_or_other_risk"
+        ],
+        "invalid_runs": 0,
+        "warning_count": 1,
+        "unanimous": true,
+        "pairwise_agreement": 1.0
+      },
+      {
+        "ticker": "SHOT",
+        "company_name": "Scandic Hotels",
+        "profiles": [
+          "cyclical_or_other_risk",
+          "cyclical_or_other_risk",
+          "cyclical_or_other_risk"
+        ],
+        "invalid_runs": 0,
+        "warning_count": 0,
+        "unanimous": true,
+        "pairwise_agreement": 1.0
+      },
+      {
+        "ticker": "BIOG B",
+        "company_name": "BioGaia",
+        "profiles": [
+          "slightly_cyclical",
+          "slightly_cyclical",
+          "slightly_cyclical"
+        ],
+        "invalid_runs": 0,
+        "warning_count": 0,
+        "unanimous": true,
+        "pairwise_agreement": 1.0
+      },
+      {
+        "ticker": "NTI",
+        "company_name": "Norsk Titanium",
+        "profiles": [
+          "slightly_cyclical",
+          "cyclical_or_other_risk",
+          "slightly_cyclical"
+        ],
+        "invalid_runs": 0,
+        "warning_count": 0,
+        "unanimous": false,
+        "pairwise_agreement": 0.3333333333333333
+      }
+    ]
+  },
+  "negative_control_pass_rate": 1.0,
+  "runs": [
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 1,
+      "response_id": "a5ff5f8b-47b7-45b7-a995-db51b6c3f31e",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 7719,
+        "completion_tokens": 3740,
+        "total_tokens": 11459,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3154
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 7719
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"predominant\",\n      \"rationale\": \"Recurring revenue constitutes the majority of net sales: Q2 2026 recurring revenue MSEK 136.7 of MSEK 205.3 net sales, and FY2025 recurring revenue MSEK 501.0 of MSEK 739.8 net sales, indicating a subscription-based SaaS model where recurring revenue is the main revenue source.\",\n      \"passage_ids\": [\n        \"document:89#p2\",\n        \"document:99#p34\"\n      ]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"The passage directly states a return to more cautious customer behaviour with postponed decisions and longer sales cycles affecting order intake, demonstrating current demand sensitivity to customer confidence and economic conditions.\",\n      \"passage_ids\": [\n        \"document:89#p23\"\n      ]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage states or quantifies revenue concentration among key customers or dependency on a small number of customers. General references to a customer base do not demonstrate material concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage identifies reliance on specific material projects or contracts. The sustainability passage is about business integration, not project dependence, and the regulatory news does not establish the company's dependence on particular projects.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"The passage indicates postponed decisions and longer sales cycles affecting order intake, which is a timing fluctuation in orders.\",\n      \"passage_ids\": [\n        \"document:89#p23\"\n      ]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage mentions exposure to commodity prices or financing conditions.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments were made solely from the supplied passages. Recurring revenue is predominant based on reported figures. Economic demand sensitivity is material based on a direct management statement about cautious customer behaviour. Order phasing is meaningful based on the same statement. Customer concentration, project dependence, and commodity/financing exposure lack direct material evidence and are therefore unclassified.\",\n  \"missing_information\": [\n    \"No passages provide customer revenue concentration data (e.g., top customer share, number of significant customers).\",\n    \"No passages identify specific material projects or contracts that the company depends on.\",\n    \"No passages discuss exposure to commodity prices or financing conditions.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "cyclical_or_other_risk",
+        "confidence": "medium",
+        "rationale": "Assessments were made solely from the supplied passages. Recurring revenue is predominant based on reported figures. Economic demand sensitivity is material based on a direct management statement about cautious customer behaviour. Order phasing is meaningful based on the same statement. Customer concentration, project dependence, and commodity/financing exposure lack direct material evidence and are therefore unclassified.",
+        "evidence": [
+          {
+            "passage_id": "document:89#p2",
+            "source_id": "document:89",
+            "quote": "2Interim Report January - June 2026, Lime Technologies AB (publ) | The period in summary THE SECOND QUARTER 2026 • Net sales increased to MSEK 205.3 (183.0), rendering a sales growth of 12 % • Organic revenue growth was 12 % • Software related revenue increased to MSEK 136.7 (124.2), rendering a growth of 10 % • Recurring revenue increased to MSEK 136.7 (124.2), rendering a growth of 10 % • The 12-month recalculated recurring revenue, Annual Recurring Revenue (ARR), at the end of the second quarter was MSEK 552.2 (501.7), rendering an ARR growth of 10 %."
+          },
+          {
+            "passage_id": "document:99#p34",
+            "source_id": "document:99",
+            "quote": "Software growth 13% Applications 16,850 Passed in ARR, MSEK 500 Women, new recruits 45 % KEY FIGURES MSEK 2025 2024 Net turnover 739.8 685.7 Growth in net turnover (%) 8% 19% Organic net sales growth (%) 7% 10% Recurring revenue 501.0 445.0 Adjusted EBITA 184.9 172.0 Adjusted EBITA (%) 25% 25% Operating profit, EBIT 146.0 134.3 Operating result, EBIT (%) 20% 20% Earnings per share before dilution (SEK) 8.40 6.73 Earnings per share after dilution (SEK) 8.35 6.66 Cash flow from operating activities 187.0 196.5 Average number of employees 490 462"
+          },
+          {
+            "passage_id": "document:89#p23",
+            "source_id": "document:89",
+            "quote": "We are seeing a degree of return to more cautious custo- mer behaviour, with postponed decisions and longer sales cycles affecting order intake."
+          }
+        ],
+        "missing_information": [
+          "No passages provide customer revenue concentration data (e.g., top customer share, number of significant customers).",
+          "No passages identify specific material projects or contracts that the company depends on.",
+          "No passages discuss exposure to commodity prices or financing conditions."
+        ],
+        "profile_driver": "economic_demand_sensitivity",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "predominant",
+            "rationale": "Recurring revenue constitutes the majority of net sales: Q2 2026 recurring revenue MSEK 136.7 of MSEK 205.3 net sales, and FY2025 recurring revenue MSEK 501.0 of MSEK 739.8 net sales, indicating a subscription-based SaaS model where recurring revenue is the main revenue source.",
+            "passage_ids": [
+              "document:89#p2",
+              "document:99#p34"
+            ]
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "material",
+            "rationale": "The passage directly states a return to more cautious customer behaviour with postponed decisions and longer sales cycles affecting order intake, demonstrating current demand sensitivity to customer confidence and economic conditions.",
+            "passage_ids": [
+              "document:89#p23"
+            ]
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passage states or quantifies revenue concentration among key customers or dependency on a small number of customers. General references to a customer base do not demonstrate material concentration.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passage identifies reliance on specific material projects or contracts. The sustainability passage is about business integration, not project dependence, and the regulatory news does not establish the company's dependence on particular projects.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "The passage indicates postponed decisions and longer sales cycles affecting order intake, which is a timing fluctuation in orders.",
+            "passage_ids": [
+              "document:89#p23"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passage mentions exposure to commodity prices or financing conditions.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 2,
+      "response_id": "e4629b48-33f2-47d8-8b60-1f374eb8f552",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 7719,
+        "completion_tokens": 6266,
+        "total_tokens": 13985,
+        "prompt_tokens_details": {
+          "cached_tokens": 7680
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 5747
+        },
+        "prompt_cache_hit_tokens": 7680,
+        "prompt_cache_miss_tokens": 39
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"predominant\",\n      \"rationale\": \"Recurring revenue represented about two-thirds of net sales in reported periods. For example, full-year 2025 net turnover was MSEK 739.8 with recurring revenue MSEK 501.0, and H1 2026 net sales were MSEK 405.2 with recurring revenue MSEK 268.6, indicating a predominant share of revenue is recurring.\",\n      \"passage_ids\": [\"document:103#p34\", \"document:89#p2\"]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"The company reports a return to more cautious customer behaviour with postponed decisions and longer sales cycles affecting order intake, directly demonstrating sensitivity to demand conditions.\",\n      \"passage_ids\": [\"document:89#p23\", \"news:142#p23\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage directly states or concretely demonstrates revenue reliance on a small number of customers or high customer concentration. Statements about a core target group or fantastic customer base are generic and do not demonstrate material concentration exposure.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage indicates reliance on material individual projects or contracts; the only project-related statement concerns sustainability being integrated rather than a separate project.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"The company notes postponed decisions and longer sales cycles affecting order intake, indicating timing fluctuations in order flow.\",\n      \"passage_ids\": [\"document:89#p23\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage mentions exposure to commodity prices or financing conditions.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based strictly on the supplied passages; material/meaningful classifications require direct or concrete demonstration, otherwise unclassified.\",\n  \"missing_information\": [\n    \"No customer concentration data (e.g., top customer share) provided.\",\n    \"No project-specific revenue or contract dependence details provided.\",\n    \"No commodity price or financing exposure details provided.\"\n  ]\n}",
+      "classification": null,
+      "error": "unknown passage for revenue_recurrence: document:103#p34"
+    },
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 3,
+      "response_id": "9cc1dec8-92d5-4378-a597-e1cb5f97a859",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 7719,
+        "completion_tokens": 3429,
+        "total_tokens": 11148,
+        "prompt_tokens_details": {
+          "cached_tokens": 7680
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2924
+        },
+        "prompt_cache_hit_tokens": 7680,
+        "prompt_cache_miss_tokens": 39
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"predominant\",\n      \"rationale\": \"Recurring revenue is a majority of net sales: Q2 2026 recurring revenue was MSEK 136.7 out of net sales MSEK 205.3, and full-year 2025 recurring revenue was MSEK 501.0 out of net turnover MSEK 739.8. ARR reached MSEK 552.2, and the company highlights an increasing share of recurring revenue.\",\n      \"passage_ids\": [\n        \"document:89#p2\",\n        \"document:99#p18\"\n      ]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"The passage directly states cautious customer behaviour, postponed decisions, and longer sales cycles are affecting order intake, indicating demand sensitivity.\",\n      \"passage_ids\": [\n        \"document:89#p23\"\n      ]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage directly states or concretely demonstrates reliance on a small number of customers or provides quantitative customer concentration data.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage directly states reliance on material projects or contracts; the implementation volume is spread across many projects, but no project-level revenue breakdown is provided.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"The passage notes postponed decisions and longer sales cycles affecting order intake, indicating meaningful timing fluctuations in orders.\",\n      \"passage_ids\": [\n        \"document:89#p23\"\n      ]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage mentions commodity or financing exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments based only on supplied passages; unclassified where no direct evidence of material exposure.\",\n  \"missing_information\": [\n    \"No quantitative customer concentration data (top customer share, number of major customers).\",\n    \"No project or contract-level revenue breakdown or reliance on specific material projects.\",\n    \"No commodity or financing exposure disclosures.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "cyclical_or_other_risk",
+        "confidence": "medium",
+        "rationale": "Assessments based only on supplied passages; unclassified where no direct evidence of material exposure.",
+        "evidence": [
+          {
+            "passage_id": "document:89#p2",
+            "source_id": "document:89",
+            "quote": "2Interim Report January - June 2026, Lime Technologies AB (publ) | The period in summary THE SECOND QUARTER 2026 • Net sales increased to MSEK 205.3 (183.0), rendering a sales growth of 12 % • Organic revenue growth was 12 % • Software related revenue increased to MSEK 136.7 (124.2), rendering a growth of 10 % • Recurring revenue increased to MSEK 136.7 (124.2), rendering a growth of 10 % • The 12-month recalculated recurring revenue, Annual Recurring Revenue (ARR), at the end of the second quarter was MSEK 552.2 (501.7), rendering an ARR growth of 10 %."
+          },
+          {
+            "passage_id": "document:99#p18",
+            "source_id": "document:99",
+            "quote": "Passed MSEK 500 in annual recurring revenue (ARR) An increasing share of recurring revenue demonstrates a sustainable business model with long-term customer rela- tionships."
+          },
+          {
+            "passage_id": "document:89#p23",
+            "source_id": "document:89",
+            "quote": "We are seeing a degree of return to more cautious custo- mer behaviour, with postponed decisions and longer sales cycles affecting order intake."
+          }
+        ],
+        "missing_information": [
+          "No quantitative customer concentration data (top customer share, number of major customers).",
+          "No project or contract-level revenue breakdown or reliance on specific material projects.",
+          "No commodity or financing exposure disclosures."
+        ],
+        "profile_driver": "economic_demand_sensitivity",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "predominant",
+            "rationale": "Recurring revenue is a majority of net sales: Q2 2026 recurring revenue was MSEK 136.7 out of net sales MSEK 205.3, and full-year 2025 recurring revenue was MSEK 501.0 out of net turnover MSEK 739.8. ARR reached MSEK 552.2, and the company highlights an increasing share of recurring revenue.",
+            "passage_ids": [
+              "document:89#p2",
+              "document:99#p18"
+            ]
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "material",
+            "rationale": "The passage directly states cautious customer behaviour, postponed decisions, and longer sales cycles are affecting order intake, indicating demand sensitivity.",
+            "passage_ids": [
+              "document:89#p23"
+            ]
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passage directly states or concretely demonstrates reliance on a small number of customers or provides quantitative customer concentration data.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passage directly states reliance on material projects or contracts; the implementation volume is spread across many projects, but no project-level revenue breakdown is provided.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "The passage notes postponed decisions and longer sales cycles affecting order intake, indicating meaningful timing fluctuations in orders.",
+            "passage_ids": [
+              "document:89#p23"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passage mentions commodity or financing exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 1,
+      "response_id": "82a1c716-bf7d-45b9-b27e-090a8a3bab84",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 2273,
+        "completion_tokens": 6012,
+        "total_tokens": 8285,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 5521
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2273
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"The passages discuss product assortment renewal and customer traffic, but do not provide direct evidence of the amount of recurring revenue or a recurring revenue model.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention seasonal/weather-driven demand and future uncertainty about customer willingness to spend, but no concrete material exposure to economic cycles is directly demonstrated.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages indicate a broad and growing customer base, but no material customer concentration exposure is stated or demonstrated.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"The distribution centre project is described as non-disruptive and future capacity-enhancing, not as a current material dependency.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"Seasonal timing fluctuations are explicitly described: demand for fans/air conditioning in summer and heaters/snow clearing in winter, and earlier seasonal demand in June versus July for weather-related products.\",\n      \"passage_ids\": [\n        \"document:106#p58\",\n        \"news:178#p11\"\n      ]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"A passage mentions increased material and freight costs as future concerns, but this is a generic forward-looking risk statement without concrete quantification of material exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based solely on the supplied passages. Only order_phasing has direct evidence of timing fluctuations. The remaining dimensions lack direct material evidence or recurring revenue data, so they are unclassified.\",\n  \"missing_information\": [\n    \"No direct evidence of recurring revenue amount or model\",\n    \"No concrete economic demand sensitivity metrics\",\n    \"No customer concentration data\",\n    \"No specific project dependency or revenue reliance\",\n    \"No commodity or financing exposure quantification\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "Assessments are based solely on the supplied passages. Only order_phasing has direct evidence of timing fluctuations. The remaining dimensions lack direct material evidence or recurring revenue data, so they are unclassified.",
+        "evidence": [
+          {
+            "passage_id": "document:106#p58",
+            "source_id": "document:106",
+            "quote": "For example, during the summer we dealt with a surge in demand for fans and air conditioning, while in the winter months we were well stocked with heaters and snow clearing prod - ucts when the cold hit our sales mar - kets."
+          },
+          {
+            "passage_id": "news:178#p11",
+            "source_id": "news:178",
+            "quote": "Growth comes from both the basic assortment as well as seasonal range, where demand for weather-related products such as fans and air conditioning started already in June compared to July last year."
+          }
+        ],
+        "missing_information": [
+          "No direct evidence of recurring revenue amount or model",
+          "No concrete economic demand sensitivity metrics",
+          "No customer concentration data",
+          "No specific project dependency or revenue reliance",
+          "No commodity or financing exposure quantification"
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "The passages discuss product assortment renewal and customer traffic, but do not provide direct evidence of the amount of recurring revenue or a recurring revenue model.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "Passages mention seasonal/weather-driven demand and future uncertainty about customer willingness to spend, but no concrete material exposure to economic cycles is directly demonstrated.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "Passages indicate a broad and growing customer base, but no material customer concentration exposure is stated or demonstrated.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "The distribution centre project is described as non-disruptive and future capacity-enhancing, not as a current material dependency.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "Seasonal timing fluctuations are explicitly described: demand for fans/air conditioning in summer and heaters/snow clearing in winter, and earlier seasonal demand in June versus July for weather-related products.",
+            "passage_ids": [
+              "document:106#p58",
+              "news:178#p11"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "A passage mentions increased material and freight costs as future concerns, but this is a generic forward-looking risk statement without concrete quantification of material exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 2,
+      "response_id": "d4ffff2e-8655-457c-a3ad-c1950e53369e",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 2273,
+        "completion_tokens": 5814,
+        "total_tokens": 8087,
+        "prompt_tokens_details": {
+          "cached_tokens": 2176
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 5302
+        },
+        "prompt_cache_hit_tokens": 2176,
+        "prompt_cache_miss_tokens": 97
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"none_or_limited\",\n      \"rationale\": \"Passages emphasize constant renewal of assortment and launch of new products, indicating transactional product sales rather than subscription or contractual recurring revenue. No recurring revenue stream is described.\",\n      \"passage_ids\": [\"document:106#p59\", \"document:110#p16\"]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages only mention weather/seasonal demand shifts and a generic forward-looking concern about customers' willingness to consume, not a concretely demonstrated sensitivity to economic cycles.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages describe a growing broad customer base, which does not indicate material customer concentration. No evidence of reliance on a small number of customers is provided.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"The passages describe an internal distribution centre upgrade, not reliance on external material projects or contracts for revenue.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"Passages show demand timing fluctuations tied to seasons/weather, including summer demand for fans and air conditioning and winter demand for heaters and snow clearing.\",\n      \"passage_ids\": [\"document:106#p58\", \"news:178#p11\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"The passage mentioning increased material and freight costs is framed as a future concern/generic risk-factor possibility, not a concretely demonstrated material exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based only on the supplied passages. Material exposure or meaningful timing fluctuations require direct or concrete demonstration; generic possibilities or absence of evidence result in unclassified.\",\n  \"missing_information\": [\n    \"No specific evidence of economic-cycle sensitivity or macroeconomic demand elasticity.\",\n    \"No details on customer revenue distribution or reliance on major customers.\",\n    \"No evidence of dependence on material external projects or contracts for revenue.\",\n    \"No concrete commodity or financing exposure beyond forward-looking risk factors.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "Assessments are based only on the supplied passages. Material exposure or meaningful timing fluctuations require direct or concrete demonstration; generic possibilities or absence of evidence result in unclassified.",
+        "evidence": [
+          {
+            "passage_id": "document:106#p59",
+            "source_id": "document:106",
+            "quote": "This flexibility, combined with a high renewal rate involving the launch of thousands of new products every year, is a key driver of customer traffic and relevance."
+          },
+          {
+            "passage_id": "document:110#p16",
+            "source_id": "document:110",
+            "quote": "In addition, the constant renewal of the assortment helps us to remain relevant during all months of the year and drives traffic to both stores and online."
+          },
+          {
+            "passage_id": "document:106#p58",
+            "source_id": "document:106",
+            "quote": "For example, during the summer we dealt with a surge in demand for fans and air conditioning, while in the winter months we were well stocked with heaters and snow clearing prod - ucts when the cold hit our sales mar - kets."
+          },
+          {
+            "passage_id": "news:178#p11",
+            "source_id": "news:178",
+            "quote": "Growth comes from both the basic assortment as well as seasonal range, where demand for weather-related products such as fans and air conditioning started already in June compared to July last year."
+          }
+        ],
+        "missing_information": [
+          "No specific evidence of economic-cycle sensitivity or macroeconomic demand elasticity.",
+          "No details on customer revenue distribution or reliance on major customers.",
+          "No evidence of dependence on material external projects or contracts for revenue.",
+          "No concrete commodity or financing exposure beyond forward-looking risk factors."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "none_or_limited",
+            "rationale": "Passages emphasize constant renewal of assortment and launch of new products, indicating transactional product sales rather than subscription or contractual recurring revenue. No recurring revenue stream is described.",
+            "passage_ids": [
+              "document:106#p59",
+              "document:110#p16"
+            ]
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "Passages only mention weather/seasonal demand shifts and a generic forward-looking concern about customers' willingness to consume, not a concretely demonstrated sensitivity to economic cycles.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "Passages describe a growing broad customer base, which does not indicate material customer concentration. No evidence of reliance on a small number of customers is provided.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "The passages describe an internal distribution centre upgrade, not reliance on external material projects or contracts for revenue.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "Passages show demand timing fluctuations tied to seasons/weather, including summer demand for fans and air conditioning and winter demand for heaters and snow clearing.",
+            "passage_ids": [
+              "document:106#p58",
+              "news:178#p11"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "The passage mentioning increased material and freight costs is framed as a future concern/generic risk-factor possibility, not a concretely demonstrated material exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 3,
+      "response_id": "cfc4c35a-f6bc-4b74-a4fc-0ad3ad139e96",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 2273,
+        "completion_tokens": 3880,
+        "total_tokens": 6153,
+        "prompt_tokens_details": {
+          "cached_tokens": 2176
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3374
+        },
+        "prompt_cache_hit_tokens": 2176,
+        "prompt_cache_miss_tokens": 97
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages directly indicate recurring revenue streams such as subscriptions or service contracts; mentions of high product renewal and customer club membership do not establish recurring revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention seasonal and weather-related demand shifts and forward-looking concerns about customer willingness to consume, but none directly state or concretely demonstrate material economic demand sensitivity beyond ordinary retail seasonality.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages indicate a broad and growing customer base (6.2 million club members), which suggests low concentration, not a material concentration exposure.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages describe an internal distribution centre project for capacity improvement, not reliance on material external projects or contracts for revenue.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"Passages demonstrate seasonal timing fluctuations in demand, e.g., fans/air conditioning in summer and heaters/snow clearing in winter, and weather-related demand starting earlier in June compared to July.\",\n      \"passage_ids\": [\n        \"document:106#p58\",\n        \"news:178#p11\"\n      ]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passage mentions increased material costs and freight costs as future concerns, but this is a generic forward-looking risk-factor statement without concrete demonstration of material exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessment based solely on provided passages; unclassified used where evidence does not meet materiality threshold.\",\n  \"missing_information\": [\n    \"No explicit information on recurring revenue mix or subscription services.\",\n    \"No quantitative evidence of economic cyclicality or demand elasticity.\",\n    \"No customer concentration metrics or top customer revenue shares.\",\n    \"No evidence of dependence on specific projects or contracts for revenue.\",\n    \"No quantified impact of material or freight cost changes on margins.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "Assessment based solely on provided passages; unclassified used where evidence does not meet materiality threshold.",
+        "evidence": [
+          {
+            "passage_id": "document:106#p58",
+            "source_id": "document:106",
+            "quote": "For example, during the summer we dealt with a surge in demand for fans and air conditioning, while in the winter months we were well stocked with heaters and snow clearing prod - ucts when the cold hit our sales mar - kets."
+          },
+          {
+            "passage_id": "news:178#p11",
+            "source_id": "news:178",
+            "quote": "Growth comes from both the basic assortment as well as seasonal range, where demand for weather-related products such as fans and air conditioning started already in June compared to July last year."
+          }
+        ],
+        "missing_information": [
+          "No explicit information on recurring revenue mix or subscription services.",
+          "No quantitative evidence of economic cyclicality or demand elasticity.",
+          "No customer concentration metrics or top customer revenue shares.",
+          "No evidence of dependence on specific projects or contracts for revenue.",
+          "No quantified impact of material or freight cost changes on margins."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages directly indicate recurring revenue streams such as subscriptions or service contracts; mentions of high product renewal and customer club membership do not establish recurring revenue.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "Passages mention seasonal and weather-related demand shifts and forward-looking concerns about customer willingness to consume, but none directly state or concretely demonstrate material economic demand sensitivity beyond ordinary retail seasonality.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "Passages indicate a broad and growing customer base (6.2 million club members), which suggests low concentration, not a material concentration exposure.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "Passages describe an internal distribution centre project for capacity improvement, not reliance on material external projects or contracts for revenue.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "Passages demonstrate seasonal timing fluctuations in demand, e.g., fans/air conditioning in summer and heaters/snow clearing in winter, and weather-related demand starting earlier in June compared to July.",
+            "passage_ids": [
+              "document:106#p58",
+              "news:178#p11"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "Passage mentions increased material costs and freight costs as future concerns, but this is a generic forward-looking risk-factor statement without concrete demonstration of material exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 1,
+      "response_id": "0476f20c-29c6-464a-b19e-0a5ead5be150",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 7870,
+        "completion_tokens": 5212,
+        "total_tokens": 13082,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 4617
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 7614
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"Passage document:130#p30 states a high proportion of recurring customers (72% of 2025 customers were also customers in 2021) and long-term customer relationships, indicating meaningful recurring revenue from repeat business.\",\n      \"passage_ids\": [\"document:130#p30\"]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"Passage document:128#p71 directly states that market development remains sensitive to changes in interest rates and the general economic climate, and document:129#p62 similarly notes sensitivity to interest rates and economic conditions, justifying material economic demand sensitivity.\",\n      \"passage_ids\": [\"document:128#p71\", \"document:129#p62\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage directly states or concretely demonstrates material customer concentration; segment distribution (e.g., document:130#p37) does not identify individual customer reliance.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"Passages document:128#p17 lists several large individual projects (e.g., Gävle sjukhus ~1bn, Forsmark ~0.5bn) contributing to order intake, and document:128#p56 states the company is a pure builder with no own project development, indicating reliance on material projects and contracts.\",\n      \"passage_ids\": [\"document:128#p17\", \"document:128#p56\"]\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"Passage document:128#p34 states that quarterly cash flows fluctuate greatly between quarters due to large project payments around closing dates, indicating meaningful timing fluctuations in order phasing.\",\n      \"passage_ids\": [\"document:128#p34\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage directly states or concretely demonstrates material exposure to commodity prices or financing; document:130#p8 indicates customers handle project development and financing, suggesting limited direct exposure but not a material exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based only on supplied passages; material requires direct or concrete demonstration; unclassified where evidence is absent.\",\n  \"missing_information\": [\n    \"No customer-level revenue concentration data provided to assess customer_concentration.\",\n    \"No direct evidence of commodity price or financing exposure.\",\n    \"Revenue recurrence is based on repeat customer data but lacks exact recurring revenue split.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "cyclical_or_other_risk",
+        "confidence": "high",
+        "rationale": "Assessments are based only on supplied passages; material requires direct or concrete demonstration; unclassified where evidence is absent.",
+        "evidence": [
+          {
+            "passage_id": "document:130#p30",
+            "source_id": "document:130",
+            "quote": "Lokal styrka skapar konkurrensfördel ▪ Våra bolag leds av entreprenörer med djup lokalkännedom. ▪ Hög andel återkommande kunder. ▪ Långa kundrelationer skapar förtroende och återkommande affärer. ▪ Lokal förankring skapar konkurrensfördelar. 72% av våra kunder 2025 var även kunder 2021 (baserat på fakturering)"
+          },
+          {
+            "passage_id": "document:128#p71",
+            "source_id": "document:128",
+            "quote": "Parallellt är marknadsutvecklingen fortsatt känslig för förändringar i ränteläget och det allmänna konjunkturläget."
+          },
+          {
+            "passage_id": "document:129#p62",
+            "source_id": "document:129",
+            "quote": "Parallellt är marknadsutvecklingen fortsatt känslig för förändringar i ränteläget och det allmänna konjunkturläget."
+          },
+          {
+            "passage_id": "document:128#p17",
+            "source_id": "document:128",
+            "quote": "Den stora potentiella entreprenadvolymen i tidiga kundsamarbeten i sk Fas 1 har nu bidragit till en rekordhög orderingång om drygt 3,3 Mdr kr, där de största projekten är ny- och ombyggnationen av Gävle sjukhus om ca 1 Mdr kr, nybyggnation av multifunktionshus i Forsmark för Vattenfall om ca 0,5 Mdr kr, två nya bostadsprojekt, 0,4 Mdr kr, för Stångåstaden i Linköping, samt ett antal löpande tilläggsorder avseende datacenter i Borlänge."
+          },
+          {
+            "passage_id": "document:128#p56",
+            "source_id": "document:128",
+            "quote": "Vi är en renodlad byggare och bedriver ingen egen projektutveckling."
+          },
+          {
+            "passage_id": "document:128#p34",
+            "source_id": "document:128",
+            "quote": "Starkt kassaflöde De kvartalsredovisade kassaflödena i vår entreprenadmiljö fluktuerar oftast kraftigt mellan kvartalen på grund av stora projektbetalningar kring bokslutsdatum."
+          }
+        ],
+        "missing_information": [
+          "No customer-level revenue concentration data provided to assess customer_concentration.",
+          "No direct evidence of commodity price or financing exposure.",
+          "Revenue recurrence is based on repeat customer data but lacks exact recurring revenue split."
+        ],
+        "profile_driver": "economic_demand_sensitivity",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "meaningful",
+            "rationale": "Passage document:130#p30 states a high proportion of recurring customers (72% of 2025 customers were also customers in 2021) and long-term customer relationships, indicating meaningful recurring revenue from repeat business.",
+            "passage_ids": [
+              "document:130#p30"
+            ]
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "material",
+            "rationale": "Passage document:128#p71 directly states that market development remains sensitive to changes in interest rates and the general economic climate, and document:129#p62 similarly notes sensitivity to interest rates and economic conditions, justifying material economic demand sensitivity.",
+            "passage_ids": [
+              "document:128#p71",
+              "document:129#p62"
+            ]
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passage directly states or concretely demonstrates material customer concentration; segment distribution (e.g., document:130#p37) does not identify individual customer reliance.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "material",
+            "rationale": "Passages document:128#p17 lists several large individual projects (e.g., Gävle sjukhus ~1bn, Forsmark ~0.5bn) contributing to order intake, and document:128#p56 states the company is a pure builder with no own project development, indicating reliance on material projects and contracts.",
+            "passage_ids": [
+              "document:128#p17",
+              "document:128#p56"
+            ]
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "Passage document:128#p34 states that quarterly cash flows fluctuate greatly between quarters due to large project payments around closing dates, indicating meaningful timing fluctuations in order phasing.",
+            "passage_ids": [
+              "document:128#p34"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passage directly states or concretely demonstrates material exposure to commodity prices or financing; document:130#p8 indicates customers handle project development and financing, suggesting limited direct exposure but not a material exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 2,
+      "response_id": "427f2d73-7c30-4737-af5c-91c91458ade4",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 7870,
+        "completion_tokens": 3871,
+        "total_tokens": 11741,
+        "prompt_tokens_details": {
+          "cached_tokens": 7808
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3407
+        },
+        "prompt_cache_hit_tokens": 7808,
+        "prompt_cache_miss_tokens": 62
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"The annual report states a high share of returning customers and that 72% of customers in 2025 were also customers in 2021, indicating meaningful recurring business from repeat customers.\",\n      \"passage_ids\": [\"document:130#p30\"]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"The Q2 2026 report directly states that market development remains sensitive to changes in interest rates and the general economic climate.\",\n      \"passage_ids\": [\"document:128#p71\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage provides data on customer concentration such as revenue share from top customers.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"The company explicitly describes itself as a pure contractor with no own project development, relying on client projects.\",\n      \"passage_ids\": [\"document:128#p56\", \"document:130#p8\"]\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"The report states quarterly cash flows fluctuate significantly between quarters due to large project payments around closing dates.\",\n      \"passage_ids\": [\"document:128#p34\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage directly states or concretely demonstrates an exposure to commodity prices or financing that is material.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based only on supplied passages. For dimensions with direct evidence, exact passage ids are cited. Unclassified indicates absence of sufficient evidence.\",\n  \"missing_information\": [\n    \"Customer concentration data (e.g., top customer revenue share).\",\n    \"Commodity price exposure details.\",\n    \"Financing exposure details.\",\n    \"Quantified recurrence of revenue (e.g., percentage from long-term contracts).\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "cyclical_or_other_risk",
+        "confidence": "high",
+        "rationale": "Assessments are based only on supplied passages. For dimensions with direct evidence, exact passage ids are cited. Unclassified indicates absence of sufficient evidence.",
+        "evidence": [
+          {
+            "passage_id": "document:130#p30",
+            "source_id": "document:130",
+            "quote": "Lokal styrka skapar konkurrensfördel ▪ Våra bolag leds av entreprenörer med djup lokalkännedom. ▪ Hög andel återkommande kunder. ▪ Långa kundrelationer skapar förtroende och återkommande affärer. ▪ Lokal förankring skapar konkurrensfördelar. 72% av våra kunder 2025 var även kunder 2021 (baserat på fakturering)"
+          },
+          {
+            "passage_id": "document:128#p71",
+            "source_id": "document:128",
+            "quote": "Parallellt är marknadsutvecklingen fortsatt känslig för förändringar i ränteläget och det allmänna konjunkturläget."
+          },
+          {
+            "passage_id": "document:128#p56",
+            "source_id": "document:128",
+            "quote": "Vi är en renodlad byggare och bedriver ingen egen projektutveckling."
+          },
+          {
+            "passage_id": "document:130#p8",
+            "source_id": "document:130",
+            "quote": "I koncernen ingår segmenten ByggPartner, Åhlin & Ekeroth och Flodéns, som alla är renodlade byggentreprenörer, vilket innebär att våra kunder står för projektutveckling och finansiering."
+          },
+          {
+            "passage_id": "document:128#p34",
+            "source_id": "document:128",
+            "quote": "Starkt kassaflöde De kvartalsredovisade kassaflödena i vår entreprenadmiljö fluktuerar oftast kraftigt mellan kvartalen på grund av stora projektbetalningar kring bokslutsdatum."
+          }
+        ],
+        "missing_information": [
+          "Customer concentration data (e.g., top customer revenue share).",
+          "Commodity price exposure details.",
+          "Financing exposure details.",
+          "Quantified recurrence of revenue (e.g., percentage from long-term contracts)."
+        ],
+        "profile_driver": "economic_demand_sensitivity",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "meaningful",
+            "rationale": "The annual report states a high share of returning customers and that 72% of customers in 2025 were also customers in 2021, indicating meaningful recurring business from repeat customers.",
+            "passage_ids": [
+              "document:130#p30"
+            ]
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "material",
+            "rationale": "The Q2 2026 report directly states that market development remains sensitive to changes in interest rates and the general economic climate.",
+            "passage_ids": [
+              "document:128#p71"
+            ]
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passage provides data on customer concentration such as revenue share from top customers.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "material",
+            "rationale": "The company explicitly describes itself as a pure contractor with no own project development, relying on client projects.",
+            "passage_ids": [
+              "document:128#p56",
+              "document:130#p8"
+            ]
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "The report states quarterly cash flows fluctuate significantly between quarters due to large project payments around closing dates.",
+            "passage_ids": [
+              "document:128#p34"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passage directly states or concretely demonstrates an exposure to commodity prices or financing that is material.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 3,
+      "response_id": "93a3d7b6-5781-4f61-8499-51a39122a2ad",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 7870,
+        "completion_tokens": 4113,
+        "total_tokens": 11983,
+        "prompt_tokens_details": {
+          "cached_tokens": 7808
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3677
+        },
+        "prompt_cache_hit_tokens": 7808,
+        "prompt_cache_miss_tokens": 62
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"The annual report states a high share of returning customers and recurring business, with 72% of 2025 customers also being customers in 2021, indicating meaningful recurring revenue.\",\n      \"passage_ids\": [\"document:130#p30\"]\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"The Q2 2026 report directly states that market development remains sensitive to interest rates and the general economic cycle.\",\n      \"passage_ids\": [\"document:128#p71\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage provides customer revenue concentration data.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"The company is described as a pure contractor reliant on projects; passages identify largest projects (e.g., Gävle sjukhus ~1 BSEK, Forsmark ~0.5 BSEK) and report large order intake/order backlog, demonstrating material project dependence.\",\n      \"passage_ids\": [\"document:128#p17\", \"document:128#p2\"]\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"The report states quarterly cash flows fluctuate strongly due to large project payments around closing dates, indicating meaningful timing fluctuations.\",\n      \"passage_ids\": [\"document:128#p34\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage directly states or concretely demonstrates commodity or financing exposure for the company.\",\n      \"passage_ids\": []\n    }\n  },\n  \"missing_information\": [\n    \"Customer revenue concentration by top customers\",\n    \"Commodity input price exposure\",\n    \"Company's own financing exposure or reliance on external financing\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "cyclical_or_other_risk",
+        "confidence": "high",
+        "rationale": "Dimension assessments derived from the supplied passages.",
+        "evidence": [
+          {
+            "passage_id": "document:130#p30",
+            "source_id": "document:130",
+            "quote": "Lokal styrka skapar konkurrensfördel ▪ Våra bolag leds av entreprenörer med djup lokalkännedom. ▪ Hög andel återkommande kunder. ▪ Långa kundrelationer skapar förtroende och återkommande affärer. ▪ Lokal förankring skapar konkurrensfördelar. 72% av våra kunder 2025 var även kunder 2021 (baserat på fakturering)"
+          },
+          {
+            "passage_id": "document:128#p71",
+            "source_id": "document:128",
+            "quote": "Parallellt är marknadsutvecklingen fortsatt känslig för förändringar i ränteläget och det allmänna konjunkturläget."
+          },
+          {
+            "passage_id": "document:128#p17",
+            "source_id": "document:128",
+            "quote": "Den stora potentiella entreprenadvolymen i tidiga kundsamarbeten i sk Fas 1 har nu bidragit till en rekordhög orderingång om drygt 3,3 Mdr kr, där de största projekten är ny- och ombyggnationen av Gävle sjukhus om ca 1 Mdr kr, nybyggnation av multifunktionshus i Forsmark för Vattenfall om ca 0,5 Mdr kr, två nya bostadsprojekt, 0,4 Mdr kr, för Stångåstaden i Linköping, samt ett antal löpande tilläggsorder avseende datacenter i Borlänge."
+          },
+          {
+            "passage_id": "document:128#p2",
+            "source_id": "document:128",
+            "quote": "Andra kvartalet 2026 (1 apr – 30 juni) • Orderingången uppgick till 3 339 (1 847) Mkr • Orderstocken vid kvartalets utgång uppgick till 6 560 (4 337) Mkr • Nettoomsättningen uppgick till 1 700 (1 260) Mkr • EBITA uppgick till 68 (51) Mkr och EBITA-marginalen till 4,0 (4,0) procent • Resultat per aktie uppgick till 1,06 (0,71) kr • Kassaflödet från den löpande verksamheten uppgick till 74 (21) Mkr Perioden 1 jan – 30 juni 2026 • Orderingången uppgick till 5 139 (3 556) Mkr • Nettoomsättningen uppgick till 3 118 (2 433) Mkr • EBITA uppgick till 125 (86) Mkr och EBITA-marginalen till 4,0 (3,5) procent • Resultat per aktie uppgick till 1,94 (1,14) kr • Kassaflödet från den löpande verksamheten uppgick till 156 (-8) Mkr"
+          },
+          {
+            "passage_id": "document:128#p34",
+            "source_id": "document:128",
+            "quote": "Starkt kassaflöde De kvartalsredovisade kassaflödena i vår entreprenadmiljö fluktuerar oftast kraftigt mellan kvartalen på grund av stora projektbetalningar kring bokslutsdatum."
+          }
+        ],
+        "missing_information": [
+          "Customer revenue concentration by top customers",
+          "Commodity input price exposure",
+          "Company's own financing exposure or reliance on external financing"
+        ],
+        "profile_driver": "economic_demand_sensitivity",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "meaningful",
+            "rationale": "The annual report states a high share of returning customers and recurring business, with 72% of 2025 customers also being customers in 2021, indicating meaningful recurring revenue.",
+            "passage_ids": [
+              "document:130#p30"
+            ]
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "material",
+            "rationale": "The Q2 2026 report directly states that market development remains sensitive to interest rates and the general economic cycle.",
+            "passage_ids": [
+              "document:128#p71"
+            ]
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passage provides customer revenue concentration data.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "material",
+            "rationale": "The company is described as a pure contractor reliant on projects; passages identify largest projects (e.g., Gävle sjukhus ~1 BSEK, Forsmark ~0.5 BSEK) and report large order intake/order backlog, demonstrating material project dependence.",
+            "passage_ids": [
+              "document:128#p17",
+              "document:128#p2"
+            ]
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "The report states quarterly cash flows fluctuate strongly due to large project payments around closing dates, indicating meaningful timing fluctuations.",
+            "passage_ids": [
+              "document:128#p34"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passage directly states or concretely demonstrates commodity or financing exposure for the company.",
+            "passage_ids": []
+          }
+        },
+        "warnings": [
+          "missing or empty top-level rationale normalized"
+        ]
+      },
+      "error": null
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 1,
+      "response_id": "bb30f607-c274-4899-ad7f-24243cd91798",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 5892,
+        "completion_tokens": 9527,
+        "total_tokens": 15419,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 8967
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 5636
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages do not describe the amount of recurring revenue. They mention non-recurring items and a one-time profit contribution from a management agreement, but provide no basis to classify the recurring revenue share.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"Passages directly state that weak macroeconomic conditions and the war in Ukraine negatively affected demand and sentiment in Finland, and that this weakened demand and pressure on room rates impacted profitability. For example, document:142#p24 says profitability was impacted by relatively weak demand and room rate pressure, and document:138#p46 ties weak sentiment to macro trend and war.\",\n      \"passage_ids\": [\n        \"document:138#p16\",\n        \"document:142#p23\",\n        \"document:142#p24\",\n        \"document:142#p57\"\n      ]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage provides information on customer concentration or reliance on specific customers.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages describe new hotel agreements and projects, but they do not indicate that the company is dependent on any specific project or contract for a material portion of revenue or profit.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage provides evidence of order timing fluctuations or phasing that would affect reported results.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention a new financing framework and low interest-bearing net liabilities/adjusted EBITDA (0.2x), but they do not demonstrate a material exposure to commodity prices or financing. They indicate financial flexibility rather than exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based solely on the supplied passages. economic_demand_sensitivity is classified as material because passages directly show demand weakness and profitability impact in Finland due to macroeconomic and geopolitical factors. All other dimensions lack sufficient evidence and are unclassified.\",\n  \"missing_information\": [\n    \"No information on customer concentration.\",\n    \"No information on order phasing or timing fluctuations.\",\n    \"No information on commodity price exposure.\",\n    \"No information on recurring revenue breakdown.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "cyclical_or_other_risk",
+        "confidence": "medium",
+        "rationale": "Assessments are based solely on the supplied passages. economic_demand_sensitivity is classified as material because passages directly show demand weakness and profitability impact in Finland due to macroeconomic and geopolitical factors. All other dimensions lack sufficient evidence and are unclassified.",
+        "evidence": [
+          {
+            "passage_id": "document:138#p16",
+            "source_id": "document:138",
+            "quote": "Demand in Finland remained weak but improved towards the end of the quarter, with slightly more stable occupancy and prices."
+          },
+          {
+            "passage_id": "document:142#p23",
+            "source_id": "document:142",
+            "quote": "Profitability was slightly lower than in the preceding year, mainly due to the cautious market in Finland, a higher rate of development in the Group and non -recurring items."
+          },
+          {
+            "passage_id": "document:142#p24",
+            "source_id": "document:142",
+            "quote": "While the Finnish operations are run efficiently, profitability was impacted by relatively weak demand and continued pressure on room rates, particularly in the larger cities."
+          },
+          {
+            "passage_id": "document:142#p57",
+            "source_id": "document:142",
+            "quote": "The Finnish market remained challenging, primarily due to a weak macroeconomic trend and the effects of the war in Ukraine."
+          }
+        ],
+        "missing_information": [
+          "No information on customer concentration.",
+          "No information on order phasing or timing fluctuations.",
+          "No information on commodity price exposure.",
+          "No information on recurring revenue breakdown."
+        ],
+        "profile_driver": "economic_demand_sensitivity",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "Passages do not describe the amount of recurring revenue. They mention non-recurring items and a one-time profit contribution from a management agreement, but provide no basis to classify the recurring revenue share.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "material",
+            "rationale": "Passages directly state that weak macroeconomic conditions and the war in Ukraine negatively affected demand and sentiment in Finland, and that this weakened demand and pressure on room rates impacted profitability. For example, document:142#p24 says profitability was impacted by relatively weak demand and room rate pressure, and document:138#p46 ties weak sentiment to macro trend and war.",
+            "passage_ids": [
+              "document:138#p16",
+              "document:142#p23",
+              "document:142#p24",
+              "document:142#p57"
+            ]
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passage provides information on customer concentration or reliance on specific customers.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "Passages describe new hotel agreements and projects, but they do not indicate that the company is dependent on any specific project or contract for a material portion of revenue or profit.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passage provides evidence of order timing fluctuations or phasing that would affect reported results.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "Passages mention a new financing framework and low interest-bearing net liabilities/adjusted EBITDA (0.2x), but they do not demonstrate a material exposure to commodity prices or financing. They indicate financial flexibility rather than exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 2,
+      "response_id": "c047608a-3456-48c4-af88-c70a611de481",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 5892,
+        "completion_tokens": 6641,
+        "total_tokens": 12533,
+        "prompt_tokens_details": {
+          "cached_tokens": 5888
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 6141
+        },
+        "prompt_cache_hit_tokens": 5888,
+        "prompt_cache_miss_tokens": 4
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Supplied passages mention non-recurring items and a management agreement profit contribution, but do not directly state or quantify the amount of recurring revenue relative to total revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"Passages directly attribute weak demand and profitability pressure in Finland to a weak macroeconomic trend and geopolitical effects, demonstrating economic demand sensitivity.\",\n      \"passage_ids\": [\"document:138#p46\", \"document:142#p24\"]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages identify reliance on specific customers or a concentrated customer base; references to business and leisure guests are generic.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages describe new hotel agreements and a management agreement, but do not directly state or demonstrate reliance on any single material project or contract for revenue.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"Passages show booking levels vary by quarter and season, such as high demand in the second quarter and during high season, indicating timing fluctuations in demand/bookings.\",\n      \"passage_ids\": [\"document:138#p33\", \"news:270#p48\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages discuss a new financing framework and low interest-bearing net liabilities, but do not demonstrate a material exposure to commodity prices or financing costs sufficient to move above baseline.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based solely on the supplied passages; dimensions are unclassified when passages lack direct evidence of material exposure or recurring revenue amount.\",\n  \"missing_information\": [\n    \"No breakdown of recurring revenue versus transactional revenue.\",\n    \"No information on customer concentration or reliance on specific customers.\",\n    \"No explicit evidence of reliance on material projects or contracts for revenue.\",\n    \"No direct statement of commodity price exposure or financing cost sensitivity.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "cyclical_or_other_risk",
+        "confidence": "medium",
+        "rationale": "Assessments are based solely on the supplied passages; dimensions are unclassified when passages lack direct evidence of material exposure or recurring revenue amount.",
+        "evidence": [
+          {
+            "passage_id": "document:138#p46",
+            "source_id": "document:138",
+            "quote": "Sentiment in Finland remained weak, primarily due to a weak macroeconomic trend and the effects of the war in Ukraine."
+          },
+          {
+            "passage_id": "document:142#p24",
+            "source_id": "document:142",
+            "quote": "While the Finnish operations are run efficiently, profitability was impacted by relatively weak demand and continued pressure on room rates, particularly in the larger cities."
+          },
+          {
+            "passage_id": "document:138#p33",
+            "source_id": "document:138",
+            "quote": "We have a good booking situation for the second quarter, with high booking levels from leisure travelers, stable demand from business travelers and a well-filled event calendar for the spring and summer."
+          },
+          {
+            "passage_id": "news:270#p48",
+            "source_id": "news:270",
+            "quote": "Vi befinner oss mitt i högsäsongen, där en bra eventkalender och ett fortsatt högt resande bidrar till en god efterfrågan på våra marknader."
+          }
+        ],
+        "missing_information": [
+          "No breakdown of recurring revenue versus transactional revenue.",
+          "No information on customer concentration or reliance on specific customers.",
+          "No explicit evidence of reliance on material projects or contracts for revenue.",
+          "No direct statement of commodity price exposure or financing cost sensitivity."
+        ],
+        "profile_driver": "economic_demand_sensitivity",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "Supplied passages mention non-recurring items and a management agreement profit contribution, but do not directly state or quantify the amount of recurring revenue relative to total revenue.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "material",
+            "rationale": "Passages directly attribute weak demand and profitability pressure in Finland to a weak macroeconomic trend and geopolitical effects, demonstrating economic demand sensitivity.",
+            "passage_ids": [
+              "document:138#p46",
+              "document:142#p24"
+            ]
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages identify reliance on specific customers or a concentrated customer base; references to business and leisure guests are generic.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "Passages describe new hotel agreements and a management agreement, but do not directly state or demonstrate reliance on any single material project or contract for revenue.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "Passages show booking levels vary by quarter and season, such as high demand in the second quarter and during high season, indicating timing fluctuations in demand/bookings.",
+            "passage_ids": [
+              "document:138#p33",
+              "news:270#p48"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "Passages discuss a new financing framework and low interest-bearing net liabilities, but do not demonstrate a material exposure to commodity prices or financing costs sufficient to move above baseline.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 3,
+      "response_id": "8e3df267-9190-4733-a00b-e11a92506cae",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 5892,
+        "completion_tokens": 5238,
+        "total_tokens": 11130,
+        "prompt_tokens_details": {
+          "cached_tokens": 5888
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 4669
+        },
+        "prompt_cache_hit_tokens": 5888,
+        "prompt_cache_miss_tokens": 4
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage provides evidence on the proportion of recurring revenue relative to total revenue. Mentions of non-recurring items or management fees are insufficient to classify the amount of recurring revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"Passages directly state that demand in Finland was weak due to macroeconomic conditions and the war in Ukraine, and that this impacted profitability and room rates. This concretely demonstrates exposure to economic demand conditions.\",\n      \"passage_ids\": [\n        \"document:138#p16\",\n        \"document:138#p46\",\n        \"document:142#p24\",\n        \"document:142#p57\"\n      ]\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage mentions customer concentration, reliance on any single customer, or major customer exposure.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages announce various hotel agreements and projects, but none indicate that the company is dependent on any single material project or contract. These appear to be ordinary expansion activities.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage provides evidence of order timing fluctuations, backlog, or phasing of revenue. Mentions of non-recurring items do not constitute order phasing.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention a new financing framework and low leverage, but they do not directly state or concretely demonstrate a material financing or commodity exposure. Ordinary credit facility arrangements are insufficient to classify as material.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based solely on the supplied passages. Material classification requires direct statements or concrete demonstrations of exposure important enough to move above the baseline valuation curve. Unclassified indicates absence of sufficient evidence.\",\n  \"missing_information\": [\n    \"No information on total revenue or recurring revenue composition to classify revenue_recurrence.\",\n    \"No information on customer concentration or reliance on any single customer.\",\n    \"No information on dependence on individual projects or contracts beyond normal expansion announcements.\",\n    \"No information on order timing, backlog, or phasing of revenue.\",\n    \"No information on commodity price exposure or financing cost/availability risk beyond routine credit facility.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "cyclical_or_other_risk",
+        "confidence": "medium",
+        "rationale": "Assessments are based solely on the supplied passages. Material classification requires direct statements or concrete demonstrations of exposure important enough to move above the baseline valuation curve. Unclassified indicates absence of sufficient evidence.",
+        "evidence": [
+          {
+            "passage_id": "document:138#p16",
+            "source_id": "document:138",
+            "quote": "Demand in Finland remained weak but improved towards the end of the quarter, with slightly more stable occupancy and prices."
+          },
+          {
+            "passage_id": "document:138#p46",
+            "source_id": "document:138",
+            "quote": "Sentiment in Finland remained weak, primarily due to a weak macroeconomic trend and the effects of the war in Ukraine."
+          },
+          {
+            "passage_id": "document:142#p24",
+            "source_id": "document:142",
+            "quote": "While the Finnish operations are run efficiently, profitability was impacted by relatively weak demand and continued pressure on room rates, particularly in the larger cities."
+          },
+          {
+            "passage_id": "document:142#p57",
+            "source_id": "document:142",
+            "quote": "The Finnish market remained challenging, primarily due to a weak macroeconomic trend and the effects of the war in Ukraine."
+          }
+        ],
+        "missing_information": [
+          "No information on total revenue or recurring revenue composition to classify revenue_recurrence.",
+          "No information on customer concentration or reliance on any single customer.",
+          "No information on dependence on individual projects or contracts beyond normal expansion announcements.",
+          "No information on order timing, backlog, or phasing of revenue.",
+          "No information on commodity price exposure or financing cost/availability risk beyond routine credit facility."
+        ],
+        "profile_driver": "economic_demand_sensitivity",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passage provides evidence on the proportion of recurring revenue relative to total revenue. Mentions of non-recurring items or management fees are insufficient to classify the amount of recurring revenue.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "material",
+            "rationale": "Passages directly state that demand in Finland was weak due to macroeconomic conditions and the war in Ukraine, and that this impacted profitability and room rates. This concretely demonstrates exposure to economic demand conditions.",
+            "passage_ids": [
+              "document:138#p16",
+              "document:138#p46",
+              "document:142#p24",
+              "document:142#p57"
+            ]
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passage mentions customer concentration, reliance on any single customer, or major customer exposure.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "Passages announce various hotel agreements and projects, but none indicate that the company is dependent on any single material project or contract. These appear to be ordinary expansion activities.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passage provides evidence of order timing fluctuations, backlog, or phasing of revenue. Mentions of non-recurring items do not constitute order phasing.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "Passages mention a new financing framework and low leverage, but they do not directly state or concretely demonstrate a material financing or commodity exposure. Ordinary credit facility arrangements are insufficient to classify as material.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 1,
+      "response_id": "0ce1f158-ccec-4b35-aaf9-fb8eed995cc7",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 5206,
+        "completion_tokens": 3132,
+        "total_tokens": 8338,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2583
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 4950
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"The provided passages do not directly state or concretely demonstrate the amount of recurring revenue (e.g., subscription or repeat purchase model).\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage directly states or concretely demonstrates exposure to economic cycles that would be important enough to justify moving above the baseline valuation curve. The mention of external economic challenges is generic and does not demonstrate material sensitivity.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage provides customer concentration data or demonstrates reliance on a limited number of customers.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention termination of distribution agreements, but they do not directly state or concretely demonstrate reliance on material projects or contracts that would constitute project dependence.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"Multiple passages explicitly describe timing fluctuations in orders (order variability, quarterly variations, order phasing) affecting sales across regions.\",\n      \"passage_ids\": [\n        \"document:121#p34\",\n        \"document:121#p68\",\n        \"document:122#p39\",\n        \"document:124#p83\",\n        \"news:190#p45\",\n        \"news:199#p30\",\n        \"news:199#p36\",\n        \"news:192#p35\",\n        \"news:192#p54\",\n        \"news:192#p59\"\n      ]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage mentions exposure to commodity prices or financing costs.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based solely on the supplied passages. Unclassified indicates absence of direct evidence meeting the required threshold.\",\n  \"missing_information\": [\n    \"No disclosure on revenue recurrence model or amount of recurring revenue.\",\n    \"No customer concentration data or major customer dependency disclosure.\",\n    \"No specific contract or project dependency details beyond distribution agreement terminations.\",\n    \"No commodity price or financing exposure information.\",\n    \"No direct evidence of economic demand sensitivity beyond a generic mention of external economic challenges.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "Assessments are based solely on the supplied passages. Unclassified indicates absence of direct evidence meeting the required threshold.",
+        "evidence": [
+          {
+            "passage_id": "document:121#p34",
+            "source_id": "document:121",
+            "quote": "Regionen fortsätter att påverkas av variationer i tidpunkterna för inkomna order, vilket leder till fluktuationer under året."
+          },
+          {
+            "passage_id": "document:121#p68",
+            "source_id": "document:121",
+            "quote": "Försäljningen minskade främst i Kina och Sydkorea på grund av kvartalsvariationer för enskilda order."
+          },
+          {
+            "passage_id": "document:122#p39",
+            "source_id": "document:122",
+            "quote": "Försäljningen i kvartalet påverkades positivt av kvartalsvariationer för enskilda order i Italien."
+          },
+          {
+            "passage_id": "document:124#p83",
+            "source_id": "document:124",
+            "quote": "Sales decreased mainly in China due to quarterly variations for individual orders."
+          },
+          {
+            "passage_id": "news:190#p45",
+            "source_id": "news:190",
+            "quote": "Regionen fortsätter att påverkas av variationer i tidpunkterna för inkomna order, vilket leder till fluktuationer under året."
+          },
+          {
+            "passage_id": "news:199#p30",
+            "source_id": "news:199",
+            "quote": "Australia, Japan, and Vietnam delivered strong results, whereas sales in China declined mainly due to order variability."
+          },
+          {
+            "passage_id": "news:199#p36",
+            "source_id": "news:199",
+            "quote": "Mexico had double digit growth, while Chile and Peru declined in sales due to order phasing."
+          },
+          {
+            "passage_id": "news:192#p35",
+            "source_id": "news:192",
+            "quote": "We experienced some order variability in the fourth quarter, amounting to approximately SEK 35 million in net sales."
+          },
+          {
+            "passage_id": "news:192#p54",
+            "source_id": "news:192",
+            "quote": "Sales for the quarter were positively impacted by quarterly variations for individual orders to China."
+          },
+          {
+            "passage_id": "news:192#p59",
+            "source_id": "news:192",
+            "quote": "Sales for the quarter were positively impacted by quarterly variations for individual orders to Italy."
+          }
+        ],
+        "missing_information": [
+          "No disclosure on revenue recurrence model or amount of recurring revenue.",
+          "No customer concentration data or major customer dependency disclosure.",
+          "No specific contract or project dependency details beyond distribution agreement terminations.",
+          "No commodity price or financing exposure information.",
+          "No direct evidence of economic demand sensitivity beyond a generic mention of external economic challenges."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "The provided passages do not directly state or concretely demonstrate the amount of recurring revenue (e.g., subscription or repeat purchase model).",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passage directly states or concretely demonstrates exposure to economic cycles that would be important enough to justify moving above the baseline valuation curve. The mention of external economic challenges is generic and does not demonstrate material sensitivity.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passage provides customer concentration data or demonstrates reliance on a limited number of customers.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "Passages mention termination of distribution agreements, but they do not directly state or concretely demonstrate reliance on material projects or contracts that would constitute project dependence.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "Multiple passages explicitly describe timing fluctuations in orders (order variability, quarterly variations, order phasing) affecting sales across regions.",
+            "passage_ids": [
+              "document:121#p34",
+              "document:121#p68",
+              "document:122#p39",
+              "document:124#p83",
+              "news:190#p45",
+              "news:199#p30",
+              "news:199#p36",
+              "news:192#p35",
+              "news:192#p54",
+              "news:192#p59"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passage mentions exposure to commodity prices or financing costs.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 2,
+      "response_id": "2c0e0c3f-4a61-484d-96dd-32807a980e4b",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 5206,
+        "completion_tokens": 6027,
+        "total_tokens": 11233,
+        "prompt_tokens_details": {
+          "cached_tokens": 5120
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 5497
+        },
+        "prompt_cache_hit_tokens": 5120,
+        "prompt_cache_miss_tokens": 86
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages indicate recurring revenue streams, subscriptions, or long-term contracts; BioGaia products are sold via distribution and direct-to-consumer but no recurring revenue model is described.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages highlight growth and strong demand, with one noting results were achieved despite external economic and geopolitical challenges, suggesting resilience rather than material sensitivity. No passage directly demonstrates demand is materially sensitive to economic conditions.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No customer concentration data is provided; mentions of Boots and Amazon are positive retail notes and not evidence of material concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage indicates reliance on material projects or contracts; distribution agreement terminations are mentioned but do not demonstrate dependence.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"Multiple passages explicitly attribute sales fluctuations to order timing variations and order phasing in various regions and quarters.\",\n      \"passage_ids\": [\n        \"document:121#p34\",\n        \"document:121#p68\",\n        \"news:192#p35\",\n        \"news:199#p36\",\n        \"news:199#p30\"\n      ]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages mention commodity prices, raw material costs, financing costs, interest rates, or debt exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based solely on the supplied passages. Only order_phasing has direct evidence of meaningful timing fluctuations; other dimensions lack evidence of material exposure as defined.\",\n  \"missing_information\": [\n    \"No information on recurring revenue streams or subscription revenue.\",\n    \"No quantitative customer concentration metrics.\",\n    \"No details on reliance on specific projects or material contracts beyond distribution agreement terminations.\",\n    \"No data on commodity price or financing cost exposure.\",\n    \"Economic demand sensitivity could not be assessed as material because passages show growth despite economic challenges rather than sensitivity.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "Assessments are based solely on the supplied passages. Only order_phasing has direct evidence of meaningful timing fluctuations; other dimensions lack evidence of material exposure as defined.",
+        "evidence": [
+          {
+            "passage_id": "document:121#p34",
+            "source_id": "document:121",
+            "quote": "Regionen fortsätter att påverkas av variationer i tidpunkterna för inkomna order, vilket leder till fluktuationer under året."
+          },
+          {
+            "passage_id": "document:121#p68",
+            "source_id": "document:121",
+            "quote": "Försäljningen minskade främst i Kina och Sydkorea på grund av kvartalsvariationer för enskilda order."
+          },
+          {
+            "passage_id": "news:192#p35",
+            "source_id": "news:192",
+            "quote": "We experienced some order variability in the fourth quarter, amounting to approximately SEK 35 million in net sales."
+          },
+          {
+            "passage_id": "news:199#p36",
+            "source_id": "news:199",
+            "quote": "Mexico had double digit growth, while Chile and Peru declined in sales due to order phasing."
+          },
+          {
+            "passage_id": "news:199#p30",
+            "source_id": "news:199",
+            "quote": "Australia, Japan, and Vietnam delivered strong results, whereas sales in China declined mainly due to order variability."
+          }
+        ],
+        "missing_information": [
+          "No information on recurring revenue streams or subscription revenue.",
+          "No quantitative customer concentration metrics.",
+          "No details on reliance on specific projects or material contracts beyond distribution agreement terminations.",
+          "No data on commodity price or financing cost exposure.",
+          "Economic demand sensitivity could not be assessed as material because passages show growth despite economic challenges rather than sensitivity."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages indicate recurring revenue streams, subscriptions, or long-term contracts; BioGaia products are sold via distribution and direct-to-consumer but no recurring revenue model is described.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "Passages highlight growth and strong demand, with one noting results were achieved despite external economic and geopolitical challenges, suggesting resilience rather than material sensitivity. No passage directly demonstrates demand is materially sensitive to economic conditions.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No customer concentration data is provided; mentions of Boots and Amazon are positive retail notes and not evidence of material concentration.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passage indicates reliance on material projects or contracts; distribution agreement terminations are mentioned but do not demonstrate dependence.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "Multiple passages explicitly attribute sales fluctuations to order timing variations and order phasing in various regions and quarters.",
+            "passage_ids": [
+              "document:121#p34",
+              "document:121#p68",
+              "news:192#p35",
+              "news:199#p36",
+              "news:199#p30"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages mention commodity prices, raw material costs, financing costs, interest rates, or debt exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 3,
+      "response_id": "030b7f29-d377-4cd7-a616-a77779d0eeff",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 5206,
+        "completion_tokens": 3496,
+        "total_tokens": 8702,
+        "prompt_tokens_details": {
+          "cached_tokens": 5120
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2854
+        },
+        "prompt_cache_hit_tokens": 5120,
+        "prompt_cache_miss_tokens": 86
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage directly states or demonstrates the amount of recurring revenue, such as subscriptions, licenses, or repeat contractual revenue. Ordinary consumer product sales do not by themselves establish recurring revenue classification.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention marketing effectiveness, demand growth, and a note about external economic and geopolitical challenges, but none directly state or concretely demonstrate a material sensitivity of demand to economic cycles beyond generic risk-factor language.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage identifies reliance on a single customer or a concentrated group of customers. Retail partners such as Boots and Amazon are mentioned in the UK, but no concentration or material dependence is stated.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention termination of distribution agreements in Italy and France, but these do not demonstrate that the company is materially reliant on any single project or contract; they appear to be ordinary business changes.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"Multiple passages explicitly state that sales are affected by variations in the timing of incoming orders, quarterly variations for individual orders, and order variability, including a quantified SEK 35 million effect. This demonstrates meaningful timing fluctuations.\",\n      \"passage_ids\": [\n        \"document:121#p34\",\n        \"document:121#p68\",\n        \"document:122#p39\",\n        \"document:124#p83\",\n        \"news:190#p45\",\n        \"news:192#p35\",\n        \"news:192#p54\",\n        \"news:192#p59\",\n        \"news:199#p30\",\n        \"news:199#p36\"\n      ]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage mentions significant exposure to commodity prices or financing/interest rate/currency risks beyond ordinary business. No direct statement or concrete demonstration of material exposure is present.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessment based solely on supplied passages. Order phasing is meaningful due to explicit statements of order timing variability. Other dimensions lack direct or concrete evidence of material exposure or recurring revenue amount, so they are unclassified. No final risk profile is inferred.\",\n  \"missing_information\": [\n    \"Recurring revenue breakdown or subscription/license revenue details\",\n    \"Customer concentration data or major customer revenue share\",\n    \"Material project or contract dependence details\",\n    \"Commodity price or financing exposure details\",\n    \"Specific economic sensitivity metrics or historical demand cyclicality evidence\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "Assessment based solely on supplied passages. Order phasing is meaningful due to explicit statements of order timing variability. Other dimensions lack direct or concrete evidence of material exposure or recurring revenue amount, so they are unclassified. No final risk profile is inferred.",
+        "evidence": [
+          {
+            "passage_id": "document:121#p34",
+            "source_id": "document:121",
+            "quote": "Regionen fortsätter att påverkas av variationer i tidpunkterna för inkomna order, vilket leder till fluktuationer under året."
+          },
+          {
+            "passage_id": "document:121#p68",
+            "source_id": "document:121",
+            "quote": "Försäljningen minskade främst i Kina och Sydkorea på grund av kvartalsvariationer för enskilda order."
+          },
+          {
+            "passage_id": "document:122#p39",
+            "source_id": "document:122",
+            "quote": "Försäljningen i kvartalet påverkades positivt av kvartalsvariationer för enskilda order i Italien."
+          },
+          {
+            "passage_id": "document:124#p83",
+            "source_id": "document:124",
+            "quote": "Sales decreased mainly in China due to quarterly variations for individual orders."
+          },
+          {
+            "passage_id": "news:190#p45",
+            "source_id": "news:190",
+            "quote": "Regionen fortsätter att påverkas av variationer i tidpunkterna för inkomna order, vilket leder till fluktuationer under året."
+          },
+          {
+            "passage_id": "news:192#p35",
+            "source_id": "news:192",
+            "quote": "We experienced some order variability in the fourth quarter, amounting to approximately SEK 35 million in net sales."
+          },
+          {
+            "passage_id": "news:192#p54",
+            "source_id": "news:192",
+            "quote": "Sales for the quarter were positively impacted by quarterly variations for individual orders to China."
+          },
+          {
+            "passage_id": "news:192#p59",
+            "source_id": "news:192",
+            "quote": "Sales for the quarter were positively impacted by quarterly variations for individual orders to Italy."
+          },
+          {
+            "passage_id": "news:199#p30",
+            "source_id": "news:199",
+            "quote": "Australia, Japan, and Vietnam delivered strong results, whereas sales in China declined mainly due to order variability."
+          },
+          {
+            "passage_id": "news:199#p36",
+            "source_id": "news:199",
+            "quote": "Mexico had double digit growth, while Chile and Peru declined in sales due to order phasing."
+          }
+        ],
+        "missing_information": [
+          "Recurring revenue breakdown or subscription/license revenue details",
+          "Customer concentration data or major customer revenue share",
+          "Material project or contract dependence details",
+          "Commodity price or financing exposure details",
+          "Specific economic sensitivity metrics or historical demand cyclicality evidence"
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passage directly states or demonstrates the amount of recurring revenue, such as subscriptions, licenses, or repeat contractual revenue. Ordinary consumer product sales do not by themselves establish recurring revenue classification.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "Passages mention marketing effectiveness, demand growth, and a note about external economic and geopolitical challenges, but none directly state or concretely demonstrate a material sensitivity of demand to economic cycles beyond generic risk-factor language.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passage identifies reliance on a single customer or a concentrated group of customers. Retail partners such as Boots and Amazon are mentioned in the UK, but no concentration or material dependence is stated.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "Passages mention termination of distribution agreements in Italy and France, but these do not demonstrate that the company is materially reliant on any single project or contract; they appear to be ordinary business changes.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "Multiple passages explicitly state that sales are affected by variations in the timing of incoming orders, quarterly variations for individual orders, and order variability, including a quantified SEK 35 million effect. This demonstrates meaningful timing fluctuations.",
+            "passage_ids": [
+              "document:121#p34",
+              "document:121#p68",
+              "document:122#p39",
+              "document:124#p83",
+              "news:190#p45",
+              "news:192#p35",
+              "news:192#p54",
+              "news:192#p59",
+              "news:199#p30",
+              "news:199#p36"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passage mentions significant exposure to commodity prices or financing/interest rate/currency risks beyond ordinary business. No direct statement or concrete demonstration of material exposure is present.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 1,
+      "response_id": "8fa830cf-a80b-4cb2-806a-244e6f7d54e5",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6450,
+        "completion_tokens": 3726,
+        "total_tokens": 10176,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3307
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 6194
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages directly describe the amount of recurring revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages discuss demand outlook and generic risk factors but no direct or concrete demonstration of material sensitivity to economic conditions.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"One customer order is mentioned but no evidence of material reliance on a limited number of customers.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Specific projects and contracts are mentioned, but passages do not establish material reliance on them as a significant portion of revenue.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages describe timing fluctuations in order or revenue phasing.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages discuss raw material efficiency benefits for customers but do not indicate material commodity price or financing exposure for the company.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"All assessments are unclassified because the supplied passages do not provide sufficient direct or concrete evidence to classify any dimension as material/meaningful/etc.\",\n  \"missing_information\": [\n    \"No explicit data on recurring revenue proportion.\",\n    \"No data on revenue breakdown by customer or sector to assess concentration.\",\n    \"No data on total revenue to evaluate materiality of projects/contracts.\",\n    \"No information on order timing fluctuations or backlog phasing.\",\n    \"No discussion of commodity price sensitivity or financing risks.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "All assessments are unclassified because the supplied passages do not provide sufficient direct or concrete evidence to classify any dimension as material/meaningful/etc.",
+        "evidence": [],
+        "missing_information": [
+          "No explicit data on recurring revenue proportion.",
+          "No data on revenue breakdown by customer or sector to assess concentration.",
+          "No data on total revenue to evaluate materiality of projects/contracts.",
+          "No information on order timing fluctuations or backlog phasing.",
+          "No discussion of commodity price sensitivity or financing risks."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages directly describe the amount of recurring revenue.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "Passages discuss demand outlook and generic risk factors but no direct or concrete demonstration of material sensitivity to economic conditions.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "One customer order is mentioned but no evidence of material reliance on a limited number of customers.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "Specific projects and contracts are mentioned, but passages do not establish material reliance on them as a significant portion of revenue.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages describe timing fluctuations in order or revenue phasing.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "Passages discuss raw material efficiency benefits for customers but do not indicate material commodity price or financing exposure for the company.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 2,
+      "response_id": "bf17c87e-b9b7-46dd-aa30-932653104861",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6450,
+        "completion_tokens": 4593,
+        "total_tokens": 11043,
+        "prompt_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 4125
+        },
+        "prompt_cache_hit_tokens": 6400,
+        "prompt_cache_miss_tokens": 50
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage describes the amount or nature of recurring revenue; the provided excerpts discuss share offerings and general business activity.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention demand expansion and generic risk factors but do not concretely demonstrate material sensitivity to economic cycles.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage provides customer names, revenue shares, or concentration data.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"material\",\n      \"rationale\": \"Passages directly state selection for a funded 12-month project and a $4.2 million defense award, indicating reliance on material projects/contracts.\",\n      \"passage_ids\": [\"news:216#p4\", \"news:216#p7\"]\n    },\n    \"order_phasing\": {\n      \"assessment\": \"meaningful\",\n      \"rationale\": \"Passage states sales forecast will be converted to purchase orders on a rolling quarter-by-quarter basis, indicating timing fluctuations.\",\n      \"passage_ids\": [\"news:220#p5\"]\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages describe lower raw material usage but do not state exposure to commodity price volatility or financing costs.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"Assessments are based solely on the supplied passages. Unclassified dimensions lack direct evidence; material and meaningful dimensions are supported by cited excerpts.\",\n  \"missing_information\": [\n    \"Revenue breakdown by type (recurring vs one-time)\",\n    \"Economic sensitivity data or segment cyclicality\",\n    \"Customer revenue concentration percentages or top customer details\",\n    \"Financial materiality of projects/contracts relative to total revenue\",\n    \"Commodity input cost exposure or financing structure details\",\n    \"Historical order timing and phasing data\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "cyclical_or_other_risk",
+        "confidence": "medium",
+        "rationale": "Assessments are based solely on the supplied passages. Unclassified dimensions lack direct evidence; material and meaningful dimensions are supported by cited excerpts.",
+        "evidence": [
+          {
+            "passage_id": "news:216#p4",
+            "source_id": "news:216",
+            "quote": "The fully funded 12-month JAQS-SQ project will enable Norsk Titanium to support qualification pathways for RPD® that accelerate broader adoption of additive manufacturing across defense applications."
+          },
+          {
+            "passage_id": "news:216#p7",
+            "source_id": "news:216",
+            "quote": "This selection follows Norsk Titanium's recent award under the Defense Industrial Base Expansion, Development, and Growth Enterprise (DIB-EDGE) initiative, under which the Department of War committed $4.2 million to advance RPD® for submarine and maritime applications as part of its Industrial Base Policy. (Please see https://www.norsktitanium.com/media/press/norsk-titanium-awarded-contract-to-adv ance-additive-manufacturing-for-submarine-applications for more information)."
+          },
+          {
+            "passage_id": "news:220#p5",
+            "source_id": "news:220",
+            "quote": "The sales forecast is expected to be converted to purchase orders on a rolling quarter-by-quarter basis to support efficient planning, raw material sourcing, and production readiness as volumes increase."
+          }
+        ],
+        "missing_information": [
+          "Revenue breakdown by type (recurring vs one-time)",
+          "Economic sensitivity data or segment cyclicality",
+          "Customer revenue concentration percentages or top customer details",
+          "Financial materiality of projects/contracts relative to total revenue",
+          "Commodity input cost exposure or financing structure details",
+          "Historical order timing and phasing data"
+        ],
+        "profile_driver": "project_dependence",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passage describes the amount or nature of recurring revenue; the provided excerpts discuss share offerings and general business activity.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "Passages mention demand expansion and generic risk factors but do not concretely demonstrate material sensitivity to economic cycles.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passage provides customer names, revenue shares, or concentration data.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "material",
+            "rationale": "Passages directly state selection for a funded 12-month project and a $4.2 million defense award, indicating reliance on material projects/contracts.",
+            "passage_ids": [
+              "news:216#p4",
+              "news:216#p7"
+            ]
+          },
+          "order_phasing": {
+            "assessment": "meaningful",
+            "rationale": "Passage states sales forecast will be converted to purchase orders on a rolling quarter-by-quarter basis, indicating timing fluctuations.",
+            "passage_ids": [
+              "news:220#p5"
+            ]
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "Passages describe lower raw material usage but do not state exposure to commodity price volatility or financing costs.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 3,
+      "response_id": "2b1ab8ad-9f88-40ee-81ec-32fdc565565a",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 6450,
+        "completion_tokens": 4072,
+        "total_tokens": 10522,
+        "prompt_tokens_details": {
+          "cached_tokens": 6400
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 3619
+        },
+        "prompt_cache_hit_tokens": 6400,
+        "prompt_cache_miss_tokens": 50
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage states the amount or proportion of recurring revenue; subsequent offering and purchase order information do not establish recurring revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention demand trends and generic economic risk factors but do not directly state or concretely demonstrate sensitivity important enough to be material.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage provides customer revenue concentration data; mentions of Hittech or defense contractors do not establish concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages describe specific projects and contracts, but none demonstrate that the company is materially dependent on them relative to overall operations.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passage indicates order timing fluctuations; rolling quarter-by-quarter forecast conversion does not by itself show meaningful phasing risk.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"Passages mention reduced raw material usage and customer input cost benefits, but do not indicate material exposure to commodity prices or financing conditions.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"All dimensions are unclassified because the supplied passages do not contain sufficient direct evidence to establish the required assessments.\",\n  \"missing_information\": [\n    \"Recurring revenue percentage or subscription/contract revenue breakdown\",\n    \"Customer revenue concentration by customer or segment\",\n    \"Total revenue and size of major contracts/projects relative to company\",\n    \"Commodity input cost exposure or hedging practices\",\n    \"Financing structure and interest rate exposure\",\n    \"Order backlog, timing, and seasonality details\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "All dimensions are unclassified because the supplied passages do not contain sufficient direct evidence to establish the required assessments.",
+        "evidence": [],
+        "missing_information": [
+          "Recurring revenue percentage or subscription/contract revenue breakdown",
+          "Customer revenue concentration by customer or segment",
+          "Total revenue and size of major contracts/projects relative to company",
+          "Commodity input cost exposure or hedging practices",
+          "Financing structure and interest rate exposure",
+          "Order backlog, timing, and seasonality details"
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passage states the amount or proportion of recurring revenue; subsequent offering and purchase order information do not establish recurring revenue.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "Passages mention demand trends and generic economic risk factors but do not directly state or concretely demonstrate sensitivity important enough to be material.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passage provides customer revenue concentration data; mentions of Hittech or defense contractors do not establish concentration.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "Passages describe specific projects and contracts, but none demonstrate that the company is materially dependent on them relative to overall operations.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passage indicates order timing fluctuations; rolling quarter-by-quarter forecast conversion does not by itself show meaningful phasing risk.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "Passages mention reduced raw material usage and customer input cost benefits, but do not indicate material exposure to commodity prices or financing conditions.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    }
+  ],
+  "negative_controls": [
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "run": 0,
+      "response_id": "657cd63e-071a-456b-a442-b5177c2d4637",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 420,
+        "completion_tokens": 1134,
+        "total_tokens": 1554,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 840
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 164
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied to determine recurring revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied to determine economic demand sensitivity.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied to determine customer concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied to determine project dependence.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied to determine order phasing.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages supplied to determine commodity or financing exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No passages were supplied for Lime Technologies, so no dimension can be assessed.\",\n  \"missing_information\": [\n    \"No passages or evidence provided for Lime Technologies.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "No passages were supplied for Lime Technologies, so no dimension can be assessed.",
+        "evidence": [],
+        "missing_information": [
+          "No passages or evidence provided for Lime Technologies."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied to determine recurring revenue.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied to determine economic demand sensitivity.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied to determine customer concentration.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied to determine project dependence.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied to determine order phasing.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages supplied to determine commodity or financing exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "run": 0,
+      "response_id": "9e439818-eec5-45b3-b5f1-e2282610857c",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 423,
+        "completion_tokens": 1022,
+        "total_tokens": 1445,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 689
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 167
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided to assess the amount of recurring revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided to assess economic demand sensitivity.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided to assess customer concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided to assess reliance on material projects or contracts.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided to assess timing fluctuations in orders.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided to assess commodity or financing exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No passages were supplied, so no dimension could be assessed; all assessments are unclassified due to absence of evidence.\",\n  \"missing_information\": [\n    \"No passages were provided for Clas Ohlson (CLAS B), so no evidence is available for any business-risk dimension.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "No passages were supplied, so no dimension could be assessed; all assessments are unclassified due to absence of evidence.",
+        "evidence": [],
+        "missing_information": [
+          "No passages were provided for Clas Ohlson (CLAS B), so no evidence is available for any business-risk dimension."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided to assess the amount of recurring revenue.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided to assess economic demand sensitivity.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided to assess customer concentration.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided to assess reliance on material projects or contracts.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided to assess timing fluctuations in orders.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided to assess commodity or financing exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "run": 0,
+      "response_id": "be628f3b-5a14-4477-8dc6-402f5128e195",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 421,
+        "completion_tokens": 568,
+        "total_tokens": 989,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 238
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 165
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were supplied.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No passages were supplied for Byggpartner (110), so no dimension can be assessed from evidence.\",\n  \"missing_information\": [\n    \"No passages provided for revenue recurrence assessment.\",\n    \"No passages provided for economic demand sensitivity assessment.\",\n    \"No passages provided for customer concentration assessment.\",\n    \"No passages provided for project dependence assessment.\",\n    \"No passages provided for order phasing assessment.\",\n    \"No passages provided for commodity or financing exposure assessment.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "No passages were supplied for Byggpartner (110), so no dimension can be assessed from evidence.",
+        "evidence": [],
+        "missing_information": [
+          "No passages provided for revenue recurrence assessment.",
+          "No passages provided for economic demand sensitivity assessment.",
+          "No passages provided for customer concentration assessment.",
+          "No passages provided for project dependence assessment.",
+          "No passages provided for order phasing assessment.",
+          "No passages provided for commodity or financing exposure assessment."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages were supplied.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 20,
+      "ticker": "SHOT",
+      "company_name": "Scandic Hotels",
+      "run": 0,
+      "response_id": "3305521a-2497-43d0-8f92-fb01b41db64f",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 421,
+        "completion_tokens": 1103,
+        "total_tokens": 1524,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 803
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 165
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess recurring revenue.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess economic demand sensitivity.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess customer concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess project dependence.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess order phasing.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess commodity or financing exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"The supplied passages array is empty, so no evidence is available to classify any dimension.\",\n  \"missing_information\": [\n    \"No passages were supplied for Scandic Hotels (SHOT).\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "The supplied passages array is empty, so no evidence is available to classify any dimension.",
+        "evidence": [],
+        "missing_information": [
+          "No passages were supplied for Scandic Hotels (SHOT)."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess recurring revenue.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess economic demand sensitivity.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess customer concentration.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess project dependence.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess order phasing.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess commodity or financing exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 41,
+      "ticker": "BIOG B",
+      "company_name": "BioGaia",
+      "run": 0,
+      "response_id": "8e95e1c4-92a8-4b02-ac2e-fd7e182a88eb",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 422,
+        "completion_tokens": 519,
+        "total_tokens": 941,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 221
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 166
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess revenue recurrence.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess economic demand sensitivity.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess customer concentration.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess project dependence.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess order phasing.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages provided to assess commodity or financing exposure.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No passages were supplied for BioGaia, so all dimensions are unclassified due to absence of evidence.\",\n  \"missing_information\": [\n    \"No passages were provided for assessment.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "No passages were supplied for BioGaia, so all dimensions are unclassified due to absence of evidence.",
+        "evidence": [],
+        "missing_information": [
+          "No passages were provided for assessment."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess revenue recurrence.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess economic demand sensitivity.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess customer concentration.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess project dependence.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess order phasing.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages provided to assess commodity or financing exposure.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    },
+    {
+      "company_id": 1,
+      "ticker": "NTI",
+      "company_name": "Norsk Titanium",
+      "run": 0,
+      "response_id": "e946d09f-f269-4729-8769-2332ee61e812",
+      "model": "deepseek/deepseek-v4-pro",
+      "usage": {
+        "prompt_tokens": 421,
+        "completion_tokens": 1149,
+        "total_tokens": 1570,
+        "prompt_tokens_details": {
+          "cached_tokens": 256
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 817
+        },
+        "prompt_cache_hit_tokens": 256,
+        "prompt_cache_miss_tokens": 165
+      },
+      "raw_response": "{\n  \"dimensions\": {\n    \"revenue_recurrence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    },\n    \"economic_demand_sensitivity\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    },\n    \"customer_concentration\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    },\n    \"project_dependence\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    },\n    \"order_phasing\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    },\n    \"commodity_or_financing_exposure\": {\n      \"assessment\": \"unclassified\",\n      \"rationale\": \"No passages were provided.\",\n      \"passage_ids\": []\n    }\n  },\n  \"rationale\": \"No passages were supplied, so absence of evidence requires unclassified for all dimensions.\",\n  \"missing_information\": [\n    \"Revenue composition and recurrence details were not provided.\",\n    \"Demand sensitivity and cyclicality evidence were not provided.\",\n    \"Customer concentration data were not provided.\",\n    \"Project or contract dependence information was not provided.\",\n    \"Order timing and phasing information was not provided.\",\n    \"Commodity price or financing exposure information was not provided.\"\n  ]\n}",
+      "classification": {
+        "risk_profile": "slightly_cyclical",
+        "confidence": "low",
+        "rationale": "No passages were supplied, so absence of evidence requires unclassified for all dimensions.",
+        "evidence": [],
+        "missing_information": [
+          "Revenue composition and recurrence details were not provided.",
+          "Demand sensitivity and cyclicality evidence were not provided.",
+          "Customer concentration data were not provided.",
+          "Project or contract dependence information was not provided.",
+          "Order timing and phasing information was not provided.",
+          "Commodity price or financing exposure information was not provided."
+        ],
+        "profile_driver": "baseline_no_material_risk",
+        "dimensions": {
+          "revenue_recurrence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          },
+          "economic_demand_sensitivity": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          },
+          "customer_concentration": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          },
+          "project_dependence": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          },
+          "order_phasing": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          },
+          "commodity_or_financing_exposure": {
+            "assessment": "unclassified",
+            "rationale": "No passages were provided.",
+            "passage_ids": []
+          }
+        },
+        "warnings": []
+      },
+      "error": null
+    }
+  ]
+}

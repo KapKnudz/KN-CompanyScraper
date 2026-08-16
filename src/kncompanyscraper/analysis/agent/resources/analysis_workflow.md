@@ -80,6 +80,10 @@ Return the required structured result. Use decimal fractions for rates, for exam
 
 Choose `reject`, `watch`, `latent_case`, or `activated_case`. Explain why the selected status is more appropriate than the next-more-positive status.
 
+Populate the structured company fact ledger with concise, reusable observations rather than thesis prose. Each item must be atomic, identify whether it is a fact, management claim, or analyst inference, and cite original supplied evidence. Use an ISO date for `source_date` when the source date is known. Empty headings are preferable to unsupported entries.
+
+List the material reasons why confidence cannot be higher in `confidence_limitations`. Confidence may be reduced by the deterministic validation boundary when evidence coverage, valuation evidence, or risk classification is incomplete.
+
 Set `portfolio_eligibility` independently and explicitly. Only an
 `activated_case` may be `investable`; all other verdicts must be
 `not_investable`. Use `portfolio_reason_code` to distinguish valuation-only

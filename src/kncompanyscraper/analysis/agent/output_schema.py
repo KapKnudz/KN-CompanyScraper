@@ -4,6 +4,7 @@ from typing import Literal
 
 AnalysisVerdict = Literal["reject", "watch", "latent_case", "activated_case"]
 Confidence = Literal["low", "medium", "high"]
+FactEvidenceKind = Literal["fact", "management_claim", "analyst_inference"]
 PortfolioEligibility = Literal["investable", "not_investable"]
 PortfolioReasonCode = Literal[
     "investable",
@@ -28,6 +29,14 @@ ReverseDcfExpectationAssessment = Literal[
     "demanding",
     "unsupported",
     "unassessable",
+]
+ThesisUpdateImpact = Literal[
+    "no_material_change",
+    "thesis_strengthened",
+    "thesis_weakened",
+    "activation_trigger_reached",
+    "thesis_break_triggered",
+    "full_reassessment_required",
 ]
 
 
@@ -56,6 +65,27 @@ class EvidenceCitation:
 
 
 @dataclass
+class CompanyFact:
+    statement: str
+    evidence_kind: FactEvidenceKind
+    source_ids: list[str] = field(default_factory=list)
+    source_date: str | None = None
+    reporting_period: str | None = None
+
+
+@dataclass
+class CompanyFactLedger:
+    business_model: list[CompanyFact] = field(default_factory=list)
+    revenue_drivers: list[CompanyFact] = field(default_factory=list)
+    margins_and_operating_leverage: list[CompanyFact] = field(default_factory=list)
+    balance_sheet_and_capital_allocation: list[CompanyFact] = field(default_factory=list)
+    management_and_execution: list[CompanyFact] = field(default_factory=list)
+    ownership_and_insiders: list[CompanyFact] = field(default_factory=list)
+    valuation_expectations: list[CompanyFact] = field(default_factory=list)
+    risks_and_disconfirming_evidence: list[CompanyFact] = field(default_factory=list)
+
+
+@dataclass
 class StockAnalysisResult:
     company_id: int
     ticker: str
@@ -63,6 +93,8 @@ class StockAnalysisResult:
     verdict: AnalysisVerdict
     confidence: Confidence
     one_sentence_thesis: str
+    confidence_limitations: list[str] = field(default_factory=list)
+    company_fact_ledger: CompanyFactLedger = field(default_factory=CompanyFactLedger)
     portfolio_eligibility: PortfolioEligibility = "not_investable"
     portfolio_reason_code: PortfolioReasonCode = "evidence_insufficient"
     reconsideration_trigger: str | None = None
@@ -95,6 +127,17 @@ class StockAnalysisResult:
         return asdict(self)
 
 
+@dataclass
+class ThesisUpdateResult:
+    impact: ThesisUpdateImpact
+    summary: str
+    changed_sections: list[str]
+    thesis: StockAnalysisResult
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
 STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     "company_id": "integer",
     "ticker": "string",
@@ -102,6 +145,28 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     "verdict": "reject | watch | latent_case | activated_case",
     "confidence": "low | medium | high",
     "one_sentence_thesis": "string",
+    "confidence_limitations": ["string"],
+    "company_fact_ledger": {
+        heading: [
+            {
+                "statement": "string",
+                "evidence_kind": "fact | management_claim | analyst_inference",
+                "source_ids": ["string"],
+                "source_date": "string | null",
+                "reporting_period": "string | null",
+            }
+        ]
+        for heading in (
+            "business_model",
+            "revenue_drivers",
+            "margins_and_operating_leverage",
+            "balance_sheet_and_capital_allocation",
+            "management_and_execution",
+            "ownership_and_insiders",
+            "valuation_expectations",
+            "risks_and_disconfirming_evidence",
+        )
+    },
     "portfolio_eligibility": "investable | not_investable",
     "portfolio_reason_code": (
         "investable | valuation_only | business_quality | evidence_insufficient | "
@@ -159,8 +224,40 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
 }
 
 
+THESIS_UPDATE_SECTIONS = (
+    "verdict",
+    "confidence",
+    "thesis",
+    "business_model",
+    "revenue_drivers",
+    "margins_and_operating_leverage",
+    "balance_sheet_and_capital_allocation",
+    "management_and_execution",
+    "ownership_and_insiders",
+    "valuation_expectations",
+    "risks_and_disconfirming_evidence",
+    "triggers_and_break_conditions",
+    "missing_information",
+)
+
+THESIS_UPDATE_OUTPUT_CONTRACT = {
+    "impact": (
+        "no_material_change | thesis_strengthened | thesis_weakened | "
+        "activation_trigger_reached | thesis_break_triggered | "
+        "full_reassessment_required"
+    ),
+    "summary": "string",
+    "changed_sections": [" | ".join(THESIS_UPDATE_SECTIONS)],
+    "thesis": STOCK_ANALYSIS_OUTPUT_CONTRACT,
+}
+
+
 def stock_analysis_json_schema() -> dict:
     return _contract_to_json_schema(STOCK_ANALYSIS_OUTPUT_CONTRACT)
+
+
+def thesis_update_json_schema() -> dict:
+    return _contract_to_json_schema(THESIS_UPDATE_OUTPUT_CONTRACT)
 
 
 def _contract_to_json_schema(specification) -> dict:

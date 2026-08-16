@@ -1,4 +1,5 @@
 from dataclasses import dataclass, fields, is_dataclass
+from datetime import date
 import re
 
 from kncompanyscraper.analysis.agent.result_parser import (
@@ -15,7 +16,7 @@ class PersistedStockAnalysis:
 
 
 class AgentExecutionBoundary:
-    VALIDATION_VERSION = "agent-boundary-v11"
+    VALIDATION_VERSION = "agent-boundary-v12"
     NO_INSIDER_ASSESSMENT = (
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
@@ -49,10 +50,18 @@ class AgentExecutionBoundary:
             source.get("source_id")
             for source in candidate.research_evidence.get("insider_transactions", [])
         }
+        document_source_ids.update(
+            candidate.research_evidence.get("prior_document_source_ids", [])
+        )
+        insider_source_ids.update(
+            candidate.research_evidence.get("prior_insider_source_ids", [])
+        )
+        prior_source_ids = set(candidate.research_evidence.get("prior_source_ids", []))
         valuation_source_aliases = {
             **self._deterministic_source_aliases(candidate),
             **self._valuation_source_aliases(candidate),
             "research_evidence.insider_event_count": "research:insider_event_count",
+            "research_evidence.insider_status": "research:insider_status",
         }
         for citation in result.citations:
             citation.source_id = valuation_source_aliases.get(
@@ -62,9 +71,46 @@ class AgentExecutionBoundary:
             valuation_source_aliases.get(source_id, source_id)
             for source_id in result.risk_profile_evidence
         ]
+        fact_source_ids = set()
+        seen_facts = set()
+        for heading_field in fields(result.company_fact_ledger):
+            heading = heading_field.name
+            for fact in getattr(result.company_fact_ledger, heading):
+                fact.statement = fact.statement.strip()
+                if not fact.statement:
+                    raise StockAnalysisValidationError(
+                        f"company fact statement cannot be empty: {heading}"
+                    )
+                if not fact.source_ids:
+                    raise StockAnalysisValidationError(
+                        f"company fact must cite evidence: {heading}"
+                    )
+                fact.source_ids = [
+                    valuation_source_aliases.get(source_id, source_id)
+                    for source_id in fact.source_ids
+                ]
+                if len(fact.source_ids) != len(set(fact.source_ids)):
+                    raise StockAnalysisValidationError(
+                        f"company fact contains duplicate source IDs: {heading}"
+                    )
+                if fact.source_date is not None:
+                    try:
+                        date.fromisoformat(fact.source_date)
+                    except ValueError as exc:
+                        raise StockAnalysisValidationError(
+                            f"company fact source_date must be an ISO date: {heading}"
+                        ) from exc
+                fact_key = (heading, fact.statement.casefold())
+                if fact_key in seen_facts:
+                    raise StockAnalysisValidationError(
+                        f"duplicate company fact: {heading}: {fact.statement}"
+                    )
+                seen_facts.add(fact_key)
+                fact_source_ids.update(fact.source_ids)
         known_source_ids = (
             document_source_ids
             | insider_source_ids
+            | prior_source_ids
             | set(valuation_source_aliases.values())
         )
         unknown_source_ids = sorted(
@@ -82,6 +128,12 @@ class AgentExecutionBoundary:
                 "risk profile cites unknown evidence source(s): "
                 + ", ".join(unknown_risk_source_ids)
             )
+        unknown_fact_source_ids = sorted(fact_source_ids - known_source_ids)
+        if unknown_fact_source_ids:
+            raise StockAnalysisValidationError(
+                "company facts cite unknown evidence source(s): "
+                + ", ".join(unknown_fact_source_ids)
+            )
 
         deterministic_checks, deterministic_warnings = self._validate_model_owned_arithmetic(
             result, candidate
@@ -92,6 +144,7 @@ class AgentExecutionBoundary:
         self._validate_portfolio_eligibility(result)
         self._validate_risk_profile(result, candidate)
         self._validate_reverse_dcf_assessment(result, candidate)
+        confidence_checks = self._apply_confidence_cap(result, candidate, document_source_ids)
 
         insider_checks = []
         warnings = list(deterministic_warnings)
@@ -123,6 +176,7 @@ class AgentExecutionBoundary:
                     "model-owned expected return components are null",
                 ],
                 "insider_checks": insider_checks,
+                "confidence_checks": confidence_checks,
                 "warnings": warnings,
             }
         )
@@ -133,6 +187,42 @@ class AgentExecutionBoundary:
             metadata=validation_metadata,
         )
         return PersistedStockAnalysis(analysis_id=analysis_id, result=result)
+
+    @classmethod
+    def _apply_confidence_cap(cls, result, candidate, document_source_ids):
+        cap = "high"
+        limitations = []
+        reverse_dcf = candidate.full_results.get("reverse_dcf")
+
+        if not document_source_ids:
+            cap = "low"
+            limitations.append("No textual company reports or releases were supplied.")
+        else:
+            if result.missing_information:
+                cap = "medium"
+                limitations.append("Material information remains missing.")
+            if (
+                cls._field(reverse_dcf, "status") != "available"
+                or not (cls._field(reverse_dcf, "expectation_curve") or ())
+            ):
+                cap = "medium"
+                limitations.append("Reverse-DCF expectations are unavailable or incomplete.")
+            if result.risk_profile == "unclassified":
+                cap = "medium"
+                limitations.append("The business-risk profile is unclassified.")
+
+        confidence_rank = {"low": 0, "medium": 1, "high": 2}
+        proposed = result.confidence
+        if confidence_rank[proposed] > confidence_rank[cap]:
+            result.confidence = cap
+        result.confidence_limitations = list(
+            dict.fromkeys([*result.confidence_limitations, *limitations])
+        )
+        return [
+            f"model proposed {proposed} confidence",
+            f"deterministic confidence cap is {cap}",
+            f"accepted confidence is {result.confidence}",
+        ]
 
     @classmethod
     def _validate_model_owned_arithmetic(cls, result, candidate):
@@ -538,7 +628,10 @@ class AgentExecutionBoundary:
 
         reverse_dcf = candidate.full_results.get("reverse_dcf")
         sensitivities = cls._field(reverse_dcf, "discount_rate_sensitivities") or {}
-        if expected_profile not in sensitivities:
+        if (
+            cls._field(reverse_dcf, "status") == "available"
+            and expected_profile not in sensitivities
+        ):
             raise StockAnalysisValidationError(
                 "classifier consensus has no matching deterministic discount-rate sensitivity"
             )
@@ -582,6 +675,10 @@ class AgentExecutionBoundary:
             aliases[
                 "full_results.reverse_dcf.price_fundamental_attribution"
             ] = source_id
+        if cls._field(reverse_dcf, "missing_information") is not None:
+            source_id = "deterministic:reverse_dcf:missing_information"
+            aliases[source_id] = source_id
+            aliases["full_results.reverse_dcf.missing_information"] = source_id
         return aliases
 
     @staticmethod
