@@ -80,6 +80,33 @@ def test_save_ranking_run_inserts_row():
     assert cursor.execute.called
 
 
+def test_save_monthly_ranking_run_is_idempotent():
+    from datetime import date
+
+    repository = RankingRepository()
+    cursor = MagicMock()
+    cursor.fetchone.side_effect = [None, [42]]
+    conn = MagicMock()
+    conn.__enter__ = MagicMock(return_value=conn)
+    conn.__exit__ = MagicMock(return_value=False)
+    conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
+    conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+    with patch("kncompanyscraper.repositories.ranking_repository.get_connection", return_value=conn):
+        run_id, created = repository.save_monthly_ranking_run(
+            snapshot_month=date(2026, 8, 1),
+            model_version="combined-v1",
+            company_count=2,
+            eligible_count=1,
+            scores=[],
+            inputs_summary={},
+        )
+
+    assert run_id == 42
+    assert created is False
+    assert cursor.execute.call_count == 2
+
+
 def test_get_recent_runs_returns_list():
     from datetime import datetime, timezone
 
@@ -124,6 +151,117 @@ def test_get_run_returns_none_for_missing_id():
         result = repository.get_run(999)
 
     assert result is None
+
+
+def test_get_latest_deterministic_run_returns_frozen_scores():
+    from datetime import date, datetime, timezone
+
+    repository = RankingRepository()
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {
+        "id": 7,
+        "run_at": datetime(2026, 8, 16, tzinfo=timezone.utc),
+        "model_version": "deterministic-v1",
+        "company_count": 2,
+        "eligible_count": 1,
+        "scores": [{"company_id": 1, "rank_eligible": True}],
+        "inputs_summary": {"ranking_type": "deterministic_watchlist"},
+    }
+    conn = MagicMock()
+    conn.__enter__ = MagicMock(return_value=conn)
+    conn.__exit__ = MagicMock(return_value=False)
+    conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
+    conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+    with patch(
+        "kncompanyscraper.repositories.ranking_repository.get_connection",
+        return_value=conn,
+    ):
+        result = repository.get_latest_deterministic_run(date(2026, 8, 16))
+
+    assert result["id"] == 7
+    assert result["scores"][0]["company_id"] == 1
+    assert "combined_forward_scenario" in cursor.execute.call_args.args[0]
+
+
+def test_complete_performance_evaluation_is_not_overwritten():
+    repository = RankingRepository()
+    evaluation = MagicMock(
+        ranking_run_id=12,
+        horizon_months=1,
+        target_date="2026-02-28",
+        status="complete",
+    )
+    evaluation.to_dict.return_value = {"status": "complete"}
+    cursor = MagicMock()
+    cursor.fetchone.side_effect = [None, [91]]
+    conn = MagicMock()
+    conn.__enter__ = MagicMock(return_value=conn)
+    conn.__exit__ = MagicMock(return_value=False)
+    conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
+    conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+    with patch(
+        "kncompanyscraper.repositories.ranking_repository.get_connection",
+        return_value=conn,
+    ):
+        evaluation_id, changed = repository.save_performance_evaluation(
+            evaluation, "ranking-performance-v1"
+        )
+
+    assert evaluation_id == 91
+    assert changed is False
+    assert "status <> 'complete'" in cursor.execute.call_args_list[0].args[0]
+
+
+def test_list_performance_evaluations_returns_snapshot_provenance():
+    from datetime import date, datetime, timezone
+
+    repository = RankingRepository()
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [
+        {
+            "id": 91,
+            "ranking_run_id": 12,
+            "horizon_months": 6,
+            "target_date": date(2027, 2, 1),
+            "status": "complete",
+            "policy_version": "ranking-performance-v2-gross-total-return",
+            "result": {"agent_value_added": 0.03},
+            "evaluated_at": datetime(2027, 2, 2, tzinfo=timezone.utc),
+            "snapshot_month": date(2026, 8, 1),
+        }
+    ]
+    conn = MagicMock()
+    conn.__enter__ = MagicMock(return_value=conn)
+    conn.__exit__ = MagicMock(return_value=False)
+    conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
+    conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+    with patch(
+        "kncompanyscraper.repositories.ranking_repository.get_connection",
+        return_value=conn,
+    ):
+        rows = repository.list_performance_evaluations(
+            ranking_run_id=12,
+            limit=5,
+        )
+
+    assert rows == [
+        {
+            "id": 91,
+            "ranking_run_id": 12,
+            "snapshot_month": "2026-08-01",
+            "horizon_months": 6,
+            "target_date": "2027-02-01",
+            "status": "complete",
+            "policy_version": "ranking-performance-v2-gross-total-return",
+            "result": {"agent_value_added": 0.03},
+            "evaluated_at": "2027-02-02T00:00:00+00:00",
+        }
+    ]
+    assert "evaluation.ranking_run_id = %s" in cursor.execute.call_args.args[0]
+    assert cursor.execute.call_args.args[1] == (12, 5)
 
 
 def test_ranking_engine_has_model_version():

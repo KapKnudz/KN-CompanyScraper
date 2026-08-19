@@ -22,6 +22,7 @@ def _analysis(company_id, *, risk_profile="slightly_cyclical", evidence_as_of="2
         "analysis_id": 100 + company_id,
         "company_id": company_id,
         "content": {
+            "analysis_status": "complete",
             "verdict": "activated_case",
             "confidence": "high",
             "one_sentence_thesis": f"Case {company_id} is active.",
@@ -111,6 +112,21 @@ def test_excludes_accepted_analysis_from_old_contract():
     )
 
     assert result.excluded_finalists[0].reason_code == "analysis_contract_outdated"
+
+
+def test_excludes_blocked_analysis_without_treating_watch_as_verdict():
+    ranking = SimpleNamespace(scores=[_score(1)])
+    analysis = _analysis(1)
+    analysis["content"]["analysis_status"] = "evidence_blocked"
+    analysis["content"]["verdict"] = "watch"
+
+    result = PortfolioSelectionService().select(
+        ranking,
+        {1: analysis},
+        as_of=date(2026, 8, 12),
+    )
+
+    assert result.excluded_finalists[0].reason_code == "analysis_incomplete"
 
 
 def test_excludes_investable_case_without_classified_business_risk():

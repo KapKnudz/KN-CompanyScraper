@@ -14,6 +14,16 @@ Follow the steps in order. If a core step cannot be completed, preserve the miss
 
 Describe the customer, problem, product or service, pricing, route to market, gross economics, operating-cost structure, reinvestment needs, and principal dependencies. State whether the business falls within the defined circle of competence.
 
+Populate `business_model_profile` as the normalized comparison layer. Permit
+multiple revenue-model types for genuinely hybrid businesses; do not force one
+label. `recurring_revenue_profile` describes the economics of the revenue, not
+merely repeat customer behavior. Pricing power requires evidence of retained
+volume, customers, or economics after price changes. Operating leverage is
+`demonstrated` only when supplied report history shows revenue growth accompanied
+by slower operating-cost growth or expanding EBIT margins. Cite the exact report
+or document source IDs supporting the profile and list unresolved dimensions in
+its limitations.
+
 ## 3. Apply the profitability gate
 
 Determine whether the company is currently profitable. If not, require an explicit rule exception, document prior profitability where available, identify the expected recovery period, and analyze liquidity, financing, and dilution risk.
@@ -24,7 +34,18 @@ State the two-to-three-year revenue mechanism. Distinguish organic growth from a
 
 Estimate a defensible EBIT-margin path. If gross margin is available, investigate the gross-to-EBIT spread. Explain the operational change required for every material margin increase.
 
+Populate `margin_expansion_case` separately from the scenario arithmetic. Its
+status identifies whether the mechanism is latent, has early evidence, is
+active, stalled, invalidated, not applicable, or unassessable. Name the operating
+mechanism and required changes, cite supporting and contrary evidence, and leave
+the status unassessable when the mechanism cannot be observed. Do not place a
+second qualitative downside estimate here.
+
 Do not use unsupported precision. Give ranges when the evidence only supports ranges.
+
+For a `general` ranking model, populate `forward_scenario_assumptions` only when the supplied deterministic context includes positive current price, revenue, and shares, current net debt, and both EV/EBIT guardrails. Supply exactly eight complete endpoints at one shared 24-, 36-, or 48-month horizon: low/high endpoints for base, bull, multiple-compression bear, and fundamental-impairment bear. Every numeric assumption requires source IDs and a rationale. Express `share_count_growth` as a decimal fraction over the full horizon, for example `-0.0074` for a 0.74% reduction. The deterministic engine derives diluted shares from the supplied current share count; do not supply a second absolute share-count assumption. Net debt must likewise reconcile through `net_debt_change`. A multiple-compression endpoint copies its corresponding base operating and financing assumptions and changes only the terminal multiple. A fundamental-impairment endpoint improves no driver versus base and worsens at least one. Do not combine independent range extremes. Leave the list empty when evidence is insufficient or the ranking model is bank/property; the deterministic boundary will preserve a visible insufficiency or unsupported-method result.
+
+`forward_scenario_analysis` must be `null` in the model response. The execution boundary owns its calculation. Never state a point estimate or probability weight in prose.
 
 Use `full_results.reverse_dcf.price_fundamental_attribution` to explain material
 one-, three-, and five-year share-price moves. Separate the portions accompanied
@@ -40,7 +61,7 @@ Do not independently classify cyclicality. When `full_results.cyclicality_consen
 
 Use the consensus profile's curve under `full_results.reverse_dcf.discount_rate_sensitivities` when consensus is complete. Otherwise retain the baseline slightly-cyclical curve and explicitly state that the discount-rate profile is unverified. The deterministic policy owns the risk-free rate, equity-risk premium, size adjustment, profile adjustments, and all sensitivity arithmetic. Classification selects a supplied lens for discussion; it must not modify inputs or create a new valuation calculation.
 
-`valuation_scenarios` must be empty and every scalar in `expected_return_components` must remain `null`. Do not calculate or state a forward fair value, target price, expected return, upside percentage, substitute P/E, EPS, or DCF value.
+The legacy model-authored `valuation_scenarios` field must remain empty and every scalar in `expected_return_components` must remain `null`. Do not independently calculate or state a forward fair value, target price, expected return, upside percentage, substitute P/E, EPS, or DCF value. Forward numeric output is valid only when supplied by the deterministic forward-scenario engine from stored sourced bundles; quote its ranges exactly and preserve all methodology and insufficient-evidence flags.
 
 Deterministic implied expectations carry `source_id` values beginning with `valuation:reverse_dcf:`. Cite material reverse-DCF claims with those exact IDs. For other scalar deterministic metrics that do not carry a `source_id`, cite the exact supplied path beginning with `full_results.`; the execution boundary will normalize a resolvable path to a canonical `deterministic:` ID. Never invent or abbreviate a path.
 
@@ -63,6 +84,13 @@ Evaluate founder or owner-operator alignment, ownership, capital allocation, cos
 Analyze insider activity, ownership changes, average traded value, free float, listing venue, known supply overhangs, and plausible fund or index eligibility. Keep signal value separate from flow effects.
 
 Use this evidence to modify confidence or timing. Do not allow it to replace the fundamental case.
+
+Populate `timing_assessment` with the fixed case horizon and observable catalyst
+windows: `0_12m`, `12_24m`, `24_48m`, or `uncertain`. Every catalyst must say what
+future evidence would confirm it and cite the evidence establishing why it is
+expected. Do not invent a numeric confirmation threshold. Use a sourced threshold,
+or state the observable direction relative to a cited current or historical baseline.
+An assumption horizon alone is not a timing catalyst.
 
 Insider transactions are deliberately supplied as raw events with subsequent unadjusted price returns. Do not convert them into a mechanical score. Compare like-for-like transaction types, roles, sizes, repeated behavior, and the outcomes visible at the evidence cutoff. Do not treat missing future horizons as failed outcomes.
 

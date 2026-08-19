@@ -1,4 +1,8 @@
-from kncompanyscraper.analysis.ranking.company_score import CompanyScore, WatchlistRanking
+from kncompanyscraper.analysis.ranking.company_score import (
+    CompanyScore,
+    WatchlistRanking,
+)
+from kncompanyscraper.models.enums import DataQuality, RankingModel
 from kncompanyscraper.analysis.ranking.score_rules import (
     score_quality,
     score_growth,
@@ -10,6 +14,9 @@ from kncompanyscraper.analysis.ranking.sector_score_rules import (
     score_bank,
     score_property,
 )
+from kncompanyscraper.analysis.ranking.scoring_audit import (
+    build_general_scoring_audit,
+)
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
 
 
@@ -19,11 +26,13 @@ def _rank_eligibility(ranking_model, financial, valuation, sector_data):
         reasons.append("financial data not available")
 
     # Unpack the new {current, histories} structure, falling back for plain-dict callers.
-    sector_kpis = sector_data.get("current", {}) if isinstance(sector_data, dict) else sector_data
+    sector_kpis = (
+        sector_data.get("current", {}) if isinstance(sector_data, dict) else sector_data
+    )
     if not isinstance(sector_data, dict) or "current" not in sector_data:
         sector_kpis = sector_data or {}
 
-    if ranking_model == "property":
+    if ranking_model == RankingModel.PROPERTY:
         required = {
             KpiIds.PROPERTY_OCCUPANCY: "occupancy",
             KpiIds.PROPERTY_INTEREST_COVERAGE: "interest coverage",
@@ -40,7 +49,7 @@ def _rank_eligibility(ranking_model, financial, valuation, sector_data):
             )
         ):
             reasons.append("property valuation KPI not available")
-    elif ranking_model == "bank":
+    elif ranking_model == RankingModel.BANK:
         required = {
             KpiIds.BANK_COST_INCOME: "cost/income",
             KpiIds.BANK_CREDIT_LOSSES: "credit losses",
@@ -99,14 +108,14 @@ def _compute_flags(quality: dict, growth: dict, val: dict, balance: dict, missin
     return flags
 
 
-def _compute_data_quality(missing_data: list[str]) -> str:
+def _compute_data_quality(missing_data: list[str]) -> DataQuality:
     missing_count = len(missing_data)
     if missing_count == 0:
-        return "high"
+        return DataQuality.HIGH
     elif missing_count <= 3:
-        return "medium"
+        return DataQuality.MEDIUM
     else:
-        return "low"
+        return DataQuality.LOW
 
 
 def _compute_candidate_reason(quality: dict, growth: dict, val: dict, balance: dict) -> str:
@@ -151,13 +160,13 @@ class RankingEngine:
                 sector_kpis,
             )
 
-            if ranking_model == "property":
+            if ranking_model == RankingModel.PROPERTY:
                 quality, growth, val, balance = score_property(
                     financial,
                     valuation,
                     sector_kpis,
                 )
-            elif ranking_model == "bank":
+            elif ranking_model == RankingModel.BANK:
                 quality, growth, val, balance = score_bank(
                     financial,
                     valuation,
@@ -178,12 +187,26 @@ class RankingEngine:
                     growth_score=growth["score"] if growth else None,
                 )
 
-            if ranking_model == "property":
+            if ranking_model == RankingModel.PROPERTY:
                 weights = (0.25, 0.15, 0.30, 0.30)
-            elif ranking_model == "bank":
+            elif ranking_model == RankingModel.BANK:
                 weights = (0.30, 0.20, 0.25, 0.25)
             else:
                 weights = (0.30, 0.25, 0.30, 0.15)
+            scoring_audit = {}
+            if ranking_model == RankingModel.GENERAL:
+                scoring_audit = build_general_scoring_audit(
+                    financial,
+                    valuation,
+                    fundamental_kpis,
+                    {
+                        "quality": quality,
+                        "growth": growth,
+                        "valuation": val,
+                        "balance_sheet": balance,
+                    },
+                    weights,
+                )
             total = sum(
                 score["score"] * weight
                 for score, weight in zip((quality, growth, val, balance), weights)
@@ -197,7 +220,7 @@ class RankingEngine:
                         flags.append(flag)
             data_quality = _compute_data_quality(missing_data)
             if not rank_eligible:
-                data_quality = "low"
+                data_quality = DataQuality.LOW
                 if "incomplete_data" not in flags:
                     flags.append("incomplete_data")
             candidate_reason = _compute_candidate_reason(quality, growth, val, balance)
@@ -220,6 +243,7 @@ class RankingEngine:
                 ranking_model=ranking_model,
                 rank_eligible=rank_eligible,
                 eligibility_reasons=eligibility_reasons,
+                scoring_audit=scoring_audit,
             )
             scores.append(cs)
 
@@ -233,6 +257,7 @@ class RankingEngine:
                 eligible_count=eligible_count,
                 scores=[s.to_dict() for s in scores],
                 inputs_summary={
+                    "ranking_type": "deterministic_watchlist",
                     "total_companies": len(companies),
                     "eligible_count": eligible_count,
                     "ranking_models_used": list(

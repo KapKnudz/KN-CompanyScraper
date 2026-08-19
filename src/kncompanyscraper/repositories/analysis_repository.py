@@ -54,6 +54,18 @@ class AnalysisRepository:
             with conn.cursor() as cur:
                 cur.execute(query, (Json(update), analysis_id))
 
+    def get_stock_analysis_raw(self, analysis_id: int) -> dict | None:
+        query = """
+            SELECT id, company_id, content, created_by, metadata
+            FROM analysis
+            WHERE id = %s AND analysis_type = 'stock_analysis_raw'
+        """
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, (analysis_id,))
+                row = cur.fetchone()
+        return dict(row) if row else None
+
     def save_stock_analysis(
         self,
         result,
@@ -180,6 +192,39 @@ class AnalysisRepository:
             for row in rows
         }
 
+    def get_validated_stock_analyses_by_ids(
+        self, analysis_ids_by_company: dict[int, int]
+    ) -> dict[int, dict]:
+        if not analysis_ids_by_company:
+            return {}
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT id, company_id, content, created_by, created_at, metadata
+                    FROM analysis
+                    WHERE id = ANY(%s)
+                      AND analysis_type = 'stock_analysis'
+                      AND metadata->>'validation_status' = 'accepted'
+                    """,
+                    (list(analysis_ids_by_company.values()),),
+                )
+                rows = cur.fetchall()
+        result = {}
+        for row in rows:
+            expected_id = analysis_ids_by_company.get(row["company_id"])
+            if expected_id != row["id"]:
+                continue
+            result[row["company_id"]] = {
+                "analysis_id": row["id"],
+                "company_id": row["company_id"],
+                "content": json.loads(row["content"]),
+                "created_by": row["created_by"],
+                "created_at": row["created_at"].isoformat(),
+                "metadata": row["metadata"] or {},
+            }
+        return result
+
     def get_latest_rejected_incremental_updates(
         self, company_ids: list[int]
     ) -> dict[int, dict]:
@@ -193,6 +238,30 @@ class AnalysisRepository:
                 FROM analysis
                 WHERE analysis_type = 'stock_analysis_raw'
                   AND metadata->>'analysis_mode' = 'incremental_update'
+                  AND company_id = ANY(%s)
+                ORDER BY company_id, created_at DESC, id DESC
+            ) latest
+            WHERE metadata->>'validation_status' = 'rejected'
+        """
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, (company_ids,))
+                rows = cur.fetchall()
+        return {row["company_id"]: dict(row) for row in rows}
+
+    def get_latest_rejected_initial_analyses(
+        self, company_ids: list[int]
+    ) -> dict[int, dict]:
+        if not company_ids:
+            return {}
+        query = """
+            SELECT id, company_id, content, created_by, metadata
+            FROM (
+                SELECT DISTINCT ON (company_id)
+                    id, company_id, content, created_by, metadata, created_at
+                FROM analysis
+                WHERE analysis_type = 'stock_analysis_raw'
+                  AND COALESCE(metadata->>'analysis_mode', 'initial') = 'initial'
                   AND company_id = ANY(%s)
                 ORDER BY company_id, created_at DESC, id DESC
             ) latest

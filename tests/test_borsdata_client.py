@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from kncompanyscraper.borsdata.kpi_history import KpiHistory
 from kncompanyscraper.borsdata.stock_price import StockPrice
 from kncompanyscraper.borsdata.report import Report
 from kncompanyscraper.borsdata.instrument import Instrument
+from kncompanyscraper.borsdata.dividend import CashDividend
 
 MOCKS_DIR = Path(__file__).resolve().parent / "mocks"
 
@@ -138,6 +140,68 @@ class TestBorsdataClient:
         assert len(result) == 5
         assert all(isinstance(p, StockPrice) for p in result)
         assert result[0].close == pytest.approx(278.0)
+
+    def test_get_dividends_maps_historical_calendar(self, monkeypatch):
+        payload = {
+            "list": [
+                {
+                    "insId": 3,
+                    "values": [
+                        {
+                            "amountPaid": 10.5,
+                            "currencyShortName": "sek",
+                            "distributionFrequency": "annual",
+                            "excludingDate": "2026-03-23T00:00:00",
+                            "dividendType": 1,
+                        },
+                        {
+                            "amountPaid": 0.0,
+                            "currencyShortName": "SEK",
+                            "excludingDate": "2025-03-24T00:00:00",
+                            "dividendType": 0,
+                        },
+                    ],
+                }
+            ]
+        }
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: FakeResponse(payload),
+        )
+
+        result = BorsdataClient(api_key="test").get_dividends([3, 4])
+
+        assert result == {
+            3: [CashDividend(date(2026, 3, 23), 10.5, "SEK", 1, "annual")],
+        }
+
+    def test_get_dividends_rejects_incomplete_historical_cash_flow(self, monkeypatch):
+        payload = {
+            "list": [
+                {
+                    "insId": 3,
+                    "values": [
+                        {
+                            "amountPaid": None,
+                            "currencyShortName": "SEK",
+                            "excludingDate": "2025-03-24T00:00:00",
+                            "dividendType": 0,
+                        }
+                    ],
+                }
+            ]
+        }
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: FakeResponse(payload),
+        )
+
+        with pytest.raises(ValueError, match="historical dividend row is incomplete"):
+            BorsdataClient(api_key="test").get_dividends([3])
+
+    def test_get_dividends_rejects_more_than_fifty_instruments(self):
+        with pytest.raises(ValueError, match="at most 50"):
+            BorsdataClient(api_key="test").get_dividends(list(range(51)))
 
     def test_get_insider_transactions_keeps_only_open_market_buys_and_sells(self, monkeypatch):
         payload = {

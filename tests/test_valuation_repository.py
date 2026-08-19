@@ -2,6 +2,7 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 from kncompanyscraper.borsdata.kpi_history import KpiHistory, KpiHistoryPoint
+from kncompanyscraper.borsdata.kpi_ids import KpiIds
 from kncompanyscraper.borsdata.stock_price import StockPrice
 from kncompanyscraper.repositories.valuation_repository import ValuationRepository
 
@@ -138,3 +139,27 @@ def test_historical_kpis_are_restricted_to_prior_years():
         sql, params = execute_call.args
         assert "year < %s" in sql
         assert params[-1] == 2025
+
+
+def test_get_kpi_values_for_public_report_year():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [
+        {"kpi_id": KpiIds.ROIC, "value": 14.5},
+        {"kpi_id": KpiIds.NET_DEBT_EBITDA, "value": 1.2},
+    ]
+    connection = _mock_connection(cursor)
+
+    with patch(
+        "kncompanyscraper.repositories.valuation_repository.get_connection",
+        return_value=connection,
+    ):
+        result = ValuationRepository().get_kpi_values_for_year(
+            7,
+            KpiIds.GENERAL_FUNDAMENTAL_KPIS,
+            2024,
+        )
+
+    sql, params = cursor.execute.call_args.args
+    assert "year = %s" in sql
+    assert params == (7, list(KpiIds.GENERAL_FUNDAMENTAL_KPIS), 2024)
+    assert result == {KpiIds.ROIC: 14.5, KpiIds.NET_DEBT_EBITDA: 1.2}

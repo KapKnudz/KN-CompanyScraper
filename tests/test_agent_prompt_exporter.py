@@ -19,7 +19,7 @@ def test_prompt_exporter_writes_inspectable_json(tmp_path):
     assert payload["company_id"] == 42
     assert payload["ticker"] == "TEST A/B"
     assert payload["policy_name"] == "nordic-case-investing-policy"
-    assert payload["policy_version"] == "1.18.0"
+    assert payload["policy_version"] == "1.23.0"
     assert len(payload["policy_sha256"]) == 64
     assert payload["policy_sha256"] in payload["system"]
     assert "Three return engines" in payload["system"]

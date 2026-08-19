@@ -32,6 +32,48 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: agent_cohort_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_cohort_snapshots (
+    id bigint NOT NULL,
+    snapshot_month date NOT NULL,
+    deterministic_run_id integer NOT NULL,
+    policy_version text NOT NULL,
+    target_size integer NOT NULL,
+    grace_months integer NOT NULL,
+    eligible_universe_company_ids jsonb NOT NULL,
+    top_company_ids jsonb NOT NULL,
+    members jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_cohort_snapshots_eligible_universe_company_ids_check CHECK ((jsonb_typeof(eligible_universe_company_ids) = 'array'::text)),
+    CONSTRAINT agent_cohort_snapshots_grace_months_check CHECK ((grace_months > 0)),
+    CONSTRAINT agent_cohort_snapshots_members_check CHECK ((jsonb_typeof(members) = 'array'::text)),
+    CONSTRAINT agent_cohort_snapshots_target_size_check CHECK ((target_size > 0)),
+    CONSTRAINT agent_cohort_snapshots_top_company_ids_check CHECK ((jsonb_typeof(top_company_ids) = 'array'::text))
+);
+
+
+--
+-- Name: agent_cohort_snapshots_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.agent_cohort_snapshots_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: agent_cohort_snapshots_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.agent_cohort_snapshots_id_seq OWNED BY public.agent_cohort_snapshots.id;
+
+
+--
 -- Name: analysis; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -102,6 +144,22 @@ ALTER SEQUENCE public.annual_reports_id_seq OWNED BY public.annual_reports.id;
 
 
 --
+-- Name: benchmark_prices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.benchmark_prices (
+    series_code text NOT NULL,
+    price_date date NOT NULL,
+    close numeric(18,6) NOT NULL,
+    return_basis text NOT NULL,
+    source text NOT NULL,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT benchmark_prices_close_check CHECK ((close > (0)::numeric)),
+    CONSTRAINT benchmark_prices_return_basis_check CHECK ((return_basis = ANY (ARRAY['price_return'::text, 'gross_total_return'::text, 'net_total_return'::text])))
+);
+
+
+--
 -- Name: companies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -153,6 +211,43 @@ CREATE TABLE public.company_cyclicality_consensus (
     consensus jsonb NOT NULL,
     classified_at timestamp with time zone DEFAULT now() NOT NULL
 );
+
+
+--
+-- Name: company_dividends; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.company_dividends (
+    id bigint NOT NULL,
+    company_id integer NOT NULL,
+    ex_date date NOT NULL,
+    amount numeric(18,6) NOT NULL,
+    currency character varying(3) NOT NULL,
+    dividend_type integer NOT NULL,
+    distribution_frequency text,
+    source text NOT NULL,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT company_dividends_amount_check CHECK ((amount > (0)::numeric))
+);
+
+
+--
+-- Name: company_dividends_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.company_dividends_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: company_dividends_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.company_dividends_id_seq OWNED BY public.company_dividends.id;
 
 
 --
@@ -257,6 +352,81 @@ CREATE SEQUENCE public.company_thesis_revisions_id_seq
 --
 
 ALTER SEQUENCE public.company_thesis_revisions_id_seq OWNED BY public.company_thesis_revisions.id;
+
+
+--
+-- Name: comparative_agent_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.comparative_agent_reviews (
+    id bigint NOT NULL,
+    ranking_run_id integer NOT NULL,
+    status text NOT NULL,
+    raw_response text NOT NULL,
+    content jsonb,
+    final_scores jsonb,
+    created_by text NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    validation_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    validated_at timestamp with time zone,
+    CONSTRAINT comparative_agent_reviews_content_check CHECK (((content IS NULL) OR (jsonb_typeof(content) = 'object'::text))),
+    CONSTRAINT comparative_agent_reviews_final_scores_check CHECK (((final_scores IS NULL) OR (jsonb_typeof(final_scores) = 'array'::text))),
+    CONSTRAINT comparative_agent_reviews_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'accepted'::text, 'rejected'::text])))
+);
+
+
+--
+-- Name: comparative_agent_reviews_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.comparative_agent_reviews_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: comparative_agent_reviews_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.comparative_agent_reviews_id_seq OWNED BY public.comparative_agent_reviews.id;
+
+
+--
+-- Name: dividend_data_coverage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dividend_data_coverage (
+    company_id integer NOT NULL,
+    covered_from date NOT NULL,
+    covered_through date NOT NULL,
+    source text NOT NULL,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT dividend_data_coverage_check CHECK ((covered_from <= covered_through))
+);
+
+
+--
+-- Name: dividend_event_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dividend_event_reviews (
+    company_id integer NOT NULL,
+    ex_date date NOT NULL,
+    amount numeric(18,6) NOT NULL,
+    currency character varying(3) NOT NULL,
+    dividend_type integer NOT NULL,
+    source text NOT NULL,
+    status text NOT NULL,
+    reason text NOT NULL,
+    evidence_url text,
+    reviewed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT dividend_event_reviews_amount_check CHECK ((amount > (0)::numeric)),
+    CONSTRAINT dividend_event_reviews_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'excluded'::text])))
+);
 
 
 --
@@ -542,6 +712,124 @@ ALTER SEQUENCE public.portfolio_runs_id_seq OWNED BY public.portfolio_runs.id;
 
 
 --
+-- Name: ranking_challenger_performance_evaluations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ranking_challenger_performance_evaluations (
+    id bigint NOT NULL,
+    challenger_snapshot_id bigint CONSTRAINT ranking_challenger_performance__challenger_snapshot_id_not_null NOT NULL,
+    horizon_months integer CONSTRAINT ranking_challenger_performance_evaluati_horizon_months_not_null NOT NULL,
+    target_date date NOT NULL,
+    status text NOT NULL,
+    policy_version text CONSTRAINT ranking_challenger_performance_evaluati_policy_version_not_null NOT NULL,
+    result jsonb NOT NULL,
+    evaluated_at timestamp with time zone DEFAULT now() CONSTRAINT ranking_challenger_performance_evaluation_evaluated_at_not_null NOT NULL,
+    CONSTRAINT ranking_challenger_performance_evaluations_horizon_months_check CHECK ((horizon_months > 0)),
+    CONSTRAINT ranking_challenger_performance_evaluations_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'complete'::text])))
+);
+
+
+--
+-- Name: ranking_challenger_performance_evaluations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ranking_challenger_performance_evaluations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ranking_challenger_performance_evaluations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ranking_challenger_performance_evaluations_id_seq OWNED BY public.ranking_challenger_performance_evaluations.id;
+
+
+--
+-- Name: ranking_challenger_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ranking_challenger_snapshots (
+    id bigint NOT NULL,
+    snapshot_month date NOT NULL,
+    source_ranking_run_id integer NOT NULL,
+    source_as_of date NOT NULL,
+    policy_version text NOT NULL,
+    status text NOT NULL,
+    company_count integer NOT NULL,
+    eligible_count integer NOT NULL,
+    affected_company_count integer NOT NULL,
+    scores jsonb NOT NULL,
+    production_top_company_ids jsonb CONSTRAINT ranking_challenger_snapshot_production_top_company_ids_not_null NOT NULL,
+    challenger_top_company_ids jsonb CONSTRAINT ranking_challenger_snapshot_challenger_top_company_ids_not_null NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ranking_challenger_snapshots_affected_company_count_check CHECK ((affected_company_count >= 0)),
+    CONSTRAINT ranking_challenger_snapshots_company_count_check CHECK ((company_count > 0)),
+    CONSTRAINT ranking_challenger_snapshots_eligible_count_check CHECK ((eligible_count >= 0)),
+    CONSTRAINT ranking_challenger_snapshots_status_check CHECK ((status = 'evaluation_only'::text))
+);
+
+
+--
+-- Name: ranking_challenger_snapshots_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ranking_challenger_snapshots_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ranking_challenger_snapshots_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ranking_challenger_snapshots_id_seq OWNED BY public.ranking_challenger_snapshots.id;
+
+
+--
+-- Name: ranking_performance_evaluations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ranking_performance_evaluations (
+    id bigint NOT NULL,
+    ranking_run_id integer NOT NULL,
+    horizon_months integer NOT NULL,
+    target_date date NOT NULL,
+    status text NOT NULL,
+    policy_version text NOT NULL,
+    result jsonb NOT NULL,
+    evaluated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ranking_performance_evaluations_horizon_months_check CHECK ((horizon_months > 0)),
+    CONSTRAINT ranking_performance_evaluations_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'complete'::text, 'insufficient_membership'::text])))
+);
+
+
+--
+-- Name: ranking_performance_evaluations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.ranking_performance_evaluations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ranking_performance_evaluations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.ranking_performance_evaluations_id_seq OWNED BY public.ranking_performance_evaluations.id;
+
+
+--
 -- Name: ranking_runs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -552,7 +840,8 @@ CREATE TABLE public.ranking_runs (
     company_count integer NOT NULL,
     eligible_count integer NOT NULL,
     scores jsonb NOT NULL,
-    inputs_summary jsonb
+    inputs_summary jsonb,
+    snapshot_month date
 );
 
 
@@ -674,6 +963,56 @@ CREATE TABLE public.stock_prices (
 
 
 --
+-- Name: thesis_challenges; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.thesis_challenges (
+    id bigint NOT NULL,
+    company_id integer NOT NULL,
+    thesis_revision_id bigint NOT NULL,
+    question text NOT NULL,
+    challenged_claim text NOT NULL,
+    origin text NOT NULL,
+    severity text NOT NULL,
+    verdict text NOT NULL,
+    status text NOT NULL,
+    content jsonb NOT NULL,
+    created_by text NOT NULL,
+    resolution_note text,
+    resolved_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    response_raw_analysis_id bigint,
+    response_analysis_id bigint,
+    response_thesis_revision_id bigint,
+    CONSTRAINT thesis_challenges_challenged_claim_check CHECK ((length(TRIM(BOTH FROM challenged_claim)) > 0)),
+    CONSTRAINT thesis_challenges_origin_check CHECK ((origin = ANY (ARRAY['human'::text, 'automatic_critic'::text, 'comparative_agent'::text]))),
+    CONSTRAINT thesis_challenges_question_check CHECK ((length(TRIM(BOTH FROM question)) > 0)),
+    CONSTRAINT thesis_challenges_severity_check CHECK ((severity = ANY (ARRAY['low'::text, 'medium'::text, 'high'::text]))),
+    CONSTRAINT thesis_challenges_status_check CHECK ((status = ANY (ARRAY['open'::text, 'upheld'::text, 'revised'::text, 'rejected'::text]))),
+    CONSTRAINT thesis_challenges_verdict_check CHECK ((verdict = ANY (ARRAY['survives'::text, 'revision_required'::text, 'insufficient_evidence'::text, 'reject'::text])))
+);
+
+
+--
+-- Name: thesis_challenges_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.thesis_challenges_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: thesis_challenges_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.thesis_challenges_id_seq OWNED BY public.thesis_challenges.id;
+
+
+--
 -- Name: valuations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -728,6 +1067,13 @@ CREATE TABLE public.watchlist (
 
 
 --
+-- Name: agent_cohort_snapshots id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_cohort_snapshots ALTER COLUMN id SET DEFAULT nextval('public.agent_cohort_snapshots_id_seq'::regclass);
+
+
+--
 -- Name: analysis id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -749,6 +1095,13 @@ ALTER TABLE ONLY public.companies ALTER COLUMN id SET DEFAULT nextval('public.co
 
 
 --
+-- Name: company_dividends id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_dividends ALTER COLUMN id SET DEFAULT nextval('public.company_dividends_id_seq'::regclass);
+
+
+--
 -- Name: company_facts id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -760,6 +1113,13 @@ ALTER TABLE ONLY public.company_facts ALTER COLUMN id SET DEFAULT nextval('publi
 --
 
 ALTER TABLE ONLY public.company_thesis_revisions ALTER COLUMN id SET DEFAULT nextval('public.company_thesis_revisions_id_seq'::regclass);
+
+
+--
+-- Name: comparative_agent_reviews id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comparative_agent_reviews ALTER COLUMN id SET DEFAULT nextval('public.comparative_agent_reviews_id_seq'::regclass);
 
 
 --
@@ -805,6 +1165,27 @@ ALTER TABLE ONLY public.portfolio_runs ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: ranking_challenger_performance_evaluations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_challenger_performance_evaluations ALTER COLUMN id SET DEFAULT nextval('public.ranking_challenger_performance_evaluations_id_seq'::regclass);
+
+
+--
+-- Name: ranking_challenger_snapshots id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_challenger_snapshots ALTER COLUMN id SET DEFAULT nextval('public.ranking_challenger_snapshots_id_seq'::regclass);
+
+
+--
+-- Name: ranking_performance_evaluations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_performance_evaluations ALTER COLUMN id SET DEFAULT nextval('public.ranking_performance_evaluations_id_seq'::regclass);
+
+
+--
 -- Name: ranking_runs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -826,10 +1207,33 @@ ALTER TABLE ONLY public.scrape_runs ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: thesis_challenges id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_challenges ALTER COLUMN id SET DEFAULT nextval('public.thesis_challenges_id_seq'::regclass);
+
+
+--
 -- Name: valuations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.valuations ALTER COLUMN id SET DEFAULT nextval('public.valuations_id_seq'::regclass);
+
+
+--
+-- Name: agent_cohort_snapshots agent_cohort_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_cohort_snapshots
+    ADD CONSTRAINT agent_cohort_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_cohort_snapshots agent_cohort_snapshots_snapshot_month_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_cohort_snapshots
+    ADD CONSTRAINT agent_cohort_snapshots_snapshot_month_key UNIQUE (snapshot_month);
 
 
 --
@@ -846,6 +1250,14 @@ ALTER TABLE ONLY public.analysis
 
 ALTER TABLE ONLY public.annual_reports
     ADD CONSTRAINT annual_reports_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: benchmark_prices benchmark_prices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.benchmark_prices
+    ADD CONSTRAINT benchmark_prices_pkey PRIMARY KEY (series_code, price_date);
 
 
 --
@@ -886,6 +1298,22 @@ ALTER TABLE ONLY public.companies
 
 ALTER TABLE ONLY public.company_cyclicality_consensus
     ADD CONSTRAINT company_cyclicality_consensus_pkey PRIMARY KEY (company_id);
+
+
+--
+-- Name: company_dividends company_dividends_company_id_ex_date_dividend_type_amount_c_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_dividends
+    ADD CONSTRAINT company_dividends_company_id_ex_date_dividend_type_amount_c_key UNIQUE (company_id, ex_date, dividend_type, amount, currency, source);
+
+
+--
+-- Name: company_dividends company_dividends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_dividends
+    ADD CONSTRAINT company_dividends_pkey PRIMARY KEY (id);
 
 
 --
@@ -934,6 +1362,38 @@ ALTER TABLE ONLY public.company_thesis_revisions
 
 ALTER TABLE ONLY public.company_thesis_revisions
     ADD CONSTRAINT company_thesis_revisions_source_analysis_id_key UNIQUE (source_analysis_id);
+
+
+--
+-- Name: comparative_agent_reviews comparative_agent_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comparative_agent_reviews
+    ADD CONSTRAINT comparative_agent_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: comparative_agent_reviews comparative_agent_reviews_ranking_run_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comparative_agent_reviews
+    ADD CONSTRAINT comparative_agent_reviews_ranking_run_id_key UNIQUE (ranking_run_id);
+
+
+--
+-- Name: dividend_data_coverage dividend_data_coverage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dividend_data_coverage
+    ADD CONSTRAINT dividend_data_coverage_pkey PRIMARY KEY (company_id);
+
+
+--
+-- Name: dividend_event_reviews dividend_event_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dividend_event_reviews
+    ADD CONSTRAINT dividend_event_reviews_pkey PRIMARY KEY (company_id, ex_date, amount, currency, dividend_type, source);
 
 
 --
@@ -1017,6 +1477,54 @@ ALTER TABLE ONLY public.portfolio_runs
 
 
 --
+-- Name: ranking_challenger_performance_evaluations ranking_challenger_performanc_challenger_snapshot_id_horizo_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_challenger_performance_evaluations
+    ADD CONSTRAINT ranking_challenger_performanc_challenger_snapshot_id_horizo_key UNIQUE (challenger_snapshot_id, horizon_months, policy_version);
+
+
+--
+-- Name: ranking_challenger_performance_evaluations ranking_challenger_performance_evaluations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_challenger_performance_evaluations
+    ADD CONSTRAINT ranking_challenger_performance_evaluations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ranking_challenger_snapshots ranking_challenger_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_challenger_snapshots
+    ADD CONSTRAINT ranking_challenger_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ranking_challenger_snapshots ranking_challenger_snapshots_snapshot_month_policy_version_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_challenger_snapshots
+    ADD CONSTRAINT ranking_challenger_snapshots_snapshot_month_policy_version_key UNIQUE (snapshot_month, policy_version);
+
+
+--
+-- Name: ranking_performance_evaluations ranking_performance_evaluatio_ranking_run_id_horizon_months_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_performance_evaluations
+    ADD CONSTRAINT ranking_performance_evaluatio_ranking_run_id_horizon_months_key UNIQUE (ranking_run_id, horizon_months);
+
+
+--
+-- Name: ranking_performance_evaluations ranking_performance_evaluations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_performance_evaluations
+    ADD CONSTRAINT ranking_performance_evaluations_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ranking_runs ranking_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1062,6 +1570,14 @@ ALTER TABLE ONLY public.scrape_runs
 
 ALTER TABLE ONLY public.stock_prices
     ADD CONSTRAINT stock_prices_pkey PRIMARY KEY (company_id, price_date);
+
+
+--
+-- Name: thesis_challenges thesis_challenges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_challenges
+    ADD CONSTRAINT thesis_challenges_pkey PRIMARY KEY (id);
 
 
 --
@@ -1120,6 +1636,13 @@ CREATE INDEX idx_companies_sector ON public.companies USING btree (sector);
 --
 
 CREATE INDEX idx_companies_ticker ON public.companies USING btree (ticker);
+
+
+--
+-- Name: idx_company_dividends_company_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_company_dividends_company_date ON public.company_dividends USING btree (company_id, ex_date);
 
 
 --
@@ -1221,6 +1744,34 @@ CREATE INDEX idx_portfolio_runs_created_at ON public.portfolio_runs USING btree 
 
 
 --
+-- Name: idx_ranking_challenger_performance_status_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ranking_challenger_performance_status_target ON public.ranking_challenger_performance_evaluations USING btree (status, target_date);
+
+
+--
+-- Name: idx_ranking_challenger_source_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ranking_challenger_source_run ON public.ranking_challenger_snapshots USING btree (source_ranking_run_id);
+
+
+--
+-- Name: idx_ranking_performance_status_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ranking_performance_status_target ON public.ranking_performance_evaluations USING btree (status, target_date);
+
+
+--
+-- Name: idx_ranking_runs_monthly_model; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_ranking_runs_monthly_model ON public.ranking_runs USING btree (snapshot_month) WHERE (snapshot_month IS NOT NULL);
+
+
+--
 -- Name: idx_research_documents_company_published; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1249,6 +1800,34 @@ CREATE INDEX idx_stock_prices_company_id ON public.stock_prices USING btree (com
 
 
 --
+-- Name: idx_thesis_challenges_open_company; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_thesis_challenges_open_company ON public.thesis_challenges USING btree (company_id, severity, created_at DESC) WHERE (status = 'open'::text);
+
+
+--
+-- Name: idx_thesis_challenges_response_analysis; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_thesis_challenges_response_analysis ON public.thesis_challenges USING btree (response_analysis_id) WHERE (response_analysis_id IS NOT NULL);
+
+
+--
+-- Name: idx_thesis_challenges_response_raw_analysis; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_thesis_challenges_response_raw_analysis ON public.thesis_challenges USING btree (response_raw_analysis_id) WHERE (response_raw_analysis_id IS NOT NULL);
+
+
+--
+-- Name: idx_thesis_challenges_response_revision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_thesis_challenges_response_revision ON public.thesis_challenges USING btree (response_thesis_revision_id) WHERE (response_thesis_revision_id IS NOT NULL);
+
+
+--
 -- Name: idx_valuations_company_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1267,6 +1846,14 @@ CREATE UNIQUE INDEX idx_valuations_unique ON public.valuations USING btree (comp
 --
 
 CREATE INDEX idx_watchlist_user_id ON public.watchlist USING btree (user_id);
+
+
+--
+-- Name: agent_cohort_snapshots agent_cohort_snapshots_deterministic_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_cohort_snapshots
+    ADD CONSTRAINT agent_cohort_snapshots_deterministic_run_id_fkey FOREIGN KEY (deterministic_run_id) REFERENCES public.ranking_runs(id) ON DELETE RESTRICT;
 
 
 --
@@ -1291,6 +1878,14 @@ ALTER TABLE ONLY public.annual_reports
 
 ALTER TABLE ONLY public.company_cyclicality_consensus
     ADD CONSTRAINT company_cyclicality_consensus_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: company_dividends company_dividends_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_dividends
+    ADD CONSTRAINT company_dividends_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
 
 
 --
@@ -1339,6 +1934,30 @@ ALTER TABLE ONLY public.company_thesis_revisions
 
 ALTER TABLE ONLY public.company_thesis_revisions
     ADD CONSTRAINT company_thesis_revisions_source_analysis_id_fkey FOREIGN KEY (source_analysis_id) REFERENCES public.analysis(id);
+
+
+--
+-- Name: comparative_agent_reviews comparative_agent_reviews_ranking_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comparative_agent_reviews
+    ADD CONSTRAINT comparative_agent_reviews_ranking_run_id_fkey FOREIGN KEY (ranking_run_id) REFERENCES public.ranking_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dividend_data_coverage dividend_data_coverage_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dividend_data_coverage
+    ADD CONSTRAINT dividend_data_coverage_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dividend_event_reviews dividend_event_reviews_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dividend_event_reviews
+    ADD CONSTRAINT dividend_event_reviews_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
 
 
 --
@@ -1406,6 +2025,30 @@ ALTER TABLE ONLY public.news_releases
 
 
 --
+-- Name: ranking_challenger_performance_evaluations ranking_challenger_performance_eval_challenger_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_challenger_performance_evaluations
+    ADD CONSTRAINT ranking_challenger_performance_eval_challenger_snapshot_id_fkey FOREIGN KEY (challenger_snapshot_id) REFERENCES public.ranking_challenger_snapshots(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ranking_challenger_snapshots ranking_challenger_snapshots_source_ranking_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_challenger_snapshots
+    ADD CONSTRAINT ranking_challenger_snapshots_source_ranking_run_id_fkey FOREIGN KEY (source_ranking_run_id) REFERENCES public.ranking_runs(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: ranking_performance_evaluations ranking_performance_evaluations_ranking_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ranking_performance_evaluations
+    ADD CONSTRAINT ranking_performance_evaluations_ranking_run_id_fkey FOREIGN KEY (ranking_run_id) REFERENCES public.ranking_runs(id) ON DELETE CASCADE;
+
+
+--
 -- Name: research_documents research_documents_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1419,6 +2062,46 @@ ALTER TABLE ONLY public.research_documents
 
 ALTER TABLE ONLY public.stock_prices
     ADD CONSTRAINT stock_prices_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: thesis_challenges thesis_challenges_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_challenges
+    ADD CONSTRAINT thesis_challenges_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: thesis_challenges thesis_challenges_response_analysis_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_challenges
+    ADD CONSTRAINT thesis_challenges_response_analysis_id_fkey FOREIGN KEY (response_analysis_id) REFERENCES public.analysis(id);
+
+
+--
+-- Name: thesis_challenges thesis_challenges_response_raw_analysis_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_challenges
+    ADD CONSTRAINT thesis_challenges_response_raw_analysis_id_fkey FOREIGN KEY (response_raw_analysis_id) REFERENCES public.analysis(id);
+
+
+--
+-- Name: thesis_challenges thesis_challenges_response_thesis_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_challenges
+    ADD CONSTRAINT thesis_challenges_response_thesis_revision_id_fkey FOREIGN KEY (response_thesis_revision_id) REFERENCES public.company_thesis_revisions(id);
+
+
+--
+-- Name: thesis_challenges thesis_challenges_thesis_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.thesis_challenges
+    ADD CONSTRAINT thesis_challenges_thesis_revision_id_fkey FOREIGN KEY (thesis_revision_id) REFERENCES public.company_thesis_revisions(id) ON DELETE CASCADE;
 
 
 --
@@ -1467,4 +2150,14 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260812130000'),
     ('20260812140000'),
     ('20260816120000'),
-    ('20260816123000');
+    ('20260816123000'),
+    ('20260816130000'),
+    ('20260816131000'),
+    ('20260816132000'),
+    ('20260817120000'),
+    ('20260818120000'),
+    ('20260818130000'),
+    ('20260818140000'),
+    ('20260818150000'),
+    ('20260818160000'),
+    ('20260818170000');

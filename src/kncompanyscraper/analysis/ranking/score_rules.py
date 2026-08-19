@@ -3,6 +3,7 @@ import math
 from typing import TYPE_CHECKING
 
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
+from kncompanyscraper.analysis.ranking.metric import Metric
 
 if TYPE_CHECKING:
     from kncompanyscraper.analysis.financial.financial_result import FinancialResult
@@ -101,6 +102,87 @@ def compute_margin_of_safety(
 # Category scoring
 # ---------------------------------------------------------------------------
 
+def _quality_metrics_definitions(financial, fundamental_kpis) -> list[Metric]:
+    fundamental_kpis = fundamental_kpis or {}
+
+    def _roe_desc(v):
+        p, n = [], []
+        if v >= 0.20:
+            p.append(f"ROE {v:.0%} — strong")
+        elif v <= 0.05:
+            n.append(f"ROE {v:.0%} — weak")
+        return p, n, []
+
+    def _roa_desc(v):
+        p, n = [], []
+        if v >= 0.10:
+            p.append(f"ROA {v:.0%} — strong")
+        elif v <= 0.02:
+            n.append(f"ROA {v:.0%} — weak")
+        return p, n, []
+
+    def _net_margin_desc(v):
+        p, n = [], []
+        if v >= 0.15:
+            p.append(f"Net margin {v:.0%} — strong")
+        elif v <= 0.03:
+            n.append(f"Net margin {v:.0%} — low")
+        return p, n, []
+
+    def _fcf_margin_desc(v):
+        p, n = [], []
+        if v >= 0.15:
+            p.append(f"FCF margin {v:.0%} — strong")
+        elif v <= 0.03:
+            n.append(f"FCF margin {v:.0%} — low")
+        return p, n, []
+
+    def _roic_desc(v):
+        p, n = [], []
+        if v >= 0.15:
+            p.append(f"ROIC {v:.0%} — strong")
+        elif v <= 0.05:
+            n.append(f"ROIC {v:.0%} — weak")
+        return p, n, []
+
+    def _cash_conv_desc(v):
+        p, n = [], []
+        if v >= 1.0:
+            p.append(f"Operating cash conversion {v:.1f}x — strong")
+        elif v < 0.5:
+            n.append(f"Operating cash conversion {v:.1f}x — weak")
+        return p, n, []
+
+    def _margin_vol_desc(v):
+        p, n = [], []
+        if v <= 0.03:
+            p.append("Operating margin has been stable")
+        elif v >= 0.10:
+            n.append("Operating margin has been volatile")
+        return p, n, []
+
+    def _fcf_cons_desc(v):
+        p, n = [], []
+        if v == 1.0:
+            p.append("Free cash flow positive in every observed year")
+        elif v < 0.5:
+            n.append("Free cash flow positive in fewer than half of observed years")
+        return p, n, []
+
+    roic_raw = fundamental_kpis.get(KpiIds.ROIC)
+    roic_val = roic_raw / 100 if roic_raw is not None else None
+
+    return [
+        Metric("roe", lambda: financial.roe, lambda v: _linear_score(v, 0.0, 0.25), transformation="linear[0,0.25]", dependencies=("net_income", "equity"), describe=_roe_desc),
+        Metric("roa", lambda: financial.roa, lambda v: _linear_score(v, 0.0, 0.15), transformation="linear[0,0.15]", dependencies=("net_income", "total_assets"), describe=_roa_desc),
+        Metric("net_margin", lambda: financial.net_margin, lambda v: _linear_score(v, 0.0, 0.20), transformation="linear[0,0.20]", dependencies=("net_income", "revenue"), describe=_net_margin_desc),
+        Metric("fcf_margin", lambda: financial.fcf_margin, lambda v: _linear_score(v, 0.0, 0.20), transformation="linear[0,0.20]", dependencies=("free_cash_flow", "revenue"), describe=_fcf_margin_desc),
+        Metric("roic", lambda: roic_val, lambda v: _linear_score(v, 0.0, 0.20), transformation="linear[0,0.20]", dependencies=("roic_kpi",), describe=_roic_desc),
+        Metric("cash_conversion", lambda: getattr(financial, "cash_conversion", None), lambda v: _linear_score(v, 0.0, 1.0), transformation="linear[0,1]", dependencies=("operating_cash_flow", "operating_profit"), describe=_cash_conv_desc),
+        Metric("operating_margin_stability", lambda: getattr(financial, "operating_margin_volatility", None), lambda v: _inverted_linear_score(v, 0.0, 0.10), transformation="inverted_linear[0,0.10]", dependencies=("historical_operating_margins",), describe=_margin_vol_desc),
+        Metric("fcf_consistency", lambda: getattr(financial, "positive_fcf_ratio", None), lambda v: _linear_score(v, 0.0, 1.0), transformation="linear[0,1]", dependencies=("historical_free_cash_flow",), describe=_fcf_cons_desc),
+    ]
+
 def score_quality(
     financial: FinancialResult | None,
     fundamental_kpis: dict[int, float | None] | None = None,
@@ -108,120 +190,19 @@ def score_quality(
     if financial is None:
         return {"score": 0.0, "positives": [], "negatives": [], "missing": ["financial data not available"]}
 
-    metrics: list[float] = []
-    missing: list[str] = []
-    positives: list[str] = []
-    negatives: list[str] = []
-    has_fundamental_kpis = fundamental_kpis is not None
-    fundamental_kpis = fundamental_kpis or {}
-
-    # ROE: 0→0, 25%→100
-    s = _linear_score(financial.roe, 0.0, 0.25)
-    if s is None:
-        missing.append("ROE not available")
-    else:
-        metrics.append(s)
-        if financial.roe >= 0.20:
-            positives.append(f"ROE {financial.roe:.0%} — strong")
-        elif financial.roe <= 0.05:
-            negatives.append(f"ROE {financial.roe:.0%} — weak")
-
-    # ROA: 0→0, 15%→100
-    s = _linear_score(financial.roa, 0.0, 0.15)
-    if s is None:
-        missing.append("ROA not available")
-    else:
-        metrics.append(s)
-        if financial.roa >= 0.10:
-            positives.append(f"ROA {financial.roa:.0%} — strong")
-        elif financial.roa <= 0.02:
-            negatives.append(f"ROA {financial.roa:.0%} — weak")
-
-    # Net margin: 0→0, 20%→100
-    s = _linear_score(financial.net_margin, 0.0, 0.20)
-    if s is None:
-        missing.append("Net margin not available")
-    else:
-        metrics.append(s)
-        if financial.net_margin >= 0.15:
-            positives.append(f"Net margin {financial.net_margin:.0%} — strong")
-        elif financial.net_margin <= 0.03:
-            negatives.append(f"Net margin {financial.net_margin:.0%} — low")
-
-    # FCF margin: 0→0, 20%→100
-    s = _linear_score(financial.fcf_margin, 0.0, 0.20)
-    if s is None:
-        missing.append("FCF margin not available")
-    else:
-        metrics.append(s)
-        if financial.fcf_margin >= 0.15:
-            positives.append(f"FCF margin {financial.fcf_margin:.0%} — strong")
-        elif financial.fcf_margin <= 0.03:
-            negatives.append(f"FCF margin {financial.fcf_margin:.0%} — low")
-
-    roic_value = fundamental_kpis.get(KpiIds.ROIC)
-    roic = roic_value / 100 if roic_value is not None else None
-    s = _linear_score(roic, 0.0, 0.20)
-    if s is None and has_fundamental_kpis:
-        missing.append("ROIC not available")
-    elif s is not None:
-        metrics.append(s)
-        if roic >= 0.15:
-            positives.append(f"ROIC {roic:.0%} — strong")
-        elif roic <= 0.05:
-            negatives.append(f"ROIC {roic:.0%} — weak")
-
-    cash_conversion = getattr(financial, "cash_conversion", None)
-    s = _linear_score(cash_conversion, 0.0, 1.0)
-    if s is None:
-        missing.append("Operating cash conversion not available")
-    else:
-        metrics.append(s)
-        if cash_conversion >= 1.0:
-            positives.append(
-                f"Operating cash conversion {cash_conversion:.1f}x — strong"
-            )
-        elif cash_conversion < 0.5:
-            negatives.append(
-                f"Operating cash conversion {cash_conversion:.1f}x — weak"
-            )
-
-    margin_volatility = getattr(financial, "operating_margin_volatility", None)
-    s = _inverted_linear_score(margin_volatility, 0.0, 0.10)
-    if s is None:
-        missing.append("Operating margin stability not available")
-    else:
-        metrics.append(s)
-        if margin_volatility <= 0.03:
-            positives.append("Operating margin has been stable")
-        elif margin_volatility >= 0.10:
-            negatives.append("Operating margin has been volatile")
-
-    positive_fcf_ratio = getattr(financial, "positive_fcf_ratio", None)
-    s = _linear_score(positive_fcf_ratio, 0.0, 1.0)
-    if s is None:
-        missing.append("FCF consistency not available")
-    else:
-        metrics.append(s)
-        if positive_fcf_ratio == 1.0:
-            positives.append("Free cash flow positive in every observed year")
-        elif positive_fcf_ratio < 0.5:
-            negatives.append("Free cash flow positive in fewer than half of observed years")
-
-    score = sum(metrics) / len(metrics) if metrics else 0.0
+    metric_defs = _quality_metrics_definitions(financial, fundamental_kpis)
+    results = [m.evaluate() for m in metric_defs]
+    
+    scores = [r.score for r in results if r.score is not None]
+    positives = [p for r in results for p in r.positives]
+    negatives = [n for r in results for n in r.negatives]
+    missing = [m for r in results for m in r.missing]
+    
+    score = sum(scores) / len(scores) if scores else 0.0
     return {"score": score, "positives": positives, "negatives": negatives, "missing": missing}
 
 
-def score_growth(financial: FinancialResult | None) -> dict:
-    if financial is None:
-        return {"score": 0.0, "positives": [], "negatives": [], "missing": ["financial data not available"]}
-
-    metrics: list[float] = []
-    missing: list[str] = []
-    positives: list[str] = []
-    negatives: list[str] = []
-    flags: list[str] = []
-
+def _growth_metrics_definitions(financial) -> list[Metric]:
     revenue_per_share_growth = getattr(financial, "revenue_per_share_growth", None)
     ebit_per_share_growth = getattr(financial, "ebit_per_share_growth", None)
     net_income_per_share_growth = getattr(financial, "net_income_per_share_growth", None)
@@ -234,122 +215,202 @@ def score_growth(financial: FinancialResult | None) -> dict:
         else financial.net_income_growth
     )
     per_share_basis = revenue_per_share_growth is not None
-
     revenue_turnaround = getattr(financial, "revenue_turnaround", False)
     revenue_deterioration = getattr(financial, "revenue_deterioration", False)
     revenue_years = getattr(financial, "revenue_growth_years", 1)
-    if revenue_turnaround:
-        metrics.append(50.0)
-        positives.append("Revenue returned to positive territory")
-    elif revenue_deterioration:
-        metrics.append(0.0)
-        negatives.append("Revenue turned non-positive")
-    else:
-        s = _growth_score(revenue_growth, 0.20)
-        if s is not None:
-            metrics.append(s)
-    if revenue_growth is None and not revenue_turnaround and not revenue_deterioration:
-        missing.append("Revenue growth not available")
-    elif revenue_growth is not None:
-        years = per_share_growth_years if per_share_basis else revenue_years
-        period = f"{years}y CAGR" if years > 1 else "YoY"
-        label = "Revenue/share growth" if per_share_basis else "Revenue growth"
-        if revenue_growth >= 0.15:
-            positives.append(f"{label} {revenue_growth:.0%} ({period}) — strong")
-        elif revenue_growth <= -0.05:
-            negatives.append(f"{label} {revenue_growth:.0%} ({period}) — declining")
-
     ebit_turnaround = getattr(financial, "ebit_turnaround", False)
     ebit_deterioration = getattr(financial, "ebit_deterioration", False)
     ebit_years = getattr(financial, "ebit_growth_years", 1)
-    if ebit_turnaround:
-        metrics.append(50.0)
-        positives.append("EBIT returned to profit; percentage growth is not meaningful")
-    elif ebit_deterioration:
-        metrics.append(0.0)
-        negatives.append("EBIT turned negative")
-    else:
-        s = _growth_score(ebit_growth, 0.30)
-        if s is not None:
-            if getattr(financial, "earnings_growth_one_off_risk", False):
-                s = min(s, 60.0)
-            metrics.append(s)
-    if ebit_growth is None and not ebit_turnaround and not ebit_deterioration:
-        missing.append("EBIT growth not available")
-    elif ebit_growth is not None:
-        years = per_share_growth_years if ebit_per_share_growth is not None else ebit_years
-        period = f"{years}y CAGR" if years > 1 else "YoY"
-        label = "EBIT/share growth" if ebit_per_share_growth is not None else "EBIT growth"
-        if ebit_growth >= 0.15:
-            positives.append(f"{label} {ebit_growth:.0%} ({period}) — strong")
-        elif ebit_growth <= -0.05:
-            negatives.append(f"{label} {ebit_growth:.0%} ({period}) — declining")
-
     net_income_turnaround = getattr(financial, "net_income_turnaround", False)
     net_income_deterioration = getattr(financial, "net_income_deterioration", False)
     net_income_years = getattr(financial, "net_income_growth_years", 1)
-    if net_income_turnaround:
-        metrics.append(50.0)
-        positives.append("Net income returned to profit; percentage growth is not meaningful")
-    elif net_income_deterioration:
-        metrics.append(0.0)
-        negatives.append("Net income turned negative")
-    else:
-        s = _growth_score(net_income_growth, 0.30)
-        if s is not None:
-            if getattr(financial, "earnings_growth_one_off_risk", False):
-                s = min(s, 60.0)
-            metrics.append(s)
-    if net_income_growth is None and not net_income_turnaround and not net_income_deterioration:
-        missing.append("Net income growth not available")
-    elif net_income_growth is not None:
-        years = (
-            per_share_growth_years
-            if net_income_per_share_growth is not None
-            else net_income_years
-        )
-        period = f"{years}y CAGR" if years > 1 else "YoY"
-        label = (
-            "Net income/share growth"
-            if net_income_per_share_growth is not None
-            else "Net income growth"
-        )
-        if net_income_growth >= 0.15:
-            positives.append(f"{label} {net_income_growth:.0%} ({period}) — strong")
-        elif net_income_growth <= -0.05:
-            negatives.append(f"{label} {net_income_growth:.0%} ({period}) — declining")
-
+    one_off_risk = getattr(financial, "earnings_growth_one_off_risk", False)
     recent_revenue_growth = getattr(financial, "recent_revenue_growth", None)
-    if recent_revenue_growth is not None:
-        metrics.append(_growth_score(recent_revenue_growth, 0.20) or 0.0)
+
+    def _revenue_raw():
+        return revenue_growth
+
+    def _revenue_score(v):
+        if revenue_turnaround: return 50.0
+        if revenue_deterioration: return 0.0
+        return _growth_score(v, 0.20)
+
+    def _revenue_desc(v):
+        p, n = [], []
+        if revenue_turnaround:
+            p.append("Revenue returned to positive territory")
+        elif revenue_deterioration:
+            n.append("Revenue turned non-positive")
+        if v is not None:
+            years = per_share_growth_years if per_share_basis else revenue_years
+            period = f"{years}y CAGR" if years > 1 else "YoY"
+            label = "Revenue/share growth" if per_share_basis else "Revenue growth"
+            if v >= 0.15: p.append(f"{label} {v:.0%} ({period}) — strong")
+            elif v <= -0.05: n.append(f"{label} {v:.0%} ({period}) — declining")
+        return p, n, []
+
+    def _ebit_raw():
+        return ebit_growth
+
+    def _ebit_score(v):
+        if ebit_turnaround: return 50.0
+        if ebit_deterioration: return 0.0
+        s = _growth_score(v, 0.30)
+        if s is not None and one_off_risk:
+            s = min(s, 60.0)
+        return s
+
+    def _ebit_desc(v):
+        p, n = [], []
+        if ebit_turnaround:
+            p.append("EBIT returned to profit; percentage growth is not meaningful")
+        elif ebit_deterioration:
+            n.append("EBIT turned negative")
+        if v is not None:
+            years = per_share_growth_years if ebit_per_share_growth is not None else ebit_years
+            period = f"{years}y CAGR" if years > 1 else "YoY"
+            label = "EBIT/share growth" if ebit_per_share_growth is not None else "EBIT growth"
+            if v >= 0.15: p.append(f"{label} {v:.0%} ({period}) — strong")
+            elif v <= -0.05: n.append(f"{label} {v:.0%} ({period}) — declining")
+        return p, n, []
+
+    def _net_income_raw():
+        return net_income_growth
+
+    def _net_income_score(v):
+        if net_income_turnaround: return 50.0
+        if net_income_deterioration: return 0.0
+        s = _growth_score(v, 0.30)
+        if s is not None and one_off_risk:
+            s = min(s, 60.0)
+        return s
+
+    def _net_income_desc(v):
+        p, n = [], []
+        if net_income_turnaround:
+            p.append("Net income returned to profit; percentage growth is not meaningful")
+        elif net_income_deterioration:
+            n.append("Net income turned negative")
+        if v is not None:
+            years = per_share_growth_years if net_income_per_share_growth is not None else net_income_years
+            period = f"{years}y CAGR" if years > 1 else "YoY"
+            label = "Net income/share growth" if net_income_per_share_growth is not None else "Net income growth"
+            if v >= 0.15: p.append(f"{label} {v:.0%} ({period}) — strong")
+            elif v <= -0.05: n.append(f"{label} {v:.0%} ({period}) — declining")
+        return p, n, []
+
+    def _recent_rev_desc(v):
+        p, n, f = [], [], []
         if getattr(financial, "recent_growth_acceleration", False):
-            positives.append(
-                f"Latest-quarter revenue growth {recent_revenue_growth:.0%} — accelerating"
-            )
+            p.append(f"Latest-quarter revenue growth {v:.0%} — accelerating")
         elif getattr(financial, "recent_growth_slowdown", False):
-            negatives.append(
-                f"Latest-quarter revenue growth {recent_revenue_growth:.0%} — slowing"
-            )
-            flags.append("recent_growth_slowdown")
+            n.append(f"Latest-quarter revenue growth {v:.0%} — slowing")
+            f.append("recent_growth_slowdown")
+        return p, n, f
 
-    if getattr(financial, "share_dilution", False):
-        negatives.append(
-            f"Share count growth {getattr(financial, 'share_count_growth', 0.0):.0%} — dilution"
+    def _dilution_desc(_):
+        n, f = [], []
+        if getattr(financial, "share_dilution", False):
+            n.append(f"Share count growth {getattr(financial, 'share_count_growth', 0.0):.0%} — dilution")
+            f.append("share_dilution")
+        return [], n, f
+
+    def _one_off_desc(_):
+        n = []
+        if one_off_risk:
+            n.append("Exceptional earnings jump versus revenue — possible one-off or base effect")
+        return [], n, []
+
+    return [
+        Metric("revenue_growth", _revenue_raw, _revenue_score, transformation="growth[scale=0.20]", dependencies=("revenue",), describe=_revenue_desc),
+        Metric("ebit_growth", _ebit_raw, _ebit_score, transformation="growth[scale=0.30]", dependencies=("ebit",), describe=_ebit_desc),
+        Metric("net_income_growth", _net_income_raw, _net_income_score, transformation="growth[scale=0.30]", dependencies=("net_income",), describe=_net_income_desc),
+        Metric("recent_revenue_growth", lambda: recent_revenue_growth, lambda v: _growth_score(v, 0.20) if v is not None else None, transformation="growth[scale=0.20]", dependencies=("recent_revenue",), describe=_recent_rev_desc),
+        Metric("share_dilution", lambda: 1.0 if getattr(financial, "share_dilution", False) else 0.0, lambda _: None, weight=0.0, transformation="flag_only", describe=_dilution_desc),
+        Metric("earnings_one_off_risk", lambda: 1.0 if one_off_risk else 0.0, lambda _: None, weight=0.0, transformation="flag_only", describe=_one_off_desc),
+    ]
+
+def score_growth(financial: FinancialResult | None) -> dict:
+    if financial is None:
+        return {"score": 0.0, "positives": [], "negatives": [], "missing": ["financial data not available"]}
+
+    metric_defs = _growth_metrics_definitions(financial)
+    results = [m.evaluate() for m in metric_defs]
+    
+    scores = [r.score for r in results if r.score is not None]
+    positives = [p for r in results for p in r.positives]
+    negatives = [n for r in results for n in r.negatives]
+    missing = [m for r in results for m in r.missing if r.weight > 0]
+    flags = [f for r in results for f in r.flags]
+    
+    score = sum(scores) / len(scores) if scores else 0.0
+    return {"score": score, "positives": positives, "negatives": negatives, "missing": missing, "flags": flags}
+
+
+def _valuation_metrics_definitions(valuation, debt_to_equity, quality_score, growth_score) -> list[Metric]:
+    raw_earnings_yield = getattr(valuation, "raw_earnings_yield", None)
+    raw_fcf_yield = getattr(valuation, "raw_fcf_yield", None)
+    earnings_yield = (
+        raw_earnings_yield if raw_earnings_yield is not None else valuation.earnings_yield
+    )
+    fcf_yield = raw_fcf_yield if raw_fcf_yield is not None else valuation.free_cash_flow_yield
+
+    def _fcf_yield_desc(v):
+        p, n = [], []
+        if v >= 0.08: p.append(f"FCF yield {v:.1%} — attractive")
+        elif v < 0: n.append(f"Free cash flow is negative (yield {v:.1%})")
+        elif v <= 0.02: n.append(f"FCF yield {v:.1%} — expensive")
+        return p, n, []
+
+    def _earn_yield_desc(v):
+        p, n = [], []
+        if v >= 0.08: p.append(f"Earnings yield {v:.1%} — attractive")
+        elif v <= 0.02: n.append(f"Earnings yield {v:.1%} — expensive")
+        return p, n, []
+
+    def _ev_ebit_desc(v):
+        p, n = [], []
+        if v <= 20: p.append(f"EV/EBIT at {v:.0f}th percentile — cheap vs history")
+        elif v >= 80: n.append(f"EV/EBIT at {v:.0f}th percentile — expensive vs history")
+        return p, n, []
+
+    def _pe_desc(v):
+        p, n = [], []
+        if v <= 20: p.append(f"PE at {v:.0f}th percentile — cheap vs history")
+        elif v >= 80: n.append(f"PE at {v:.0f}th percentile — expensive vs history")
+        return p, n, []
+
+    def _mos_raw():
+        return compute_margin_of_safety(
+            fcf_yield,
+            debt_to_equity=debt_to_equity,
+            quality_score=quality_score if quality_score is not None else 50.0,
+            growth_score=growth_score if growth_score is not None else 50.0,
         )
-        flags.append("share_dilution")
 
-    if getattr(financial, "earnings_growth_one_off_risk", False):
-        negatives.append("Exceptional earnings jump versus revenue — possible one-off or base effect")
+    def _mos_desc(v):
+        p, n, f = [], [], []
+        if v is not None:
+            if v >= 0.03:
+                p.append(f"Margin of safety {v:.1%} — large discount to required return")
+            elif fcf_yield is not None and fcf_yield < 0:
+                n.append("No FCF-based margin of safety while free cash flow is negative")
+            elif v <= -0.03:
+                n.append(f"Margin of safety {v:.1%} — trading above required return")
+            
+            if v <= -0.02:
+                f.append("low_margin_of_safety")
+        return p, n, f
 
-    score = sum(metrics) / len(metrics) if metrics else 0.0
-    return {
-        "score": score,
-        "positives": positives,
-        "negatives": negatives,
-        "missing": missing,
-        "flags": flags,
-    }
-
+    return [
+        Metric("fcf_yield", lambda: fcf_yield, lambda v: _linear_score(v, 0.0, 0.10), weight=0.24, transformation="linear[0,0.10]", dependencies=("free_cash_flow", "market_cap"), describe=_fcf_yield_desc),
+        Metric("earnings_yield", lambda: earnings_yield, lambda v: _linear_score(v, 0.0, 0.10), weight=0.16, transformation="linear[0,0.10]", dependencies=("net_income", "market_cap"), describe=_earn_yield_desc),
+        Metric("ev_ebit_percentile", lambda: valuation.ev_ebit_percentile, lambda v: _inverted_linear_score(v, 0.0, 100.0), weight=0.16, transformation="inverted_linear[0,100]", dependencies=("ev_ebit_history",), describe=_ev_ebit_desc),
+        Metric("pe_percentile", lambda: valuation.pe_percentile, lambda v: _inverted_linear_score(v, 0.0, 100.0), weight=0.12, transformation="inverted_linear[0,100]", dependencies=("pe_history",), describe=_pe_desc),
+        Metric("margin_of_safety", _mos_raw, lambda v: _linear_score(v, -0.05, 0.05), weight=0.12, transformation="linear[-0.05,0.05]", dependencies=("fcf_yield", "debt_to_equity", "quality_score", "growth_score"), cross_category_dependencies=("quality", "growth"), describe=_mos_desc),
+        Metric("price_to_book", lambda: valuation.price_to_book, lambda v: _inverted_linear_score(v, 0.0, 5.0), weight=0.10, transformation="inverted_linear[0,5.0]", dependencies=("equity", "market_cap")),
+        Metric("dividend_yield", lambda: valuation.dividend_yield, lambda v: _linear_score(v, 0.0, 0.07), weight=0.10, transformation="linear[0,0.07]", dependencies=("dividends", "market_cap")),
+    ]
 
 def score_valuation(
     valuation: ValuationResult | None,
@@ -360,100 +421,65 @@ def score_valuation(
     if valuation is None:
         return {"score": 0.0, "positives": [], "negatives": [], "missing": ["valuation data not available"]}
 
-    scored: list[tuple[float | None, float]] = []  # (score, weight)
-    missing: list[str] = []
-    positives: list[str] = []
-    negatives: list[str] = []
+    metric_defs = _valuation_metrics_definitions(valuation, debt_to_equity, quality_score, growth_score)
+    results = [m.evaluate() for m in metric_defs]
+    
+    available = [r for r in results if r.score is not None]
+    total_weight = sum(r.weight for r in available)
+    score = sum(r.score * r.weight for r in available) / total_weight if total_weight else 0.0
+    
+    positives = [p for r in results for p in r.positives]
+    negatives = [n for r in results for n in r.negatives]
+    missing = [m for r in results for m in r.missing]
+    flags = [f for r in results for f in r.flags]
+    
+    return {"score": score, "positives": positives, "negatives": negatives, "missing": missing, "flags": flags, "available": bool(available)}
 
-    # Prefer raw-derived yields when available (fresher, from latest close).
-    # Fall back to KPI-derived yields otherwise.
-    raw_earnings_yield = getattr(valuation, "raw_earnings_yield", None)
-    raw_fcf_yield = getattr(valuation, "raw_fcf_yield", None)
-    earnings_yield = (
-        raw_earnings_yield if raw_earnings_yield is not None else valuation.earnings_yield
-    )
-    fcf_yield = raw_fcf_yield if raw_fcf_yield is not None else valuation.free_cash_flow_yield
 
-    # --- FCF yield: 0→0, 10%→100  (weight: 24%) ---
-    s = _linear_score(fcf_yield, 0.0, 0.10)
-    if s is None:
-        missing.append("FCF yield not available")
-    else:
-        scored.append((s, 0.24))
-        if fcf_yield >= 0.08:
-            positives.append(f"FCF yield {fcf_yield:.1%} — attractive")
-        elif fcf_yield < 0:
-            negatives.append(f"Free cash flow is negative (yield {fcf_yield:.1%})")
-        elif fcf_yield <= 0.02:
-            negatives.append(f"FCF yield {fcf_yield:.1%} — expensive")
+def _balance_metrics_definitions(financial, fundamental_kpis) -> list[Metric]:
+    has_fundamental_kpis = fundamental_kpis is not None
+    fundamental_kpis = fundamental_kpis or {}
+    dte = financial.debt_to_equity
+    net_debt = getattr(financial, "net_debt", None)
+    equity = getattr(financial, "equity", None)
+    net_debt_ebitda = fundamental_kpis.get(KpiIds.NET_DEBT_EBITDA)
 
-    # --- Earnings yield: 0→0, 10%→100  (weight: 16%) ---
-    s = _linear_score(earnings_yield, 0.0, 0.10)
-    if s is None:
-        missing.append("Earnings yield not available")
-    else:
-        scored.append((s, 0.16))
-        if earnings_yield >= 0.08:
-            positives.append(f"Earnings yield {earnings_yield:.1%} — attractive")
-        elif earnings_yield <= 0.02:
-            negatives.append(f"Earnings yield {earnings_yield:.1%} — expensive")
+    def _dte_score(v):
+        if equity is not None and equity <= 0: return 0.0
+        if net_debt is not None and net_debt < 0: return 100.0
+        if v is None: return None
+        if v < 0: return 0.0
+        if v == 0: return 100.0
+        return _inverted_linear_score(v, 0.0, 2.0)
 
-    # --- EV/EBIT percentile (inverted)  (weight: 16%) ---
-    s = _inverted_linear_score(valuation.ev_ebit_percentile, 0.0, 100.0)
-    if s is None:
-        missing.append("EV/EBIT percentile not available")
-    else:
-        scored.append((s, 0.16))
-        if valuation.ev_ebit_percentile <= 20:
-            positives.append(f"EV/EBIT at {valuation.ev_ebit_percentile:.0f}th percentile — cheap vs history")
-        elif valuation.ev_ebit_percentile >= 80:
-            negatives.append(f"EV/EBIT at {valuation.ev_ebit_percentile:.0f}th percentile — expensive vs history")
+    def _dte_desc(v):
+        p, n = [], []
+        if equity is not None and equity <= 0:
+            n.append("Negative equity — balance-sheet risk")
+        elif net_debt is not None and net_debt < 0:
+            p.append("Net cash position")
+        elif v is not None:
+            if v < 0: n.append(f"D/E {v:.1f}x — negative equity or invalid")
+            elif v == 0: p.append("Net D/E 0.0x — no debt")
+            elif v <= 0.3: p.append(f"Net D/E {v:.1f}x — low leverage")
+            elif v >= 1.5: n.append(f"Net D/E {v:.1f}x — high leverage")
+        return p, n, []
 
-    # --- PE percentile (inverted)  (weight: 12%) ---
-    s = _inverted_linear_score(valuation.pe_percentile, 0.0, 100.0)
-    if s is None:
-        missing.append("PE percentile not available")
-    else:
-        scored.append((s, 0.12))
-        if valuation.pe_percentile <= 20:
-            positives.append(f"PE at {valuation.pe_percentile:.0f}th percentile — cheap vs history")
-        elif valuation.pe_percentile >= 80:
-            negatives.append(f"PE at {valuation.pe_percentile:.0f}th percentile — expensive vs history")
+    def _nde_score(v):
+        if equity is not None and equity <= 0: return None
+        return _inverted_linear_score(v, 0.0, 4.0)
 
-    # --- Margin of safety  (weight: 12%) ---
-    mos = compute_margin_of_safety(
-        fcf_yield,
-        debt_to_equity=debt_to_equity,
-        quality_score=quality_score if quality_score is not None else 50.0,
-        growth_score=growth_score if growth_score is not None else 50.0,
-    )
-    # Margin of safety: -5% → 0, +5% → 100
-    s = _linear_score(mos, -0.05, 0.05)
-    if s is None:
-        missing.append("Margin of safety not available")
-    else:
-        scored.append((s, 0.12))
-        if mos >= 0.03:
-            positives.append(f"Margin of safety {mos:.1%} — large discount to required return")
-        elif fcf_yield is not None and fcf_yield < 0:
-            negatives.append("No FCF-based margin of safety while free cash flow is negative")
-        elif mos <= -0.03:
-            negatives.append(f"Margin of safety {mos:.1%} — trading above required return")
+    def _nde_desc(v):
+        p, n = [], []
+        if v is not None:
+            if v <= 1: p.append(f"Net debt/EBITDA {v:.1f}x — low")
+            elif v >= 3: n.append(f"Net debt/EBITDA {v:.1f}x — high")
+        return p, n, []
 
-    if scored:
-        total_weight = sum(w for _, w in scored)
-        score = sum(s * w for s, w in scored) / total_weight if total_weight > 0 else 0.0
-    else:
-        score = 0.0
-
-    return {
-        "score": score,
-        "positives": positives,
-        "negatives": negatives,
-        "missing": missing,
-        "flags": [],
-    }
-
+    return [
+        Metric("debt_to_equity", lambda: dte, _dte_score, transformation="inverted_linear[0,2.0]", dependencies=("total_debt", "equity"), describe=_dte_desc),
+        Metric("net_debt_ebitda", lambda: net_debt_ebitda, _nde_score, transformation="inverted_linear[0,4.0]", dependencies=("net_debt", "ebitda"), describe=_nde_desc),
+    ]
 
 def score_balance_sheet(
     financial: FinancialResult | None,
@@ -462,51 +488,13 @@ def score_balance_sheet(
     if financial is None:
         return {"score": 0.0, "positives": [], "negatives": [], "missing": ["financial data not available"]}
 
-    metrics: list[float] = []
-    missing: list[str] = []
-    positives: list[str] = []
-    negatives: list[str] = []
-    has_fundamental_kpis = fundamental_kpis is not None
-    fundamental_kpis = fundamental_kpis or {}
-
-    dte = financial.debt_to_equity
-    net_debt = getattr(financial, "net_debt", None)
-    equity = getattr(financial, "equity", None)
-    if equity is not None and equity <= 0:
-        metrics.append(0.0)
-        negatives.append("Negative equity — balance-sheet risk")
-    elif net_debt is not None and net_debt < 0:
-        metrics.append(100.0)
-        positives.append("Net cash position")
-    elif dte is None:
-        missing.append("Debt/equity not available")
-    elif dte < 0:
-        # Legacy/fallback path when the underlying signs are unavailable.
-        metrics.append(0.0)
-        negatives.append(f"D/E {dte:.1f}x — negative equity or invalid")
-    elif dte == 0:
-        # No debt — excellent
-        metrics.append(100.0)
-        positives.append("Net D/E 0.0x — no debt")
-    else:
-        s = _inverted_linear_score(dte, 0.0, 2.0)
-        metrics.append(s)
-        if dte <= 0.3:
-            positives.append(f"Net D/E {dte:.1f}x — low leverage")
-        elif dte >= 1.5:
-            negatives.append(f"Net D/E {dte:.1f}x — high leverage")
-
-    net_debt_ebitda = fundamental_kpis.get(KpiIds.NET_DEBT_EBITDA)
-    if equity is None or equity > 0:
-        s = _inverted_linear_score(net_debt_ebitda, 0.0, 4.0)
-        if s is None and has_fundamental_kpis:
-            missing.append("Net debt/EBITDA not available")
-        elif s is not None:
-            metrics.append(s)
-            if net_debt_ebitda <= 1:
-                positives.append(f"Net debt/EBITDA {net_debt_ebitda:.1f}x — low")
-            elif net_debt_ebitda >= 3:
-                negatives.append(f"Net debt/EBITDA {net_debt_ebitda:.1f}x — high")
-
-    score = sum(metrics) / len(metrics) if metrics else 0.0
+    metric_defs = _balance_metrics_definitions(financial, fundamental_kpis)
+    results = [m.evaluate() for m in metric_defs]
+    
+    scores = [r.score for r in results if r.score is not None]
+    positives = [p for r in results for p in r.positives]
+    negatives = [n for r in results for n in r.negatives]
+    missing = [m for r in results for m in r.missing]
+    
+    score = sum(scores) / len(scores) if scores else 0.0
     return {"score": score, "positives": positives, "negatives": negatives, "missing": missing}

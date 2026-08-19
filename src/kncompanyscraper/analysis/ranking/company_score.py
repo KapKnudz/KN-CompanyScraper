@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Literal
+from kncompanyscraper.models.enums import DataQuality, RankingModel
 
 
 @dataclass
@@ -20,11 +20,12 @@ class CompanyScore:
     missing_data: list[str] = field(default_factory=list)
     flags: list[str] = field(default_factory=list)
 
-    data_quality: Literal["high", "medium", "low"] = "medium"
+    data_quality: DataQuality = DataQuality.MEDIUM
     candidate_reason: str | None = None
-    ranking_model: Literal["general", "bank", "property"] = "general"
+    ranking_model: RankingModel = RankingModel.GENERAL
     rank_eligible: bool = True
     eligibility_reasons: list[str] = field(default_factory=list)
+    scoring_audit: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -45,6 +46,7 @@ class CompanyScore:
             "ranking_model": self.ranking_model,
             "rank_eligible": self.rank_eligible,
             "eligibility_reasons": self.eligibility_reasons,
+            "scoring_audit": self.scoring_audit,
         }
 
 

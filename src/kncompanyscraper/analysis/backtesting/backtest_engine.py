@@ -1,19 +1,26 @@
 from __future__ import annotations
 
 import math
+from calendar import monthrange
 from datetime import date, timedelta
 from statistics import mean
 from typing import TYPE_CHECKING
 
 from kncompanyscraper.analysis.backtesting.backtest_result import (
     CategoryCorrelation,
+    CompanyAttribution,
     DecilePerformance,
+    MetricAttribution,
     PeriodResult,
 )
 from kncompanyscraper.analysis.financial.financial_calculator import FinancialCalculator
 from kncompanyscraper.analysis.financial.financial_mapper import FinancialMapper
 from kncompanyscraper.analysis.financial.financial_result import FinancialResult
 from kncompanyscraper.analysis.ranking.ranking_engine import RankingEngine
+from kncompanyscraper.analysis.realized_total_return import (
+    RealizedReturnObservation,
+    RealizedTotalReturnCalculator,
+)
 from kncompanyscraper.analysis.valuation.raw_valuation import (
     compute_raw_valuation,
 )
@@ -44,6 +51,7 @@ _NUM_DECILES = 10
 _ANNUAL_REPORT_LAG_DAYS = 90
 _INTERIM_REPORT_LAG_DAYS = 45
 _MAX_PRICE_AGE_DAYS = 7
+_RETURN_HORIZONS = (6, 12, 24, 36, 48)
 
 # KPIs we try to reconstruct from snapshot history for each backtest date.
 _HISTORICAL_KPIS = (
@@ -59,6 +67,8 @@ _HISTORICAL_KPIS = (
     KpiIds.ENTERPRISE_VALUE,
     KpiIds.ROIC,
     KpiIds.NET_DEBT_EBITDA,
+    *KpiIds.PROPERTY_KPIS,
+    *KpiIds.BANK_KPIS,
 )
 
 
@@ -68,10 +78,22 @@ class BacktestEngine:
         company_repository: CompanyRepository,
         financial_repository: FinancialRepository,
         valuation_repository: ValuationRepository,
+        dividend_repository=None,
+        benchmark_repository=None,
     ):
         self.company_repository = company_repository
         self.financial_repository = financial_repository
         self.valuation_repository = valuation_repository
+        self.dividend_repository = dividend_repository
+        self.benchmark_repository = benchmark_repository
+        self.total_return_calculator = (
+            RealizedTotalReturnCalculator(
+                valuation_repository,
+                dividend_repository,
+            )
+            if dividend_repository is not None
+            else None
+        )
         self.financial_mapper = FinancialMapper()
         self.financial_calculator = FinancialCalculator()
         self.valuation_mapper = ValuationMapper()
@@ -116,9 +138,15 @@ class BacktestEngine:
     def _find_period_dates(self, num_periods: int) -> list[date]:
         """Return one market-wide observation date per calendar month."""
         today = date.today()
+        return_cutoff = today - timedelta(days=365)
+        last_complete_month_end = date(
+            return_cutoff.year,
+            return_cutoff.month,
+            1,
+        ) - timedelta(days=1)
         dates = self.valuation_repository.get_backtest_month_end_dates(
-            min_date=today - timedelta(days=3 * 365),
-            max_date=today - timedelta(days=365),
+            min_date=today - timedelta(days=(num_periods + 48) * 31),
+            max_date=last_complete_month_end,
         )
         return dates[-num_periods:]
 
@@ -128,7 +156,8 @@ class BacktestEngine:
 
     def _run_single_period(self, companies, period_date: date) -> PeriodResult | None:
         results_by_company: dict[int, dict] = {}
-        forward_returns: dict[int, tuple[float | None, float | None]] = {}
+        forward_returns: dict[int, dict[int, float | None]] = {}
+        forward_observations = {}
 
         for company in companies:
             observation_price = self.valuation_repository.get_stock_price_on_date(
@@ -152,7 +181,15 @@ class BacktestEngine:
                 "sector_kpis": sector_kpis,
                 "fundamental_kpis": fundamental_kpis,
             }
-            forward_returns[company.id] = self._forward_returns(company.id, period_date)
+            observations = self._forward_return_observations_by_horizon(
+                company.id,
+                period_date,
+            )
+            forward_observations[company.id] = observations
+            forward_returns[company.id] = {
+                horizon: observation.total_return
+                for horizon, observation in observations.items()
+            }
 
         if not results_by_company:
             return None
@@ -165,37 +202,86 @@ class BacktestEngine:
             return None
 
         deciles = self._build_deciles(eligible, forward_returns)
-
+        companies_by_id = {company.id: company for company in companies}
         top = deciles[0] if deciles else None
         bot = deciles[-1] if deciles else None
-        spread_6m = (
-            (top.avg_6m_return - bot.avg_6m_return)
-            if top is not None
-            and top.avg_6m_return is not None
-            and bot is not None
-            and bot.avg_6m_return is not None
-            else None
+        spreads = {}
+        for horizon in _RETURN_HORIZONS:
+            top_return = getattr(top, f"avg_{horizon}m_return", None)
+            bottom_return = getattr(bot, f"avg_{horizon}m_return", None)
+            spreads[horizon] = (
+                top_return - bottom_return
+                if top_return is not None and bottom_return is not None
+                else None
+            )
+        benchmarks = {
+            horizon: self._benchmark_return_for_horizon(period_date, horizon)
+            for horizon in _RETURN_HORIZONS
+        }
+        attributions = self._build_attributions(
+            period_date,
+            eligible,
+            companies_by_id,
+            forward_observations,
+            results_by_company,
+            benchmarks,
         )
-        spread_12m = (
-            (top.avg_12m_return - bot.avg_12m_return)
-            if top is not None
-            and top.avg_12m_return is not None
-            and bot is not None
-            and bot.avg_12m_return is not None
-            else None
+        metric_attributions = self._build_metric_attributions(
+            period_date,
+            eligible,
+            companies_by_id,
+            forward_observations,
+            benchmarks,
         )
+        top_excess = {}
+        for horizon in _RETURN_HORIZONS:
+            top_return = getattr(top, f"avg_{horizon}m_return", None)
+            benchmark_return = benchmarks[horizon]
+            top_excess[horizon] = (
+                top_return - benchmark_return
+                if top_return is not None and benchmark_return is not None
+                else None
+            )
+        eligible_ids = [score.company_id for score in eligible]
+        missing = {
+            horizon: tuple(
+                company_id
+                for company_id in eligible_ids
+                if forward_observations[company_id][horizon].total_return is None
+            )
+            for horizon in _RETURN_HORIZONS
+        }
 
         # Category correlations
         correlations = self._compute_category_correlations(eligible, forward_returns)
 
+        horizon_fields = {}
+        for horizon in _RETURN_HORIZONS:
+            horizon_fields.update(
+                {
+                    f"top_decile_spread_{horizon}m": spreads[horizon],
+                    f"benchmark_{horizon}m_return": benchmarks[horizon],
+                    f"top_decile_excess_{horizon}m": top_excess[horizon],
+                    f"return_coverage_{horizon}m_count": (
+                        len(eligible_ids) - len(missing[horizon])
+                    ),
+                    f"missing_return_company_ids_{horizon}m": missing[horizon],
+                }
+            )
         return PeriodResult(
             observation_date=period_date.isoformat(),
             deciles=deciles,
+            attributions=attributions,
+            metric_attributions=metric_attributions,
             correlations=correlations,
-            top_decile_spread_6m=spread_6m,
-            top_decile_spread_12m=spread_12m,
+            return_basis=(
+                "gross_total_return"
+                if self.total_return_calculator is not None
+                else "unavailable"
+            ),
             company_count=len(companies),
             eligible_count=len(eligible),
+            **horizon_fields,
         )
 
     # ------------------------------------------------------------------
@@ -217,20 +303,67 @@ class BacktestEngine:
             period_date,
             availability_lag_days=_INTERIM_REPORT_LAG_DAYS,
         )
-        current_report = latest_r12 or latest_year
-        if current_report is None:
+        if latest_year is None:
             return None, None, None, {}, {}
+        current_report = latest_r12 or latest_year
 
         historical_reports = self._historical_reports_as_of(company.id, period_date)
         current = self.financial_mapper.to_current(current_report)
+        annual_current = self.financial_mapper.to_current(latest_year)
         historical = self.financial_mapper.to_historical(historical_reports)
-        financial = self.financial_calculator.calculate(current, historical)
+        quarter_reports = self.financial_repository.get_reports_as_of(
+            company.id,
+            "quarter",
+            period_date,
+            availability_lag_days=_INTERIM_REPORT_LAG_DAYS,
+        )
+        latest_quarter = quarter_reports[0] if quarter_reports else None
+        prior_year_quarter = None
+        if latest_quarter is not None:
+            prior_year_quarter = next(
+                (
+                    report
+                    for report in quarter_reports[1:]
+                    if report.period == latest_quarter.period
+                    and report.year == latest_quarter.year - 1
+                ),
+                None,
+            )
+        financial = self.financial_calculator.calculate(
+            current,
+            historical,
+            growth_current=annual_current,
+            latest_quarter=(
+                self.financial_mapper.to_current(latest_quarter)
+                if latest_quarter
+                else None
+            ),
+            prior_year_quarter=(
+                self.financial_mapper.to_current(prior_year_quarter)
+                if prior_year_quarter
+                else None
+            ),
+        )
 
         # Point-in-time KPI evidence must be resolved before reverse DCF so the
         # reinvestment policy never uses today's ROIC in a historical period.
         kpi_snapshot = self.valuation_repository.get_snapshot_history_as_of(
             company.id, _HISTORICAL_KPIS, period_date
         )
+        fundamental_sources = {
+            kpi_id: "historical_snapshot"
+            for kpi_id in KpiIds.GENERAL_FUNDAMENTAL_KPIS
+            if kpi_snapshot.get(kpi_id) is not None
+        }
+        annual_fundamentals = self.valuation_repository.get_kpi_values_for_year(
+            company.id,
+            KpiIds.GENERAL_FUNDAMENTAL_KPIS,
+            latest_year.year,
+        )
+        for kpi_id, value in annual_fundamentals.items():
+            if kpi_snapshot.get(kpi_id) is None and value is not None:
+                kpi_snapshot[kpi_id] = value
+                fundamental_sources[kpi_id] = "annual_kpi_history"
         reverse_dcf = self.reverse_dcf_skill.analyze_reports(
             company,
             latest_annual=latest_year,
@@ -251,6 +384,7 @@ class BacktestEngine:
             kpi_id: kpi_snapshot.get(kpi_id)
             for kpi_id in KpiIds.GENERAL_FUNDAMENTAL_KPIS
         }
+        fundamental_kpis["_sources"] = fundamental_sources
 
         sector_kpis = {"current": {}, "histories": {}}
         if company.branch_id == 75:
@@ -353,39 +487,103 @@ class BacktestEngine:
         company_id: int,
         from_date: date,
     ) -> tuple[float | None, float | None]:
-        """Compute price-only forward returns from *from_date*."""
-        start_price = self.valuation_repository.get_stock_price_on_date(
-            company_id,
-            from_date,
-            max_age_days=_MAX_PRICE_AGE_DAYS,
-        )
-        if start_price is None:
-            return None, None
+        """Compute coverage-certified gross total returns from *from_date*."""
+        observations = self._forward_return_observations(company_id, from_date)
+        return observations[0].total_return, observations[1].total_return
 
-        ret_6m = self._price_return(company_id, from_date, 180)
-        ret_12m = self._price_return(company_id, from_date, 365)
-        return ret_6m, ret_12m
-
-    def _price_return(
+    def _forward_return_observations(
         self,
         company_id: int,
         from_date: date,
-        days: int,
-    ) -> float | None:
-        target = from_date + timedelta(days=days)
-        end_price = self.valuation_repository.get_stock_price_on_date(
-            company_id,
-            target,
-            max_age_days=_MAX_PRICE_AGE_DAYS,
-        )
+    ) -> tuple[RealizedReturnObservation, RealizedReturnObservation]:
         start_price = self.valuation_repository.get_stock_price_on_date(
             company_id,
             from_date,
             max_age_days=_MAX_PRICE_AGE_DAYS,
         )
-        if end_price is None or start_price is None or start_price.close == 0:
+        if self.total_return_calculator is None:
+            unavailable = RealizedReturnObservation(
+                None, None, "incomplete_dividends", None
+            )
+            return unavailable, unavailable
+        return (
+            self.total_return_calculator.calculate(
+                company_id,
+                start_price,
+                from_date + timedelta(days=180),
+            ),
+            self.total_return_calculator.calculate(
+                company_id,
+                start_price,
+                from_date + timedelta(days=365),
+            ),
+        )
+
+    def _forward_return_observations_by_horizon(
+        self,
+        company_id: int,
+        from_date: date,
+    ) -> dict[int, RealizedReturnObservation]:
+        observation_6m, observation_12m = self._forward_return_observations(
+            company_id,
+            from_date,
+        )
+        observations = {6: observation_6m, 12: observation_12m}
+        start_price = self.valuation_repository.get_stock_price_on_date(
+            company_id,
+            from_date,
+            max_age_days=_MAX_PRICE_AGE_DAYS,
+        )
+        for horizon in (24, 36, 48):
+            if self.total_return_calculator is None:
+                observation = RealizedReturnObservation(
+                    None, None, "incomplete_dividends", None
+                )
+            else:
+                observation = self.total_return_calculator.calculate(
+                    company_id,
+                    start_price,
+                    self._add_months(from_date, horizon),
+                )
+            observations[horizon] = observation
+        return observations
+
+    def _benchmark_return_for_horizon(
+        self, from_date: date, horizon_months: int
+    ) -> float | None:
+        target_date = self._add_months(from_date, horizon_months)
+        return self._benchmark_return(
+            from_date,
+            (target_date - from_date).days,
+        )
+
+    def _benchmark_return(self, from_date: date, days: int) -> float | None:
+        if (
+            self.benchmark_repository is None
+            or self.benchmark_repository.get_return_basis("OMXS30GI")
+            != "gross_total_return"
+        ):
             return None
-        return (end_price.close - start_price.close) / start_price.close
+        start = self.benchmark_repository.get_value_on_or_before(
+            "OMXS30GI",
+            from_date,
+            max_age_days=_MAX_PRICE_AGE_DAYS,
+        )
+        end = self.benchmark_repository.get_value_on_or_before(
+            "OMXS30GI",
+            from_date + timedelta(days=days),
+            max_age_days=_MAX_PRICE_AGE_DAYS,
+        )
+        if start is None or end is None or start[1] <= 0:
+            return None
+        return end[1] / start[1] - 1.0
+
+    @staticmethod
+    def _add_months(value: date, months: int) -> date:
+        month_index = value.month - 1 + months
+        year = value.year + month_index // 12
+        month = month_index % 12 + 1
+        return date(year, month, min(value.day, monthrange(year, month)[1]))
 
     # ------------------------------------------------------------------
     # Aggregation helpers
@@ -401,61 +599,246 @@ class BacktestEngine:
             start = i * len(scores) // _NUM_DECILES
             end = (i + 1) * len(scores) // _NUM_DECILES
             bucket = scores[start:end]
-            returns_6m = [
-                forward_returns[score.company_id][0]
-                for score in bucket
-                if forward_returns.get(score.company_id, (None, None))[0] is not None
-            ]
-            returns_12m = [
-                forward_returns[score.company_id][1]
-                for score in bucket
-                if forward_returns.get(score.company_id, (None, None))[1] is not None
-            ]
+            returns = {
+                horizon: [
+                    value
+                    for score in bucket
+                    if (
+                        value := BacktestEngine._return_for_horizon(
+                            forward_returns.get(score.company_id), horizon
+                        )
+                    )
+                    is not None
+                ]
+                for horizon in _RETURN_HORIZONS
+            }
+            horizon_fields = {}
+            for horizon, values in returns.items():
+                horizon_fields.update(
+                    {
+                        f"avg_{horizon}m_return": (
+                            mean(values) if values else None
+                        ),
+                        f"hit_rate_{horizon}m": (
+                            sum(value > 0 for value in values) / len(values)
+                            if values
+                            else None
+                        ),
+                        f"count_{horizon}m": len(values),
+                    }
+                )
             deciles.append(
                 DecilePerformance(
                     decile=i + 1,
-                    avg_6m_return=mean(returns_6m) if returns_6m else None,
-                    avg_12m_return=mean(returns_12m) if returns_12m else None,
-                    hit_rate_6m=(
-                        sum(value > 0 for value in returns_6m) / len(returns_6m)
-                        if returns_6m
-                        else None
-                    ),
-                    hit_rate_12m=(
-                        sum(value > 0 for value in returns_12m) / len(returns_12m)
-                        if returns_12m
-                        else None
-                    ),
                     count=len(bucket),
-                    count_6m=len(returns_6m),
-                    count_12m=len(returns_12m),
+                    **horizon_fields,
                 )
             )
         return deciles
 
+    @staticmethod
+    def _build_attributions(
+        period_date,
+        scores,
+        companies_by_id,
+        forward_observations,
+        results_by_company=None,
+        benchmarks=None,
+    ) -> list[CompanyAttribution]:
+        results_by_company = results_by_company or {}
+        benchmarks = benchmarks or {}
+        decile_by_company = {}
+        counts_by_decile = {}
+        if len(scores) >= _NUM_DECILES:
+            for i in range(_NUM_DECILES):
+                start = i * len(scores) // _NUM_DECILES
+                end = (i + 1) * len(scores) // _NUM_DECILES
+                bucket = scores[start:end]
+                decile = i + 1
+                counts_by_decile[decile] = {
+                    horizon: sum(
+                        BacktestEngine._observation_for_horizon(
+                            forward_observations[score.company_id], horizon
+                        ).total_return
+                        is not None
+                        for score in bucket
+                    )
+                    for horizon in _RETURN_HORIZONS
+                }
+                for score in bucket:
+                    decile_by_company[score.company_id] = decile
+
+        attributions = []
+        for rank, score in enumerate(scores, 1):
+            company = companies_by_id[score.company_id]
+            observations = forward_observations[score.company_id]
+            valuation = results_by_company.get(score.company_id, {}).get("valuation")
+            decile = decile_by_company.get(score.company_id)
+            counts = counts_by_decile.get(decile, {})
+            horizon_fields = {}
+            for horizon in _RETURN_HORIZONS:
+                observation = BacktestEngine._observation_for_horizon(
+                    observations, horizon
+                )
+                count = counts.get(horizon, 0)
+                horizon_fields.update(
+                    {
+                        f"return_{horizon}m": observation.total_return,
+                        f"price_return_{horizon}m": observation.price_return,
+                        f"contribution_{horizon}m": (
+                            observation.total_return / count
+                            if observation.total_return is not None and count
+                            else None
+                        ),
+                        f"return_issue_{horizon}m": observation.issue,
+                        f"return_end_date_{horizon}m": (
+                            observation.end_date.isoformat()
+                            if observation.end_date is not None
+                            else None
+                        ),
+                        f"benchmark_{horizon}m_return": benchmarks.get(horizon),
+                    }
+                )
+            attributions.append(
+                CompanyAttribution(
+                    observation_date=period_date.isoformat(),
+                    company_id=score.company_id,
+                    company_name=company.name,
+                    ticker=company.ticker,
+                    rank=rank,
+                    decile=decile,
+                    quality_score=getattr(score, "quality_score", None),
+                    growth_score=getattr(score, "growth_score", None),
+                    valuation_score=getattr(score, "valuation_score", None),
+                    balance_sheet_score=getattr(
+                        score, "balance_sheet_score", None
+                    ),
+                    total_score=score.total_score,
+                    sector_id=company.sector_id,
+                    ranking_model=getattr(score, "ranking_model", None),
+                    market_cap=(
+                        valuation.raw_market_cap if valuation is not None else None
+                    ),
+                    **horizon_fields,
+                )
+            )
+        return attributions
+
     def _compute_category_correlations(self, scores, forward_returns):
         correlations: list[CategoryCorrelation] = []
         for category in _CATEGORIES:
-            pairs_6m, pairs_12m = [], []
+            pairs = {horizon: [] for horizon in _RETURN_HORIZONS}
             for score in scores:
-                fwd = forward_returns.get(score.company_id, (None, None))
+                fwd = forward_returns.get(score.company_id)
                 cat_value = getattr(score, category, None)
                 if cat_value is None:
                     continue
-                if fwd[0] is not None:
-                    pairs_6m.append((cat_value, fwd[0]))
-                if fwd[1] is not None:
-                    pairs_12m.append((cat_value, fwd[1]))
-            corr_6m = self._pearson(pairs_6m) if len(pairs_6m) >= 5 else None
-            corr_12m = self._pearson(pairs_12m) if len(pairs_12m) >= 5 else None
+                for horizon in _RETURN_HORIZONS:
+                    value = self._return_for_horizon(fwd, horizon)
+                    if value is not None:
+                        pairs[horizon].append((cat_value, value))
+            horizon_fields = {
+                f"correlation_{horizon}m": (
+                    self._pearson(pairs[horizon])
+                    if len(pairs[horizon]) >= 5
+                    else None
+                )
+                for horizon in _RETURN_HORIZONS
+            }
             correlations.append(
                 CategoryCorrelation(
                     category=category,
-                    correlation_6m=corr_6m,
-                    correlation_12m=corr_12m,
+                    **horizon_fields,
                 )
             )
         return correlations
+
+    @staticmethod
+    def _build_metric_attributions(
+        period_date,
+        scores,
+        companies_by_id,
+        forward_observations=None,
+        benchmarks=None,
+    ) -> list[MetricAttribution]:
+        forward_observations = forward_observations or {}
+        benchmarks = benchmarks or {}
+        rows = []
+        for score in scores:
+            company = companies_by_id[score.company_id]
+            observations = forward_observations.get(score.company_id)
+            for category, audit in getattr(score, "scoring_audit", {}).items():
+                for component in audit["components"]:
+                    horizon_fields = {}
+                    for horizon in _RETURN_HORIZONS:
+                        observation = BacktestEngine._observation_for_horizon(
+                            observations, horizon
+                        )
+                        horizon_fields.update(
+                            {
+                                f"return_{horizon}m": observation.total_return,
+                                f"benchmark_{horizon}m_return": benchmarks.get(
+                                    horizon
+                                ),
+                            }
+                        )
+                    rows.append(
+                        MetricAttribution(
+                            observation_date=period_date.isoformat(),
+                            company_id=score.company_id,
+                            company_name=company.name,
+                            ticker=company.ticker,
+                            ranking_model=score.ranking_model,
+                            category=category,
+                            metric=component["name"],
+                            raw_value=component["raw_value"],
+                            normalized_score=component["normalized_score"],
+                            configured_weight=component["configured_weight"],
+                            effective_weight=component["effective_weight"],
+                            category_contribution=component["category_contribution"],
+                            category_score=audit["production_score"],
+                            reconstruction_error=audit["reconstruction_error"],
+                            total_category_weight=audit["total_category_weight"],
+                            total_contribution=component["total_contribution"],
+                            available=component["available"],
+                            transformation=component["transformation"],
+                            dependencies="|".join(component["dependencies"]),
+                            cross_category_dependencies="|".join(
+                                component["cross_category_dependencies"]
+                            ),
+                            provenance=component["provenance"],
+                            **horizon_fields,
+                        )
+                    )
+        return rows
+
+    @staticmethod
+    def _return_for_horizon(values, horizon: int) -> float | None:
+        if isinstance(values, dict):
+            return values.get(horizon)
+        if values is None:
+            return None
+        if horizon == 6 and len(values) > 0:
+            return values[0]
+        if horizon == 12 and len(values) > 1:
+            return values[1]
+        return None
+
+    @staticmethod
+    def _observation_for_horizon(
+        observations, horizon: int
+    ) -> RealizedReturnObservation:
+        if isinstance(observations, dict):
+            observation = observations.get(horizon)
+        elif observations is not None and horizon == 6:
+            observation = observations[0]
+        elif observations is not None and horizon == 12:
+            observation = observations[1]
+        else:
+            observation = None
+        return observation or RealizedReturnObservation(
+            None, None, "missing_price", None
+        )
 
     @staticmethod
     def _pearson(pairs: list[tuple[float, float]]) -> float:

@@ -28,6 +28,15 @@ class ValuationCalculator:
             pb_vs_5y_avg=self.calculate_pb(current, historical),
             pe_percentile=self.calculate_pe_percentile(current, historical),
             ev_ebit_percentile=self.calculate_ev_ebit_percentile(current, historical),
+            ev_ebit_guardrail_low=self.calculate_history_bound(
+                historical.ev_ebit_history, 0.10
+            ),
+            ev_ebit_guardrail_high=self.calculate_history_bound(
+                historical.ev_ebit_history, 0.90
+            ),
+            ev_ebit_history_count=len(
+                [value for value in historical.ev_ebit_history if value > 0]
+            ),
             raw_market_cap=raw.market_cap if raw else None,
             raw_enterprise_value=raw.enterprise_value if raw else None,
             raw_earnings_yield=raw.earnings_yield if raw else None,
@@ -85,3 +94,14 @@ class ValuationCalculator:
             return None
 
         return value / denominator
+
+    @staticmethod
+    def calculate_history_bound(history: list[float], percentile: float) -> float | None:
+        values = sorted(value for value in history if value > 0)
+        if len(values) < 5:
+            return None
+        position = (len(values) - 1) * percentile
+        lower_index = int(position)
+        upper_index = min(lower_index + 1, len(values) - 1)
+        fraction = position - lower_index
+        return values[lower_index] + (values[upper_index] - values[lower_index]) * fraction

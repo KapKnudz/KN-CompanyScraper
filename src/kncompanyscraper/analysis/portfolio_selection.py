@@ -147,6 +147,13 @@ class PortfolioSelectionService:
                 "No accepted stock analysis is available.",
             )
         content = analysis["content"]
+        if content.get("analysis_status") not in (None, "complete"):
+            return self._excluded(
+                score,
+                rank,
+                "analysis_incomplete",
+                "The latest analysis is blocked or method-unsupported, not an investment verdict.",
+            )
         if "portfolio_eligibility" not in content:
             return self._excluded(
                 score,

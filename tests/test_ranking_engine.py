@@ -112,6 +112,7 @@ class TestCompanyScore:
         assert cs.flags == []
         assert cs.data_quality == "medium"
         assert cs.candidate_reason is None
+        assert cs.scoring_audit == {}
 
 
 class TestWatchlistRanking:
@@ -405,6 +406,45 @@ class TestWeightedTotal:
             + cs.balance_sheet_score * 0.15
         )
         assert cs.total_score == pytest.approx(round(expected, 1))
+
+    def test_general_scoring_audit_reconstructs_production_scores(self):
+        company = make_company(1, "TST", "Test")
+        results = {
+            1: {
+                "financial": make_strong_financial(),
+                "valuation": make_cheap_valuation(),
+            }
+        }
+
+        score = RankingEngine().rank([company], results).scores[0]
+
+        assert set(score.scoring_audit) == {
+            "quality",
+            "growth",
+            "valuation",
+            "balance_sheet",
+        }
+        assert all(
+            category["reconstruction_error"] == pytest.approx(0.0)
+            for category in score.scoring_audit.values()
+        )
+        assert all(
+            sum(
+                component["effective_weight"]
+                for component in category["components"]
+            )
+            == pytest.approx(1.0)
+            for category in score.scoring_audit.values()
+        )
+        margin_of_safety = next(
+            component
+            for component in score.scoring_audit["valuation"]["components"]
+            if component["name"] == "margin_of_safety"
+        )
+        assert margin_of_safety["cross_category_dependencies"] == (
+            "quality_score",
+            "growth_score",
+        )
 
 
 class TestEdgeCases:

@@ -93,6 +93,9 @@ class ReverseDcfAnalysis:
     analysis_date: str | None = None
     price_date: str | None = None
     current_price: float | None = None
+    current_revenue: float | None = None
+    current_shares: float | None = None
+    current_net_debt: float | None = None
     assumptions: DcfAssumptions | None = None
     assumption_sources: dict[str, str] | None = None
     normalized_fcf_margin: float | None = None
@@ -259,6 +262,11 @@ class ReverseDcfSkill(Skill):
                 analysis_date=as_of.isoformat(),
                 price_date=price.date.isoformat() if price else None,
                 current_price=price.close if price else None,
+                current_revenue=current_report.revenue if current_report else None,
+                current_shares=(
+                    current_report.shares_outstanding if current_report else None
+                ),
+                current_net_debt=current_report.total_debt if current_report else None,
                 assumptions=decision.assumptions,
                 assumption_sources=decision.assumption_sources,
                 normalized_fcf_margin=decision.normalized_fcf_margin,
@@ -306,6 +314,9 @@ class ReverseDcfSkill(Skill):
             analysis_date=as_of.isoformat(),
             price_date=price.date.isoformat(),
             current_price=price.close,
+            current_revenue=current_report.revenue,
+            current_shares=current_report.shares_outstanding,
+            current_net_debt=current_report.total_debt,
             assumptions=decision.assumptions,
             assumption_sources=decision.assumption_sources,
             normalized_fcf_margin=decision.normalized_fcf_margin,

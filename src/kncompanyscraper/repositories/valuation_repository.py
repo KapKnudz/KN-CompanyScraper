@@ -189,6 +189,22 @@ class ValuationRepository:
             currency=row["currency"],
         )
 
+    def get_stock_price_bounds(self, company_id: int) -> tuple[date, date] | None:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT MIN(price_date), MAX(price_date)
+                    FROM stock_prices
+                    WHERE company_id = %s
+                    """,
+                    (company_id,),
+                )
+                row = cur.fetchone()
+        if row is None or row[0] is None or row[1] is None:
+            return None
+        return row[0], row[1]
+
     def get_snapshot_history_as_of(
         self,
         company_id: int,
@@ -344,6 +360,35 @@ class ValuationRepository:
             self._history(company_id, kpi_id, before_year=as_of.year)
             for kpi_id in self.HISTORICAL_KPIS
         )
+
+    def get_kpi_values_for_year(
+        self,
+        company_id: int,
+        kpi_ids: tuple[int, ...],
+        year: int,
+    ) -> dict[int, float | None]:
+        """Return annual KPI values for an already-public report year."""
+        if not kpi_ids:
+            return {}
+        with get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (kpi_id) kpi_id, value
+                    FROM kpi_history
+                    WHERE company_id = %s AND kpi_id = ANY(%s)
+                      AND period_type = 'year' AND price_type = 'mean'
+                      AND year = %s
+                    ORDER BY kpi_id, report_period DESC NULLS LAST
+                    """,
+                    (company_id, list(kpi_ids), year),
+                )
+                return {
+                    row["kpi_id"]: (
+                        float(row["value"]) if row["value"] is not None else None
+                    )
+                    for row in cur.fetchall()
+                }
 
     def _snapshot_values(self, company_id: int) -> dict[int, float | None]:
         with get_connection() as conn:
