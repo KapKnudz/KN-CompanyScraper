@@ -1,6 +1,8 @@
 import hashlib
+from datetime import date
 
 from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
+from kncompanyscraper.analysis.agent.context_provenance import deterministic_context_sha256
 from kncompanyscraper.analysis.agent.output_schema import (
     EvidenceCitation,
     ManagementClaimAssessment,
@@ -54,8 +56,13 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "Three return engines" in prompt.system
     assert "Follow the steps in order" in prompt.system
     assert prompt.policy_name == "nordic-case-investing-policy"
-    assert prompt.policy_version == "1.18.0"
+    assert prompt.policy_version == "1.23.0"
     assert "company_fact_ledger" in prompt.user
+    assert "individual-thesis-card-v1" in prompt.user
+    assert "business_model_profile" in prompt.user
+    assert "analysis_status" in prompt.user
+    assert "never encode those states as a `watch` verdict" in prompt.user
+    assert "timing_assessment" in prompt.user
     assert prompt.policy_sha256 == hashlib.sha256(
         (
             AgentPromptBuilder._read_resource("resources/analyst_policy.md")
@@ -67,7 +74,7 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert f"- Version: `{prompt.policy_version}`" in prompt.system
     assert f"- SHA-256: `{prompt.policy_sha256}`" in prompt.system
     assert "full_results.reverse_dcf.implied_expectations" in prompt.system
-    assert "Do not calculate or state a forward fair value" in prompt.system
+    assert "Do not independently calculate or state a forward fair value" in prompt.system
     assert "alternative growth–margin combinations" in prompt.system
     assert "price_fundamental_attribution" in prompt.system
     assert "year-one revenue growth" in prompt.system
@@ -78,6 +85,9 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "Do not independently classify cyclicality" in prompt.system
     assert "discount_rate_sensitivities" in prompt.system
     assert "must not modify inputs" in prompt.system
+    assert "share_count_growth` as a decimal fraction" in prompt.system
+    assert "deterministic engine derives diluted shares" in prompt.system
+    assert "Do not invent a numeric confirmation threshold" in prompt.system
     assert "Do not invent a numerical return decomposition" in prompt.system
     assert "current price and market-implied operating expectation" in prompt.system
     assert "the valuation assumption" not in prompt.system
@@ -95,6 +105,25 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert '"source_id": "news:21"' in prompt.user
     assert '"verdict": "reject | watch | latent_case | activated_case"' in prompt.user
     assert '"risk_profile"' in prompt.user
+
+
+def test_prompt_builder_serializes_dates_in_sector_kpi_history():
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=12,
+        ticker="HUFV A",
+        name="Hufvudstaden A",
+        full_results={
+            "sector_kpis": {
+                "histories": {"property_value": [(date(2025, 12, 31), 52_000.0)]}
+            }
+        },
+    )
+
+    prompt = AgentPromptBuilder().build(candidate)
+
+    assert '"2025-12-31"' in prompt.user
+    assert len(deterministic_context_sha256(candidate)) == 64
     assert '"reverse_dcf_expectation_assessment"' in prompt.user
     assert '"portfolio_eligibility": "investable | not_investable"' in prompt.user
     assert "`activated_case` may be `investable`" in prompt.system

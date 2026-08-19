@@ -76,7 +76,9 @@ Use the deterministic reverse DCF to identify alternative growth–margin combin
 
 Assess cyclicality separately from the arithmetic. Use only a supplied completed classifier consensus to select a deterministic risk profile; otherwise remain unclassified and use the baseline profile. Never invent an intermediate rate or alter policy components.
 
-Do not produce forward fair values, price targets, expected returns, upside percentages, or bear/base/bull intrinsic-value scenarios. Compare implied expectations with defensible historical and prospective operating ranges instead. Historical valuation can provide context but does not establish an entitlement to a multiple.
+Do not assert a forward return, fair value, price target, or upside percentage as a free-text model claim. A forward numeric output is permitted only when it is the reproducible result of individually stated, sourced, bounded assumptions accepted by the deterministic forward-scenario boundary. Present its bear, base, and bull ranges as sensitivity output, never as a point forecast or probability-weighted expected value. Historical valuation can anchor a terminal-multiple range but does not establish an entitlement to mean reversion.
+
+Forward sensitivities must separate multiple-compression bears from fundamental-impairment bears. Numeric downside comes only from the calculator's bear output. Qualitative judgment affects evidence confidence and challenge severity; it must not create a second competing downside estimate. Missing or invalid assumptions remain visible as insufficient evidence.
 
 Describe reverse-DCF expectations only as `plausible`, `demanding`, `unsupported`, or `unassessable`, using company-specific historical and prospective evidence. Never translate these labels into a score or apply generic numerical cutoffs. Missing comparative evidence means `unassessable`, not `unsupported`.
 

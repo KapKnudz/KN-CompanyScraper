@@ -103,12 +103,21 @@ class ThesisUpdateContextBuilder:
         for entries in (content.get("company_fact_ledger") or {}).values():
             for fact in entries:
                 source_ids.update(fact.get("source_ids") or [])
+        profile = content.get("business_model_profile") or {}
+        source_ids.update(profile.get("source_ids") or [])
+        margin = content.get("margin_expansion_case") or {}
+        source_ids.update(margin.get("source_ids") or [])
+        source_ids.update(margin.get("contrary_source_ids") or [])
+        timing = content.get("timing_assessment") or {}
+        source_ids.update(timing.get("source_ids") or [])
+        for catalyst in timing.get("catalysts") or []:
+            source_ids.update(catalyst.get("source_ids") or [])
         return source_ids
 
 
 class ThesisUpdatePromptBuilder:
     POLICY_NAME = "nordic-thesis-update-policy"
-    POLICY_VERSION = "1.0.2"
+    POLICY_VERSION = "1.1.0-thesis-card"
 
     def build(self, context: ThesisUpdateContext) -> AgentPrompt:
         policy = AgentPromptBuilder._read_resource("resources/analyst_policy.md")

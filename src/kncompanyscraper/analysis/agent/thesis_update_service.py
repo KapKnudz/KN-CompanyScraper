@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
 
 from kncompanyscraper.analysis.agent.result_parser import (
@@ -7,6 +7,11 @@ from kncompanyscraper.analysis.agent.result_parser import (
     parse_thesis_update_result,
 )
 from kncompanyscraper.analysis.agent.thesis_update import ThesisUpdatePromptBuilder
+from kncompanyscraper.analysis.agent.output_schema import (
+    BusinessModelProfile,
+    MarginExpansionCase,
+    TimingAssessment,
+)
 
 
 @dataclass(frozen=True)
@@ -43,7 +48,23 @@ class ThesisUpdateExecutionBoundary:
             )
         if update.impact == "no_material_change":
             current_content = dict(context.current_thesis.get("content") or {})
+            current_content["forward_scenario_analysis"] = None
             current_content.setdefault("confidence_limitations", [])
+            current_content.setdefault(
+                "thesis_card_version", "individual-thesis-card-v1"
+            )
+            current_content["evidence_as_of"] = (
+                context.candidate.research_evidence.get("as_of")
+            )
+            current_content.setdefault(
+                "business_model_profile", asdict(BusinessModelProfile())
+            )
+            current_content.setdefault(
+                "margin_expansion_case", asdict(MarginExpansionCase())
+            )
+            current_content.setdefault(
+                "timing_assessment", asdict(TimingAssessment())
+            )
             current_content.setdefault(
                 "company_fact_ledger",
                 {

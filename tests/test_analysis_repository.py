@@ -188,3 +188,31 @@ def test_get_latest_rejected_incremental_updates_filters_candidates():
 
     assert rows[42]["id"] == 11
     assert cursor.execute.call_args.args[1] == ([42, 7],)
+
+
+def test_get_latest_rejected_initial_analyses_filters_candidates():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [
+        {
+            "id": 12,
+            "company_id": 42,
+            "content": '{"company_id":42}',
+            "created_by": "test-model",
+            "metadata": {"validation_status": "rejected"},
+        }
+    ]
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.cursor.return_value.__enter__.return_value = cursor
+
+    with patch(
+        "kncompanyscraper.repositories.analysis_repository.get_connection",
+        return_value=connection,
+    ):
+        rows = AnalysisRepository().get_latest_rejected_initial_analyses([42, 7])
+
+    assert rows[42]["id"] == 12
+    assert cursor.execute.call_args.args[1] == ([42, 7],)
+    assert "COALESCE(metadata->>'analysis_mode', 'initial') = 'initial'" in (
+        cursor.execute.call_args.args[0]
+    )

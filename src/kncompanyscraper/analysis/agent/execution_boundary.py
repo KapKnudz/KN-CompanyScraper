@@ -1,4 +1,4 @@
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import date
 import re
 
@@ -7,6 +7,10 @@ from kncompanyscraper.analysis.agent.result_parser import (
     parse_stock_analysis_result,
 )
 from kncompanyscraper.analysis.agent.output_schema import StockAnalysisResult
+from kncompanyscraper.analysis.valuation.forward_scenario import (
+    ForwardScenarioEngine,
+    ForwardScenarioInputs,
+)
 
 
 @dataclass(frozen=True)
@@ -16,7 +20,7 @@ class PersistedStockAnalysis:
 
 
 class AgentExecutionBoundary:
-    VALIDATION_VERSION = "agent-boundary-v12"
+    VALIDATION_VERSION = "agent-boundary-v15-readiness-status"
     NO_INSIDER_ASSESSMENT = (
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
@@ -41,6 +45,11 @@ class AgentExecutionBoundary:
             raise StockAnalysisValidationError(
                 f"result.ticker {result.ticker!r} does not match candidate {candidate.ticker!r}"
             )
+        if result.analysis_status != "complete":
+            raise StockAnalysisValidationError(
+                "model-backed analysis_status must be complete; blocked packets belong "
+                "to the deterministic readiness output"
+            )
 
         document_source_ids = {
             source.get("source_id")
@@ -62,7 +71,15 @@ class AgentExecutionBoundary:
             **self._valuation_source_aliases(candidate),
             "research_evidence.insider_event_count": "research:insider_event_count",
             "research_evidence.insider_status": "research:insider_status",
+            "full_results.insider_status": "research:insider_status",
         }
+        if "missing_information" in candidate.research_evidence:
+            valuation_source_aliases.update(
+                {
+                    "research:missing_information": "research:missing_information",
+                    "research_evidence.missing_information": "research:missing_information",
+                }
+            )
         for citation in result.citations:
             citation.source_id = valuation_source_aliases.get(
                 citation.source_id, citation.source_id
@@ -107,6 +124,33 @@ class AgentExecutionBoundary:
                     )
                 seen_facts.add(fact_key)
                 fact_source_ids.update(fact.source_ids)
+        thesis_card_source_ids = self._validate_thesis_card(
+            result,
+            candidate,
+            valuation_source_aliases,
+        )
+        forward_source_ids = set()
+        normalized_endpoints = []
+        for endpoint in result.forward_scenario_assumptions:
+            replacements = {}
+            for name in (
+                "revenue_cagr",
+                "ebit_margin",
+                "terminal_ev_ebit",
+                "net_debt",
+                "net_debt_change",
+                "share_count_growth",
+                "distributions_per_share",
+            ):
+                assumption = getattr(endpoint, name)
+                source_ids = tuple(
+                    valuation_source_aliases.get(source_id, source_id)
+                    for source_id in assumption.source_ids
+                )
+                forward_source_ids.update(source_ids)
+                replacements[name] = replace(assumption, source_ids=source_ids)
+            normalized_endpoints.append(replace(endpoint, **replacements))
+        result.forward_scenario_assumptions = normalized_endpoints
         known_source_ids = (
             document_source_ids
             | insider_source_ids
@@ -134,6 +178,20 @@ class AgentExecutionBoundary:
                 "company facts cite unknown evidence source(s): "
                 + ", ".join(unknown_fact_source_ids)
             )
+        unknown_thesis_card_source_ids = sorted(
+            thesis_card_source_ids - known_source_ids
+        )
+        if unknown_thesis_card_source_ids:
+            raise StockAnalysisValidationError(
+                "thesis card cites unknown evidence source(s): "
+                + ", ".join(unknown_thesis_card_source_ids)
+            )
+        unknown_forward_source_ids = sorted(forward_source_ids - known_source_ids)
+        if unknown_forward_source_ids:
+            raise StockAnalysisValidationError(
+                "forward assumptions cite unknown evidence source(s): "
+                + ", ".join(unknown_forward_source_ids)
+            )
 
         deterministic_checks, deterministic_warnings = self._validate_model_owned_arithmetic(
             result, candidate
@@ -144,12 +202,17 @@ class AgentExecutionBoundary:
         self._validate_portfolio_eligibility(result)
         self._validate_risk_profile(result, candidate)
         self._validate_reverse_dcf_assessment(result, candidate)
+        result.forward_scenario_analysis = ForwardScenarioEngine().analyze(
+            self._forward_scenario_inputs(result, candidate)
+        )
         confidence_checks = self._apply_confidence_cap(result, candidate, document_source_ids)
 
         insider_checks = []
         warnings = list(deterministic_warnings)
         if insider_source_ids:
-            cited_source_ids = {citation.source_id for citation in result.citations}
+            cited_source_ids = {
+                citation.source_id for citation in result.citations
+            } | fact_source_ids
             if not cited_source_ids.intersection(insider_source_ids):
                 raise StockAnalysisValidationError(
                     "insider assessment must cite at least one supplied insider transaction"
@@ -167,13 +230,25 @@ class AgentExecutionBoundary:
         valuation_provenance = self._valuation_provenance(candidate)
         if valuation_provenance is not None:
             validation_metadata["valuation_provenance"] = valuation_provenance
+        required_return = self._selected_required_return(result, candidate)
+        validation_metadata["forward_scenario"] = {
+            "policy_version": result.forward_scenario_analysis.policy_version,
+            "status": result.forward_scenario_analysis.status,
+            "required_return": required_return,
+            "methodology_flags": list(
+                result.forward_scenario_analysis.methodology_flags
+            ),
+            "warnings": list(result.forward_scenario_analysis.warnings),
+        }
         validation_metadata.update(
             {
                 "validation_version": self.VALIDATION_VERSION,
                 "validation_status": "accepted",
+                "analysis_status": result.analysis_status,
                 "deterministic_value_checks": [
                     *deterministic_checks,
                     "model-owned expected return components are null",
+                    "forward scenario output recalculated from sourced bundles",
                 ],
                 "insider_checks": insider_checks,
                 "confidence_checks": confidence_checks,
@@ -210,6 +285,11 @@ class AgentExecutionBoundary:
             if result.risk_profile == "unclassified":
                 cap = "medium"
                 limitations.append("The business-risk profile is unclassified.")
+            if result.forward_scenario_analysis.status != "available":
+                cap = "medium"
+                limitations.append(
+                    "Forward scenario evidence is insufficient or the method is unsupported."
+                )
 
         confidence_rank = {"low": 0, "medium": 1, "high": 2}
         proposed = result.confidence
@@ -225,6 +305,103 @@ class AgentExecutionBoundary:
         ]
 
     @classmethod
+    def _validate_thesis_card(cls, result, candidate, source_aliases):
+        evidence_as_of = candidate.research_evidence.get("as_of")
+        if result.evidence_as_of is not None:
+            try:
+                date.fromisoformat(result.evidence_as_of)
+            except ValueError as exc:
+                raise StockAnalysisValidationError(
+                    "evidence_as_of must be an ISO date"
+                ) from exc
+        if evidence_as_of and result.evidence_as_of != evidence_as_of:
+            raise StockAnalysisValidationError(
+                "evidence_as_of must match the supplied research evidence cutoff"
+            )
+
+        timing_horizon = result.timing_assessment.horizon_months
+        if (
+            timing_horizon is not None
+            and result.case_horizon_months is not None
+            and timing_horizon != result.case_horizon_months
+        ):
+            raise StockAnalysisValidationError(
+                "timing horizon must match case_horizon_months"
+            )
+
+        def normalize(source_ids):
+            normalized = [
+                source_aliases.get(source_id, source_id) for source_id in source_ids
+            ]
+            if len(normalized) != len(set(normalized)):
+                raise StockAnalysisValidationError(
+                    "thesis card contains duplicate source IDs"
+                )
+            return normalized
+
+        profile = result.business_model_profile
+        profile_fields = (
+            "summary",
+            "customer_and_need",
+            "offering",
+            "revenue_mechanics",
+            "sales_and_distribution",
+            "cost_structure",
+            "reinvestment_requirements",
+            "competitive_position",
+            "key_dependencies",
+        )
+        for field_name in profile_fields:
+            setattr(profile, field_name, getattr(profile, field_name).strip())
+        profile.source_ids = normalize(profile.source_ids)
+        if any(getattr(profile, field_name) for field_name in profile_fields) and not (
+            profile.source_ids
+        ):
+            raise StockAnalysisValidationError(
+                "business model profile must cite evidence"
+            )
+
+        margin = result.margin_expansion_case
+        margin.mechanism = margin.mechanism.strip()
+        margin.source_ids = normalize(margin.source_ids)
+        margin.contrary_source_ids = normalize(margin.contrary_source_ids)
+        if margin.status not in {"not_applicable", "unassessable"}:
+            if not margin.mechanism or not margin.source_ids:
+                raise StockAnalysisValidationError(
+                    "an assessable margin-expansion case requires a mechanism and evidence"
+                )
+
+        timing = result.timing_assessment
+        timing.why_now = timing.why_now.strip()
+        timing.source_ids = normalize(timing.source_ids)
+        if timing.why_now and not timing.source_ids:
+            raise StockAnalysisValidationError(
+                "timing assessment must cite evidence"
+            )
+        catalyst_source_ids = set()
+        for catalyst in timing.catalysts:
+            catalyst.description = catalyst.description.strip()
+            catalyst.observable_confirmation = catalyst.observable_confirmation.strip()
+            catalyst.source_ids = normalize(catalyst.source_ids)
+            if not catalyst.description or not catalyst.observable_confirmation:
+                raise StockAnalysisValidationError(
+                    "each catalyst requires a description and observable confirmation"
+                )
+            if not catalyst.source_ids:
+                raise StockAnalysisValidationError(
+                    "each catalyst must cite evidence"
+                )
+            catalyst_source_ids.update(catalyst.source_ids)
+
+        return {
+            *profile.source_ids,
+            *margin.source_ids,
+            *margin.contrary_source_ids,
+            *timing.source_ids,
+            *catalyst_source_ids,
+        }
+
+    @classmethod
     def _validate_model_owned_arithmetic(cls, result, candidate):
         if result.valuation_scenarios:
             raise StockAnalysisValidationError(
@@ -237,6 +414,35 @@ class AgentExecutionBoundary:
             )
         cls._validate_prose_upside(result)
         return ["forward valuation scenarios are disabled"], []
+
+    @classmethod
+    def _forward_scenario_inputs(cls, result, candidate):
+        reverse_dcf = candidate.full_results.get("reverse_dcf")
+        valuation = candidate.full_results.get("valuation")
+        return ForwardScenarioInputs(
+            current_price=cls._field(reverse_dcf, "current_price"),
+            current_revenue=cls._field(reverse_dcf, "current_revenue"),
+            current_shares=cls._field(reverse_dcf, "current_shares"),
+            current_net_debt=cls._field(reverse_dcf, "current_net_debt"),
+            terminal_multiple_guardrail=(
+                cls._field(valuation, "ev_ebit_guardrail_low"),
+                cls._field(valuation, "ev_ebit_guardrail_high"),
+            ),
+            endpoints=tuple(result.forward_scenario_assumptions),
+            ranking_model=candidate.ranking_model,
+        )
+
+    @classmethod
+    def _selected_required_return(cls, result, candidate):
+        reverse_dcf = candidate.full_results.get("reverse_dcf")
+        required_return = cls._field(reverse_dcf, "required_return")
+        profiles = cls._field(required_return, "profiles") or {}
+        profile = (
+            result.risk_profile
+            if result.risk_profile != "unclassified"
+            else cls._field(required_return, "baseline_profile")
+        )
+        return cls._field(profiles.get(profile), "discount_rate")
 
     @staticmethod
     def _validate_scenario_characterization(result):
@@ -326,6 +532,9 @@ class AgentExecutionBoundary:
             "reverse_dcf_policy_version": cls._field(reverse_dcf, "policy_version"),
             "price_date": cls._field(reverse_dcf, "price_date"),
             "current_price": cls._field(reverse_dcf, "current_price"),
+            "current_revenue": cls._field(reverse_dcf, "current_revenue"),
+            "current_shares": cls._field(reverse_dcf, "current_shares"),
+            "current_net_debt": cls._field(reverse_dcf, "current_net_debt"),
             "assumptions": {
                 name: cls._field(assumptions, name)
                 for name in (
@@ -658,8 +867,15 @@ class AgentExecutionBoundary:
             source_id = "deterministic:" + ":".join(path)
             aliases[source_id] = source_id
             aliases["full_results." + ".".join(path)] = source_id
+            if path[-1] == "source_id" and isinstance(value, str):
+                aliases[value] = value
 
         visit(candidate.full_results, [])
+        consensus = candidate.full_results.get("cyclicality_consensus")
+        if consensus is not None:
+            source_id = "deterministic:cyclicality_consensus"
+            aliases[source_id] = source_id
+            aliases["full_results.cyclicality_consensus"] = source_id
         reverse_dcf = candidate.full_results.get("reverse_dcf")
         if cls._field(reverse_dcf, "normalization") is not None:
             source_id = "deterministic:reverse_dcf:normalization"

@@ -25,6 +25,11 @@ class ValuationResult:
     pe_percentile: float | None
     ev_ebit_percentile: float | None
 
+    # Historical positive EV/EBIT guardrails for forward sensitivity endpoints.
+    ev_ebit_guardrail_low: float | None = None
+    ev_ebit_guardrail_high: float | None = None
+    ev_ebit_history_count: int = 0
+
     # Raw-derived fields (computed from latest close × report fundamentals).
     # These are independent of Börsdata's pre-computed KPIs and typically
     # fresher. When available, prefer these for yield/multiple scoring.

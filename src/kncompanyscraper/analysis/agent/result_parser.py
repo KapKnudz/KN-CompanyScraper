@@ -2,15 +2,23 @@ import json
 import math
 
 from kncompanyscraper.analysis.agent.output_schema import (
+    BusinessModelProfile,
     CompanyFact,
     CompanyFactLedger,
     EvidenceCitation,
     ManagementClaimAssessment,
+    MarginExpansionCase,
     STOCK_ANALYSIS_OUTPUT_CONTRACT,
     StockAnalysisResult,
+    ThesisCatalyst,
+    TimingAssessment,
     THESIS_UPDATE_OUTPUT_CONTRACT,
     ThesisUpdateResult,
     ValuationScenario,
+)
+from kncompanyscraper.analysis.valuation.forward_scenario import (
+    ScenarioEndpoint,
+    SourcedAssumption,
 )
 
 
@@ -45,6 +53,21 @@ def _parse_contract(raw_response: str, contract: dict, label: str) -> dict:
 
 def _stock_analysis_from_payload(payload: dict) -> StockAnalysisResult:
     result_data = dict(payload)
+    result_data["business_model_profile"] = BusinessModelProfile(
+        **payload["business_model_profile"]
+    )
+    result_data["margin_expansion_case"] = MarginExpansionCase(
+        **payload["margin_expansion_case"]
+    )
+    timing = payload["timing_assessment"]
+    result_data["timing_assessment"] = TimingAssessment(
+        **{
+            **timing,
+            "catalysts": [
+                ThesisCatalyst(**catalyst) for catalyst in timing["catalysts"]
+            ],
+        }
+    )
     result_data["company_fact_ledger"] = CompanyFactLedger(
         **{
             heading: [CompanyFact(**fact) for fact in facts]
@@ -53,6 +76,31 @@ def _stock_analysis_from_payload(payload: dict) -> StockAnalysisResult:
     )
     result_data["valuation_scenarios"] = [
         ValuationScenario(**scenario) for scenario in payload["valuation_scenarios"]
+    ]
+    result_data["forward_scenario_assumptions"] = [
+        ScenarioEndpoint(
+            kind=endpoint["kind"],
+            side=endpoint["side"],
+            horizon_months=endpoint["horizon_months"],
+            **{
+                name: SourcedAssumption(
+                    value=endpoint[name]["value"],
+                    source_ids=tuple(endpoint[name]["source_ids"]),
+                    rationale=endpoint[name]["rationale"],
+                    guardrail_exception=endpoint[name]["guardrail_exception"],
+                )
+                for name in (
+                    "revenue_cagr",
+                    "ebit_margin",
+                    "terminal_ev_ebit",
+                    "net_debt",
+                    "net_debt_change",
+                    "share_count_growth",
+                    "distributions_per_share",
+                )
+            },
+        )
+        for endpoint in payload["forward_scenario_assumptions"]
     ]
     result_data["management_credibility_ledger"] = [
         ManagementClaimAssessment(**assessment)

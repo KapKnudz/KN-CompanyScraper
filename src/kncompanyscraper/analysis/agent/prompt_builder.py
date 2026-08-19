@@ -4,6 +4,7 @@ from importlib import resources
 import json
 
 from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
+from kncompanyscraper.analysis.agent.json_support import json_default
 from kncompanyscraper.analysis.agent.output_schema import (
     STOCK_ANALYSIS_OUTPUT_CONTRACT,
     stock_analysis_json_schema,
@@ -23,7 +24,7 @@ class AgentPrompt:
 
 class AgentPromptBuilder:
     POLICY_NAME = "nordic-case-investing-policy"
-    POLICY_VERSION = "1.18.0"
+    POLICY_VERSION = "1.23.0"
 
     def build(self, candidate: AgentCandidate) -> AgentPrompt:
         policy = self._read_resource("resources/analyst_policy.md")
@@ -36,6 +37,7 @@ class AgentPromptBuilder:
             ensure_ascii=False,
             indent=2,
             sort_keys=True,
+            default=json_default,
         )
         output_contract = json.dumps(
             STOCK_ANALYSIS_OUTPUT_CONTRACT,

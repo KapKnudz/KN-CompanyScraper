@@ -6,6 +6,7 @@ from kncompanyscraper.analysis.ranking.score_rules import (
     _linear_score,
 )
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
+from kncompanyscraper.models.enums import RankingModel
 
 
 def _cagr_from_snapshot_history(
@@ -24,12 +25,12 @@ def _cagr_from_snapshot_history(
     return (latest_value / earliest_value) ** (1.0 / years) - 1.0
 
 
-def ranking_model_for_branch(branch_id: int | None) -> str:
+def ranking_model_for_branch(branch_id: int | None) -> RankingModel:
     if branch_id == 75:
-        return "property"
+        return RankingModel.PROPERTY
     if branch_id in (68, 69, 70):
-        return "bank"
-    return "general"
+        return RankingModel.BANK
+    return RankingModel.GENERAL
 
 
 def _result(scored, positives=None, negatives=None, missing=None, flags=None):

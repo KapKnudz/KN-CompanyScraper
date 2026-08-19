@@ -319,6 +319,9 @@ class TestValuationCalculator:
         # Percentile: current EV/EBIT 13.20 vs [9.2, 10.5, 11.8, 12.1, 13.2]
         # All 5 <= 13.20 → 100%
         assert result.ev_ebit_percentile == pytest.approx(100.0)
+        assert result.ev_ebit_guardrail_low == pytest.approx(9.72)
+        assert result.ev_ebit_guardrail_high == pytest.approx(12.76)
+        assert result.ev_ebit_history_count == 5
 
     def test_percentile_with_middle_value(self):
         calc = ValuationCalculator()
@@ -343,6 +346,12 @@ class TestValuationCalculator:
     def test_percentile_none_value_returns_none(self):
         calc = ValuationCalculator()
         assert calc.calculate_percentile(None, [1.0, 2.0]) is None
+
+    def test_history_bound_requires_five_positive_observations(self):
+        calc = ValuationCalculator()
+
+        assert calc.calculate_history_bound([1.0, 2.0, 3.0, 4.0], 0.10) is None
+        assert calc.calculate_history_bound([-1.0, 1.0, 2.0, 3.0, 4.0], 0.90) is None
 
     def test_ratio_returns_none_for_zero_denominator(self):
         calc = ValuationCalculator()

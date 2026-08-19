@@ -172,6 +172,62 @@ def test_incremental_boundary_preserves_thesis_for_no_material_change():
     assert accepted.persisted_analysis.analysis_id == 16
 
 
+def test_no_material_change_upgrades_legacy_thesis_with_empty_card_sections():
+    candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
+    legacy = valid_result().to_dict()
+    for field in (
+        "thesis_card_version",
+        "evidence_as_of",
+        "business_model_profile",
+        "margin_expansion_case",
+        "timing_assessment",
+    ):
+        legacy.pop(field)
+    context = ThesisUpdateContext(
+        candidate=candidate,
+        current_thesis={"id": 9, "content": legacy},
+        current_facts=[],
+        prior_source_ids=(),
+        new_source_ids=(),
+        deterministic_context_sha256="hash",
+        deterministic_context_changed=True,
+    )
+    stock_boundary = MagicMock()
+    stock_boundary.persist_response.return_value = MagicMock(analysis_id=20)
+
+    accepted = ThesisUpdateExecutionBoundary(stock_boundary).persist_response(
+        update_response("no_material_change", []), context, "test-model"
+    )
+
+    assert accepted.persisted_analysis.analysis_id == 20
+    persisted = json.loads(stock_boundary.persist_response.call_args.args[0])
+    assert persisted["thesis_card_version"] == "individual-thesis-card-v1"
+    assert persisted["business_model_profile"]["summary"] == ""
+
+
+def test_no_material_change_ignores_calculated_forward_scenario_output():
+    candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
+    current = valid_result().to_dict()
+    current["forward_scenario_analysis"] = {"status": "calculated"}
+    context = ThesisUpdateContext(
+        candidate=candidate,
+        current_thesis={"id": 9, "content": current},
+        current_facts=[],
+        prior_source_ids=(),
+        new_source_ids=(),
+        deterministic_context_sha256="hash",
+        deterministic_context_changed=False,
+    )
+    stock_boundary = MagicMock()
+    stock_boundary.persist_response.return_value = MagicMock(analysis_id=17)
+
+    accepted = ThesisUpdateExecutionBoundary(stock_boundary).persist_response(
+        update_response("no_material_change", []), context, "test-model"
+    )
+
+    assert accepted.persisted_analysis.analysis_id == 17
+
+
 def test_no_material_change_reports_differing_thesis_fields():
     candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
     current = valid_result().to_dict()

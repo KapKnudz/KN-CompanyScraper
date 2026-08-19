@@ -1,8 +1,14 @@
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
+from kncompanyscraper.analysis.valuation.forward_scenario import (
+    ForwardScenarioAnalysis,
+    ScenarioEndpoint,
+)
+
 
 AnalysisVerdict = Literal["reject", "watch", "latent_case", "activated_case"]
+AnalysisStatus = Literal["complete"]
 Confidence = Literal["low", "medium", "high"]
 FactEvidenceKind = Literal["fact", "management_claim", "analyst_inference"]
 PortfolioEligibility = Literal["investable", "not_investable"]
@@ -37,6 +43,20 @@ ThesisUpdateImpact = Literal[
     "activation_trigger_reached",
     "thesis_break_triggered",
     "full_reassessment_required",
+]
+RevenueModelType = Literal[
+    "subscription",
+    "transaction",
+    "usage",
+    "product_sales",
+    "service",
+    "project",
+    "licensing",
+    "advertising",
+    "interest_spread",
+    "rental",
+    "hybrid",
+    "unclassified",
 ]
 
 
@@ -86,6 +106,57 @@ class CompanyFactLedger:
 
 
 @dataclass
+class BusinessModelProfile:
+    summary: str = ""
+    customer_and_need: str = ""
+    offering: str = ""
+    revenue_mechanics: str = ""
+    sales_and_distribution: str = ""
+    cost_structure: str = ""
+    reinvestment_requirements: str = ""
+    competitive_position: str = ""
+    key_dependencies: str = ""
+    revenue_model_types: list[RevenueModelType] = field(default_factory=list)
+    customer_types: list[str] = field(default_factory=list)
+    recurring_revenue_profile: str = "unassessable"
+    pricing_power: str = "unassessable"
+    capital_intensity: str = "unassessable"
+    operating_leverage: str = "unassessable"
+    circle_of_competence: str = "unassessable"
+    source_ids: list[str] = field(default_factory=list)
+    limitations: list[str] = field(default_factory=list)
+
+
+@dataclass
+class MarginExpansionCase:
+    status: str = "unassessable"
+    mechanism: str = ""
+    required_operating_changes: list[str] = field(default_factory=list)
+    source_ids: list[str] = field(default_factory=list)
+    contrary_source_ids: list[str] = field(default_factory=list)
+    limitations: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ThesisCatalyst:
+    description: str
+    timing_window: str
+    observable_confirmation: str
+    status: str
+    source_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class TimingAssessment:
+    horizon_months: int | None = None
+    why_now: str = ""
+    confidence: Confidence = "low"
+    catalysts: list[ThesisCatalyst] = field(default_factory=list)
+    source_ids: list[str] = field(default_factory=list)
+    limitations: list[str] = field(default_factory=list)
+
+
+@dataclass
 class StockAnalysisResult:
     company_id: int
     ticker: str
@@ -93,6 +164,16 @@ class StockAnalysisResult:
     verdict: AnalysisVerdict
     confidence: Confidence
     one_sentence_thesis: str
+    analysis_status: AnalysisStatus = "complete"
+    thesis_card_version: str = "individual-thesis-card-v1"
+    evidence_as_of: str | None = None
+    business_model_profile: BusinessModelProfile = field(
+        default_factory=BusinessModelProfile
+    )
+    margin_expansion_case: MarginExpansionCase = field(
+        default_factory=MarginExpansionCase
+    )
+    timing_assessment: TimingAssessment = field(default_factory=TimingAssessment)
     confidence_limitations: list[str] = field(default_factory=list)
     company_fact_ledger: CompanyFactLedger = field(default_factory=CompanyFactLedger)
     portfolio_eligibility: PortfolioEligibility = "not_investable"
@@ -113,6 +194,8 @@ class StockAnalysisResult:
     peak_margin_evidence: list[str] = field(default_factory=list)
     valuation_scenarios: list[ValuationScenario] = field(default_factory=list)
     expected_return_components: dict[str, float | None] = field(default_factory=dict)
+    forward_scenario_assumptions: list[ScenarioEndpoint] = field(default_factory=list)
+    forward_scenario_analysis: ForwardScenarioAnalysis | None = None
     management_assessment: str = ""
     management_credibility_ledger: list[ManagementClaimAssessment] = field(default_factory=list)
     ownership_and_flow_assessment: str = ""
@@ -142,9 +225,61 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     "company_id": "integer",
     "ticker": "string",
     "company_name": "string",
+    "analysis_status": "complete",
     "verdict": "reject | watch | latent_case | activated_case",
     "confidence": "low | medium | high",
     "one_sentence_thesis": "string",
+    "thesis_card_version": "individual-thesis-card-v1",
+    "evidence_as_of": "string | null",
+    "business_model_profile": {
+        "summary": "string",
+        "customer_and_need": "string",
+        "offering": "string",
+        "revenue_mechanics": "string",
+        "sales_and_distribution": "string",
+        "cost_structure": "string",
+        "reinvestment_requirements": "string",
+        "competitive_position": "string",
+        "key_dependencies": "string",
+        "revenue_model_types": [
+            "subscription | transaction | usage | product_sales | service | project | "
+            "licensing | advertising | interest_spread | rental | hybrid | unclassified"
+        ],
+        "customer_types": [
+            "business | consumer | government | financial_institution | mixed | unclassified"
+        ],
+        "recurring_revenue_profile": "none | partial | majority | unassessable",
+        "pricing_power": "weak | mixed | strong | unassessable",
+        "capital_intensity": "low | moderate | high | unassessable",
+        "operating_leverage": "absent | limited | credible | demonstrated | unassessable",
+        "circle_of_competence": "inside | borderline | outside | unassessable",
+        "source_ids": ["string"],
+        "limitations": ["string"],
+    },
+    "margin_expansion_case": {
+        "status": "not_applicable | latent | early_evidence | active | stalled | invalidated | unassessable",
+        "mechanism": "string",
+        "required_operating_changes": ["string"],
+        "source_ids": ["string"],
+        "contrary_source_ids": ["string"],
+        "limitations": ["string"],
+    },
+    "timing_assessment": {
+        "horizon_months": "integer | null",
+        "why_now": "string",
+        "confidence": "low | medium | high",
+        "catalysts": [
+            {
+                "description": "string",
+                "timing_window": "0_12m | 12_24m | 24_48m | uncertain",
+                "observable_confirmation": "string",
+                "status": "expected | in_progress | achieved | delayed | unverified",
+                "source_ids": ["string"],
+            }
+        ],
+        "source_ids": ["string"],
+        "limitations": ["string"],
+    },
     "confidence_limitations": ["string"],
     "company_fact_ledger": {
         heading: [
@@ -198,6 +333,33 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
         "balance_sheet_change": "number | null",
         "dilution": "number | null",
     },
+    "forward_scenario_assumptions": [
+        {
+            "kind": (
+                "bear_multiple_compression | bear_fundamental_impairment | base | bull"
+            ),
+            "side": "low | high",
+            "horizon_months": "integer",
+            **{
+                name: {
+                    "value": "number",
+                    "source_ids": ["string"],
+                    "rationale": "string",
+                    "guardrail_exception": "string | null",
+                }
+                for name in (
+                    "revenue_cagr",
+                    "ebit_margin",
+                    "terminal_ev_ebit",
+                    "net_debt",
+                    "net_debt_change",
+                    "share_count_growth",
+                    "distributions_per_share",
+                )
+            },
+        }
+    ],
+    "forward_scenario_analysis": "null",
     "management_assessment": "string",
     "management_credibility_ledger": [
         {

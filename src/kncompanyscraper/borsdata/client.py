@@ -10,6 +10,7 @@ from kncompanyscraper.borsdata.kpi import Kpi
 from kncompanyscraper.borsdata.kpi_history import KpiHistory, KpiHistoryPoint
 from kncompanyscraper.borsdata.instrument import Instrument
 from kncompanyscraper.borsdata.stock_price import StockPrice
+from kncompanyscraper.borsdata.dividend import CashDividend
 from kncompanyscraper.models.insider_transaction import InsiderTransaction
 
 logger = get_logger(__name__)
@@ -89,6 +90,57 @@ class BorsdataClient:
             StockPrice(date=date.fromisoformat(p["d"][:10]), close=p["c"])
             for p in data.get("stockPricesList") or []
         ]
+
+    def get_dividends(
+        self,
+        instrument_ids: list[int],
+    ) -> dict[int, list[CashDividend]]:
+        if not instrument_ids:
+            return {}
+        if len(instrument_ids) > 50:
+            raise ValueError("Börsdata dividend endpoint accepts at most 50 instruments")
+
+        data = self._get(
+            "/v1/instruments/dividend/calendar",
+            {"instList": ",".join(str(value) for value in instrument_ids)},
+        )
+        result = {}
+        for instrument in data.get("list") or []:
+            instrument_id = instrument.get("insId")
+            if instrument_id not in instrument_ids:
+                continue
+            result[instrument_id] = []
+            for row in instrument.get("values") or []:
+                ex_date = row.get("excludingDate")
+                amount = row.get("amountPaid")
+                currency = row.get("currencyShortName")
+                dividend_type = row.get("dividendType")
+                if not ex_date:
+                    raise ValueError(
+                        f"Börsdata dividend row has no ex-date for instrument {instrument_id}"
+                    )
+                parsed_date = date.fromisoformat(ex_date[:10])
+                if amount == 0 and currency:
+                    # Börsdata emits dated zero rows for explicit no-distribution
+                    # decisions. They certify the calendar but are not cash flows.
+                    continue
+                if amount is None or amount < 0 or not currency:
+                    if parsed_date <= date.today():
+                        raise ValueError(
+                            "Börsdata historical dividend row is incomplete for "
+                            f"instrument {instrument_id} on {parsed_date}"
+                        )
+                    continue
+                result[instrument_id].append(
+                    CashDividend(
+                        ex_date=parsed_date,
+                        amount=float(amount),
+                        currency=currency.upper(),
+                        dividend_type=int(dividend_type or 0),
+                        distribution_frequency=row.get("distributionFrequency"),
+                    )
+                )
+        return result
 
     def get_insider_transactions(
         self,
