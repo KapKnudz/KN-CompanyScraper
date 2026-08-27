@@ -29,7 +29,7 @@ def test_get_reviews_uses_stable_event_key():
         }
     ]
     with patch(
-        "kncompanyscraper.repositories.dividend_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection_with_cursor(cursor),
     ):
         result = DividendRepository().get_reviews(
@@ -47,7 +47,7 @@ def test_get_reviews_uses_stable_event_key():
 def test_review_events_upserts_matching_source_events():
     cursor = MagicMock(rowcount=4)
     with patch(
-        "kncompanyscraper.repositories.dividend_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection_with_cursor(cursor),
     ):
         count = DividendRepository().review_events(

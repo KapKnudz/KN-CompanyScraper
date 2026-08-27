@@ -68,10 +68,18 @@ class ResearchEvidenceBuilder:
         self.insider_repository = insider_repository
         self.valuation_repository = valuation_repository
 
-    def build(self, company_id: int, as_of: date | None = None) -> ResearchEvidence:
+    def build(
+        self,
+        company_id: int,
+        as_of: date | None = None,
+        filter_ids: set[str] | None = None,
+    ) -> ResearchEvidence:
         as_of = as_of or date.today()
-        documents = self._documents(company_id, as_of)
-        insiders = self._insiders(company_id, as_of)
+        documents = self._documents(company_id, as_of, unbounded=filter_ids is not None)
+        insiders = self._insiders(company_id, as_of, unbounded=filter_ids is not None)
+        if filter_ids is not None:
+            documents = [item for item in documents if item.source_id in filter_ids]
+            insiders = [item for item in insiders if item.source_id in filter_ids]
         missing = []
         if not documents:
             missing.append("No textual company reports or releases are stored")
@@ -85,10 +93,12 @@ class ResearchEvidenceBuilder:
             missing_information=missing,
         )
 
-    def _documents(self, company_id: int, as_of: date) -> list[EvidenceDocument]:
+    def _documents(
+        self, company_id: int, as_of: date, *, unbounded: bool = False
+    ) -> list[EvidenceDocument]:
         result = []
         documents = self.document_repository.list_for_company(
-            company_id, as_of=as_of, limit=self.REPORT_LIMIT * 6
+            company_id, as_of=as_of, limit=None if unbounded else self.REPORT_LIMIT * 6
         )
         grouped_documents = {}
         for document in documents:
@@ -112,12 +122,12 @@ class ResearchEvidenceBuilder:
                     text=document.text[: self.MAX_DOCUMENT_CHARS],
                 )
             )
-            if len(result) >= self.REPORT_LIMIT:
+            if not unbounded and len(result) >= self.REPORT_LIMIT:
                 break
 
         seen_release_times = set()
         for release in self.news_repository.list_for_company(
-            company_id, as_of=as_of, limit=self.NEWS_LIMIT * 3
+            company_id, as_of=as_of, limit=None if unbounded else self.NEWS_LIMIT * 3
         ):
             release_key = release.published_at or release.url
             if release_key in seen_release_times:
@@ -133,14 +143,16 @@ class ResearchEvidenceBuilder:
                     text=release.body[: self.MAX_DOCUMENT_CHARS],
                 )
             )
-            if len(seen_release_times) >= self.NEWS_LIMIT:
+            if not unbounded and len(seen_release_times) >= self.NEWS_LIMIT:
                 break
         return result
 
-    def _insiders(self, company_id: int, as_of: date) -> list[InsiderTransactionEvidence]:
+    def _insiders(
+        self, company_id: int, as_of: date, *, unbounded: bool = False
+    ) -> list[InsiderTransactionEvidence]:
         since = as_of - timedelta(days=self.INSIDER_LOOKBACK_DAYS)
         transactions = self.insider_repository.list_for_company(
-            company_id, since=since, limit=self.INSIDER_LIMIT
+            company_id, since=since, limit=None if unbounded else self.INSIDER_LIMIT
         )
         return [
             self._insider_evidence(company_id, transaction, as_of, index)

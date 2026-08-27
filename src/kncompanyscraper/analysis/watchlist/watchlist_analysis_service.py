@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
 from kncompanyscraper.analysis.ranking.company_score import WatchlistRanking
+from kncompanyscraper.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -21,7 +24,11 @@ class WatchlistAnalysisService:
 
         results_by_company = {}
         for company in companies:
-            results_by_company[company.id] = self.analysis_engine.analyze(company)
+            try:
+                results_by_company[company.id] = self.analysis_engine.analyze(company)
+            except Exception:
+                logger.exception("Analysis failed for %s; excluding it from this run", company.name)
+                results_by_company[company.id] = {}
 
         ranking = self.ranking_engine.rank(companies, results_by_company)
         return WatchlistAnalysisRun(ranking=ranking, results_by_company=results_by_company)

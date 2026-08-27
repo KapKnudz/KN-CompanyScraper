@@ -3,6 +3,7 @@ from kncompanyscraper.analysis.agent.context_provenance import (
     deterministic_context_sha256,
 )
 from kncompanyscraper.analysis.agent.readiness import AgentReadinessGate
+from kncompanyscraper.constants import RAW_RESPONSE_TRANSIENT_METADATA_KEYS
 
 
 class AgentAnalysisService:
@@ -50,7 +51,11 @@ class AgentAnalysisService:
                     candidate.company_id,
                     response.output_text,
                     created_by=response.model,
-                    metadata={"analysis_mode": "initial", **metadata},
+                    metadata={
+                        "analysis_mode": "initial",
+                        "artifact_type": "model_response",
+                        **metadata,
+                    },
                 )
                 metadata["raw_analysis_id"] = raw_analysis_id
             try:
@@ -88,7 +93,7 @@ class AgentAnalysisService:
             if raw is None:
                 continue
             metadata = dict(raw.get("metadata") or {})
-            for key in ("analysis_mode", "validation_status", "validation_error"):
+            for key in RAW_RESPONSE_TRANSIENT_METADATA_KEYS:
                 metadata.pop(key, None)
             metadata["raw_analysis_id"] = raw["id"]
             try:

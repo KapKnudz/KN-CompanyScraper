@@ -8,10 +8,12 @@ class AgentContextBuilder:
         evidence_builder=None,
         cyclicality_repository=None,
         financial_evidence_builder=None,
+        peer_comparison_builder=None,
     ):
         self.evidence_builder = evidence_builder
         self.cyclicality_repository = cyclicality_repository
         self.financial_evidence_builder = financial_evidence_builder
+        self.peer_comparison_builder = peer_comparison_builder
 
     def build(
         self,
@@ -104,8 +106,22 @@ class AgentContextBuilder:
             enriched["financial_history"] = self.financial_evidence_builder.build(
                 company_id
             )
+        if self.peer_comparison_builder is not None:
+            valuation = enriched.get("valuation") or {}
+            target_range = (
+                _field(valuation, "ev_ebit_guardrail_low"),
+                _field(valuation, "ev_ebit_guardrail_high"),
+            )
+            enriched["peer_comparison"] = self.peer_comparison_builder.build(
+                company_id,
+                target_terminal_ev_ebit=target_range,
+            )
         if self.cyclicality_repository is not None:
             consensus = self.cyclicality_repository.get_consensus(company_id)
             if consensus is not None:
                 enriched["cyclicality_consensus"] = consensus
         return enriched
+
+
+def _field(value, name):
+    return value.get(name) if isinstance(value, dict) else getattr(value, name, None)

@@ -100,3 +100,32 @@ def test_parser_reports_and_omits_zero_values():
 
     assert result.values == [(date(2025, 1, 2), 200.5)]
     assert result.omitted_zero_dates == (date(2025, 1, 1),)
+
+
+@pytest.mark.parametrize(
+    ("rows", "message"),
+    [
+        ([(45659.5, "200.5")], "invalid Nasdaq trade date"),
+        ([(45659, "nan")], "invalid Nasdaq index value"),
+        ([(45659, "-1")], "invalid Nasdaq index value"),
+        ([(45659, "200.5"), (45659, "201")], "duplicate Nasdaq index date"),
+    ],
+)
+def test_parser_rejects_malformed_values(rows, message):
+    with pytest.raises(ValueError, match=message):
+        parse_nasdaq_history_workbook(workbook(rows))
+
+
+def test_parser_rejects_empty_or_incomplete_workbook():
+    with pytest.raises(ValueError, match="contains no values"):
+        parse_nasdaq_history_workbook(workbook([(45659, "0")]))
+
+    output = BytesIO()
+    with ZipFile(output, "w") as archive:
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            "<sheetData></sheetData></worksheet>",
+        )
+    with pytest.raises(ValueError, match="invalid Nasdaq history workbook"):
+        parse_nasdaq_history_workbook(output.getvalue())

@@ -6,10 +6,10 @@ from kncompanyscraper.borsdata.kpi_history import KpiHistory
 from kncompanyscraper.borsdata.valuation_snapshot import ValuationSnapshot
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
 from kncompanyscraper.borsdata.stock_price import StockPrice
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class ValuationRepository:
+class ValuationRepository(BaseRepository):
 
     CURRENT_KPIS = (
         KpiIds.MARKET_CAP,
@@ -33,7 +33,7 @@ class ValuationRepository:
             ON CONFLICT (company_id, kpi_id)
             DO UPDATE SET value = EXCLUDED.value, fetched_at = NOW()
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(current_query, (company_id, kpi_id, value))
                 cur.execute(
@@ -67,7 +67,7 @@ class ValuationRepository:
                 value = EXCLUDED.value,
                 fetched_at = NOW()
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 for point in history.values:
                     cur.execute(
@@ -98,7 +98,7 @@ class ValuationRepository:
                 currency = EXCLUDED.currency,
                 fetched_at = NOW()
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 for price in prices:
                     cur.execute(
@@ -107,7 +107,7 @@ class ValuationRepository:
                     )
 
     def get_latest_stock_price(self, company_id: int) -> StockPrice | None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -136,7 +136,7 @@ class ValuationRepository:
         max_age_days: int | None = None,
     ) -> StockPrice | None:
         """Return the closest stock price on or before *target_date*."""
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -166,7 +166,7 @@ class ValuationRepository:
         max_age_days: int | None = None,
     ) -> StockPrice | None:
         """Return the closest stored stock price on or after *target_date*."""
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -190,7 +190,7 @@ class ValuationRepository:
         )
 
     def get_stock_price_bounds(self, company_id: int) -> tuple[date, date] | None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -214,7 +214,7 @@ class ValuationRepository:
         """Return the most recent snapshot value per KPI on or before *target_date*."""
         if not kpi_ids:
             return {}
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -252,7 +252,7 @@ class ValuationRepository:
             params.append(max_date)
         query += " GROUP BY date_trunc('month', price_date) ORDER BY price_date"
 
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, tuple(params))
                 return [row[0] for row in cur.fetchall()]
@@ -263,7 +263,7 @@ class ValuationRepository:
         max_date: date,
     ) -> list[date]:
         """Return one final stored trading date for each calendar month."""
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -317,7 +317,7 @@ class ValuationRepository:
         """
         if not kpi_ids:
             return {}
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -370,7 +370,7 @@ class ValuationRepository:
         """Return annual KPI values for an already-public report year."""
         if not kpi_ids:
             return {}
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -391,7 +391,7 @@ class ValuationRepository:
                 }
 
     def _snapshot_values(self, company_id: int) -> dict[int, float | None]:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     "SELECT kpi_id, value FROM kpi_snapshots WHERE company_id = %s",
@@ -419,7 +419,7 @@ class ValuationRepository:
             query += " AND year < %s"
             params.append(before_year)
         query += " ORDER BY year"
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, tuple(params))
                 return [float(row[0]) for row in cur.fetchall()]

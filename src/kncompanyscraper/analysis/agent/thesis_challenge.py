@@ -12,7 +12,9 @@ from kncompanyscraper.analysis.agent.output_schema import (
 )
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt, AgentPromptBuilder
 from kncompanyscraper.analysis.agent.result_parser import _parse_contract
+from kncompanyscraper.analysis.agent.result_parser import StockAnalysisValidationError
 from kncompanyscraper.analysis.agent.thesis_update import ThesisUpdateContext
+from kncompanyscraper.constants import RAW_RESPONSE_TRANSIENT_METADATA_KEYS
 
 
 THESIS_CHALLENGE_CONTRACT = {
@@ -144,7 +146,9 @@ class ThesisChallengeService:
     @classmethod
     def _validate(cls, result: ThesisChallengeResult, evidence: dict) -> None:
         if not result.challenged_claim or not result.summary or not result.decision_impact:
-            raise ValueError("challenge claim, summary, and decision impact cannot be empty")
+            raise StockAnalysisValidationError(
+                "challenge claim, summary, and decision impact cannot be empty"
+            )
         known = cls._source_ids(evidence)
         cited = {
             source_id
@@ -153,7 +157,9 @@ class ThesisChallengeService:
         }
         unknown = sorted(cited - known)
         if unknown:
-            raise ValueError("challenge cites unknown original evidence: " + ", ".join(unknown))
+            raise StockAnalysisValidationError(
+                "challenge cites unknown original evidence: " + ", ".join(unknown)
+            )
 
     @staticmethod
     def _source_ids(evidence: dict) -> set[str]:
@@ -280,7 +286,7 @@ class ThesisChallengeResponseService:
             }
 
         metadata = dict(raw.get("metadata") or {})
-        for key in ("analysis_mode", "validation_status", "validation_error"):
+        for key in RAW_RESPONSE_TRANSIENT_METADATA_KEYS:
             metadata.pop(key, None)
         metadata.update(
             {
@@ -330,7 +336,7 @@ class ThesisChallengeResponseService:
             return None
         raw = self.raw_response_repository.get_stock_analysis_raw(raw_id)
         if raw is None:
-            raise ValueError("stored challenge response is missing")
+            raise StockAnalysisValidationError("stored challenge response is missing")
         return raw
 
     def _resolve_already_persisted(
@@ -342,7 +348,7 @@ class ThesisChallengeResponseService:
             or metadata.get("prior_thesis_revision_id")
             != challenge["thesis_revision_id"]
         ):
-            raise ValueError("challenge targets an older thesis revision")
+            raise StockAnalysisValidationError("challenge targets an older thesis revision")
         impact = metadata.get("thesis_update_impact")
         status = "upheld" if impact == "no_material_change" else "revised"
         analysis_id = thesis["source_analysis_id"]
@@ -359,10 +365,12 @@ class ThesisChallengeResponseService:
     @staticmethod
     def _validate_target(challenge: dict, thesis: dict, candidate) -> None:
         if challenge.get("status") != "open":
-            raise ValueError("thesis challenge is not open")
+            raise StockAnalysisValidationError("thesis challenge is not open")
         company_id = challenge.get("company_id")
         if thesis.get("company_id") != company_id or candidate.company_id != company_id:
-            raise ValueError("challenge, thesis, and candidate company do not match")
+            raise StockAnalysisValidationError(
+                "challenge, thesis, and candidate company do not match"
+            )
 
     @staticmethod
     def _build_context(thesis, candidate, evidence, current_facts):
@@ -370,7 +378,7 @@ class ThesisChallengeResponseService:
         packet_ids = ThesisChallengeService._source_ids(evidence)
         unexpected = sorted(packet_ids - original_ids)
         if unexpected:
-            raise ValueError(
+            raise StockAnalysisValidationError(
                 "challenge response includes non-original evidence: "
                 + ", ".join(unexpected)
             )

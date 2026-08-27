@@ -1,12 +1,12 @@
 from psycopg2.extras import Json
 
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class JobRepository:
+class JobRepository(BaseRepository):
 
     def start(self, job_type: str, company_id: int | None) -> int:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -19,7 +19,7 @@ class JobRepository:
                 return cur.fetchone()[0]
 
     def complete(self, job_id: int, result: dict | None = None) -> None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -31,7 +31,7 @@ class JobRepository:
                 )
 
     def fail(self, job_id: int, error: str) -> None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """

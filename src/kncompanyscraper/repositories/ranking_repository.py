@@ -13,9 +13,8 @@ class RankingRepository(BaseRepository):
         scores: list[dict],
         inputs_summary: dict,
     ) -> tuple[int, bool]:
-        with self._get_cursor() as cur:
-            cur.execute(
-                """
+        return self._insert_or_get(
+            """
                 INSERT INTO ranking_runs (
                     snapshot_month, model_version, company_count,
                     eligible_count, scores, inputs_summary
@@ -34,18 +33,12 @@ class RankingRepository(BaseRepository):
                     Json(scores),
                     Json(inputs_summary),
                 ),
-            )
-            row = cur.fetchone()
-            if row:
-                return row[0], True
-            cur.execute(
-                """
+            """
                 SELECT id FROM ranking_runs
                 WHERE snapshot_month = %s
                 """,
-                (snapshot_month,),
-            )
-            return cur.fetchone()[0], False
+            (snapshot_month,),
+        )
 
     def save_ranking_run(
         self,
@@ -246,31 +239,16 @@ class RankingRepository(BaseRepository):
         cohort_company_ids: list[int],
         recall_universe_company_ids: list[int],
     ) -> None:
-        with self._get_cursor() as cur:
-            cur.execute(
-                """
-                UPDATE ranking_runs
-                SET inputs_summary = COALESCE(inputs_summary, '{}'::JSONB) || %s
-                WHERE id = %s
-                  AND snapshot_month IS NOT NULL
-                  AND NOT (
-                      COALESCE(inputs_summary, '{}'::JSONB) ?
-                      'agent_cohort_snapshot_id'
-                  )
-                """,
-                (
-                    Json(
-                        {
-                            "agent_cohort_snapshot_id": cohort_snapshot_id,
-                            "agent_cohort_company_ids": cohort_company_ids,
-                            "recall_universe_company_ids": (
-                                recall_universe_company_ids
-                            ),
-                        }
-                    ),
-                    ranking_run_id,
-                ),
-            )
+        self.merge_inputs_summary_once(
+            "ranking_runs",
+            ranking_run_id,
+            {
+                "agent_cohort_snapshot_id": cohort_snapshot_id,
+                "agent_cohort_company_ids": cohort_company_ids,
+                "recall_universe_company_ids": recall_universe_company_ids,
+            },
+            "agent_cohort_snapshot_id",
+        )
 
     def attach_tier_hysteresis_provenance(
         self,
@@ -281,30 +259,17 @@ class RankingRepository(BaseRepository):
         pending_transitions: dict[str, dict],
         policy_version: str,
     ) -> None:
-        with self._get_cursor() as cur:
-            cur.execute(
-                """
-                UPDATE ranking_runs
-                SET inputs_summary = COALESCE(inputs_summary, '{}'::JSONB) || %s
-                WHERE id = %s
-                  AND snapshot_month IS NOT NULL
-                  AND NOT (
-                      COALESCE(inputs_summary, '{}'::JSONB) ?
-                      'tier_hysteresis_policy_version'
-                  )
-                """,
-                (
-                    Json(
-                        {
-                            "tier_hysteresis_policy_version": policy_version,
-                            "proposed_economic_tiers": proposed_economic_tiers,
-                            "effective_economic_tiers": effective_economic_tiers,
-                            "pending_tier_transitions": pending_transitions,
-                        }
-                    ),
-                    ranking_run_id,
-                ),
-            )
+        self.merge_inputs_summary_once(
+            "ranking_runs",
+            ranking_run_id,
+            {
+                "tier_hysteresis_policy_version": policy_version,
+                "proposed_economic_tiers": proposed_economic_tiers,
+                "effective_economic_tiers": effective_economic_tiers,
+                "pending_tier_transitions": pending_transitions,
+            },
+            "tier_hysteresis_policy_version",
+        )
 
     def get_run(self, run_id: int) -> dict | None:
         with self._get_dict_cursor() as cur:

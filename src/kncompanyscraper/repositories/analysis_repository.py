@@ -3,10 +3,11 @@ from dataclasses import fields
 
 from psycopg2.extras import Json, RealDictCursor
 
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
+from kncompanyscraper.models.stored_analysis import StoredAnalysisDocument
 
 
-class AnalysisRepository:
+class AnalysisRepository(BaseRepository):
     def save_stock_analysis_raw(
         self,
         company_id: int,
@@ -21,7 +22,7 @@ class AnalysisRepository:
             VALUES (%s, 'stock_analysis_raw', %s, %s, %s)
             RETURNING id
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     query,
@@ -50,7 +51,7 @@ class AnalysisRepository:
         update = {"validation_status": status}
         if error is not None:
             update["validation_error"] = error
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, (Json(update), analysis_id))
 
@@ -60,7 +61,7 @@ class AnalysisRepository:
             FROM analysis
             WHERE id = %s AND analysis_type = 'stock_analysis_raw'
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, (analysis_id,))
                 row = cur.fetchone()
@@ -81,7 +82,7 @@ class AnalysisRepository:
         """
         content = json.dumps(result.to_dict(), ensure_ascii=False, allow_nan=False)
 
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT id FROM companies WHERE id = %s FOR UPDATE",
@@ -175,20 +176,20 @@ class AnalysisRepository:
               AND metadata->>'validation_status' = 'accepted'
             ORDER BY company_id, created_at DESC, id DESC
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query)
                 rows = cur.fetchall()
 
         return {
-            row["company_id"]: {
+            row["company_id"]: StoredAnalysisDocument({
                 "analysis_id": row["id"],
                 "company_id": row["company_id"],
                 "content": json.loads(row["content"]),
                 "created_by": row["created_by"],
                 "created_at": row["created_at"].isoformat(),
                 "metadata": row["metadata"] or {},
-            }
+            })
             for row in rows
         }
 
@@ -197,7 +198,7 @@ class AnalysisRepository:
     ) -> dict[int, dict]:
         if not analysis_ids_by_company:
             return {}
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -215,14 +216,14 @@ class AnalysisRepository:
             expected_id = analysis_ids_by_company.get(row["company_id"])
             if expected_id != row["id"]:
                 continue
-            result[row["company_id"]] = {
+            result[row["company_id"]] = StoredAnalysisDocument({
                 "analysis_id": row["id"],
                 "company_id": row["company_id"],
                 "content": json.loads(row["content"]),
                 "created_by": row["created_by"],
                 "created_at": row["created_at"].isoformat(),
                 "metadata": row["metadata"] or {},
-            }
+            })
         return result
 
     def get_latest_rejected_incremental_updates(
@@ -243,7 +244,7 @@ class AnalysisRepository:
             ) latest
             WHERE metadata->>'validation_status' = 'rejected'
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, (company_ids,))
                 rows = cur.fetchall()
@@ -267,7 +268,7 @@ class AnalysisRepository:
             ) latest
             WHERE metadata->>'validation_status' = 'rejected'
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, (company_ids,))
                 rows = cur.fetchall()

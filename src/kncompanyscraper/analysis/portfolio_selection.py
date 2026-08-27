@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass, replace
 from datetime import date
+from kncompanyscraper.models.stored_analysis import as_stored_analysis
 
 
 @dataclass(frozen=True)
@@ -72,9 +73,9 @@ class PortfolioSelectionService:
                 continue
 
             analysis = analyses_by_company[score.company_id]
-            content = analysis["content"]
+            analysis = as_stored_analysis(analysis)
             if (
-                content["risk_profile"] == "cyclical_or_other_risk"
+                analysis.risk_profile == "cyclical_or_other_risk"
                 and high_risk_count >= self.MAX_HIGH_RISK_HOLDINGS
             ):
                 excluded.append(
@@ -87,7 +88,7 @@ class PortfolioSelectionService:
                 )
                 continue
 
-            if content["risk_profile"] == "cyclical_or_other_risk":
+            if analysis.risk_profile == "cyclical_or_other_risk":
                 high_risk_count += 1
             selected.append(
                 PortfolioHolding(
@@ -95,16 +96,14 @@ class PortfolioSelectionService:
                     company_id=score.company_id,
                     ticker=score.ticker,
                     company_name=score.name,
-                    analysis_id=analysis["analysis_id"],
+                    analysis_id=analysis.analysis_id,
                     target_weight=None,
-                    confidence=content["confidence"],
-                    why_now=content["one_sentence_thesis"],
-                    reverse_dcf_assessment=content[
-                        "reverse_dcf_expectation_assessment"
-                    ],
-                    risk_profile=content["risk_profile"],
-                    evidence_as_of=analysis["metadata"]["evidence_as_of"],
-                    thesis_breaks=tuple(content["thesis_break_conditions"]),
+                    confidence=analysis.confidence,
+                    why_now=analysis.one_sentence_thesis,
+                    reverse_dcf_assessment=analysis.reverse_dcf_expectation_assessment,
+                    risk_profile=analysis.risk_profile,
+                    evidence_as_of=analysis.evidence_as_of,
+                    thesis_breaks=analysis.thesis_break_conditions,
                 )
             )
 
@@ -146,22 +145,22 @@ class PortfolioSelectionService:
                 "no_validated_analysis",
                 "No accepted stock analysis is available.",
             )
-        content = analysis["content"]
-        if content.get("analysis_status") not in (None, "complete"):
+        analysis = as_stored_analysis(analysis)
+        if analysis.analysis_status not in (None, "complete"):
             return self._excluded(
                 score,
                 rank,
                 "analysis_incomplete",
                 "The latest analysis is blocked or method-unsupported, not an investment verdict.",
             )
-        if "portfolio_eligibility" not in content:
+        if analysis.portfolio_eligibility is None:
             return self._excluded(
                 score,
                 rank,
                 "analysis_contract_outdated",
                 "The latest accepted analysis predates portfolio eligibility fields.",
             )
-        evidence_as_of = analysis["metadata"].get("evidence_as_of")
+        evidence_as_of = analysis.evidence_as_of
         if evidence_as_of is None:
             return self._excluded(
                 score,
@@ -177,29 +176,29 @@ class PortfolioSelectionService:
                 "stale_analysis",
                 f"Evidence is {age_days} days old; maximum is {self.MAX_EVIDENCE_AGE_DAYS}.",
             )
-        if content["portfolio_eligibility"] != "investable":
+        if analysis.portfolio_eligibility != "investable":
             return self._excluded(
                 score,
                 rank,
-                content["portfolio_reason_code"],
+                analysis.portfolio_reason_code,
                 "The latest accepted analysis is not currently investable.",
-                content.get("reconsideration_trigger"),
+                analysis.reconsideration_trigger,
             )
-        if content["verdict"] != "activated_case":
+        if analysis.verdict != "activated_case":
             return self._excluded(
                 score,
                 rank,
                 "contract_mismatch",
                 "Investable eligibility requires an activated-case verdict.",
             )
-        if content["confidence"] == "low":
+        if analysis.confidence == "low":
             return self._excluded(
                 score,
                 rank,
                 "low_confidence",
                 "Low-confidence cases cannot receive a portfolio allocation.",
             )
-        if content["risk_profile"] == "unclassified":
+        if analysis.risk_profile == "unclassified":
             return self._excluded(
                 score,
                 rank,

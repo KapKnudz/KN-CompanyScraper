@@ -13,17 +13,19 @@ def register(subparsers):
 
     subparsers.add_parser(
         "map-borsdata", help="Map companies to Börsdata instruments"
-    )
-    subparsers.add_parser("sync-borsdata", help="Fetch and persist Börsdata inputs")
+    ).set_defaults(func=_cmd_map_borsdata)
+    subparsers.add_parser(
+        "sync-borsdata", help="Fetch and persist Börsdata inputs"
+    ).set_defaults(func=_cmd_sync_borsdata)
     subparsers.add_parser(
         "sync-fundamental-history", help="Backfill historical ROIC and net debt/EBITDA"
-    )
+    ).set_defaults(func=_cmd_sync_fundamental_history)
     subparsers.add_parser(
         "sync-borsdata-insiders", help="Sync insider transactions from Börsdata"
-    )
+    ).set_defaults(func=_cmd_sync_borsdata_insiders)
     subparsers.add_parser(
         "sync-borsdata-dividends", help="Sync dividend calendar from Börsdata"
-    )
+    ).set_defaults(func=_cmd_sync_borsdata_dividends)
 
     import_benchmark_parser = subparsers.add_parser(
         "import-benchmark-prices", help="Manual fallback for Nasdaq CSV export"
@@ -76,43 +78,40 @@ def _cmd_map_borsdata(args):
 
 
 def _cmd_sync_borsdata(args):
-    from kncompanyscraper.borsdata.ingestion import BorsdataIngestionService
     from kncompanyscraper.borsdata.client import BorsdataClient
+    from kncompanyscraper.jobs.borsdata_job import BorsdataJob
     from kncompanyscraper.repositories.company_repository import CompanyRepository
+    from kncompanyscraper.repositories.dividend_repository import DividendRepository
     from kncompanyscraper.repositories.financial_repository import FinancialRepository
-    from kncompanyscraper.repositories.valuation_repository import ValuationRepository
     from kncompanyscraper.repositories.job_repository import JobRepository
+    from kncompanyscraper.repositories.valuation_repository import ValuationRepository
+    from kncompanyscraper.composition import build_borsdata_ingestion_service
 
-    BorsdataIngestionService(
-        BorsdataClient(),
-        CompanyRepository(),
-        FinancialRepository(),
-        ValuationRepository(),
+    companies = CompanyRepository().get_active_companies()
+    result = BorsdataJob(
+        build_borsdata_ingestion_service(),
         JobRepository(),
-    ).sync_all()
+    ).run(companies)
+    print(
+        f"Börsdata sync complete: {result.synced} synced, "
+        f"{result.failed} failed."
+    )
+    for failure in result.failures:
+        print(f"  - {failure}")
 
 
 def _cmd_sync_fundamental_history(args):
-    from kncompanyscraper.borsdata.ingestion import BorsdataIngestionService
-    from kncompanyscraper.borsdata.client import BorsdataClient
     from kncompanyscraper.repositories.company_repository import CompanyRepository
-    from kncompanyscraper.repositories.financial_repository import FinancialRepository
-    from kncompanyscraper.repositories.valuation_repository import ValuationRepository
-    from kncompanyscraper.repositories.job_repository import JobRepository
+    from kncompanyscraper.composition import build_borsdata_ingestion_service
 
-    service = BorsdataIngestionService(
-        BorsdataClient(),
-        CompanyRepository(),
-        FinancialRepository(),
-        ValuationRepository(),
-        JobRepository(),
-    )
-    companies = CompanyRepository().get_active_companies()
+    company_repository = CompanyRepository()
+    service = build_borsdata_ingestion_service()
+    companies = company_repository.get_active_companies()
     synced = 0
     failures = []
     for company in companies:
         try:
-            service.sync_fundamental_history(company)
+            service.sync_general_fundamental_history(company)
             synced += 1
         except Exception as exc:
             failures.append(f"{company.id} {company.ticker}: {exc}")
@@ -151,11 +150,13 @@ def _cmd_sync_borsdata_dividends(args):
     from kncompanyscraper.repositories.company_repository import CompanyRepository
     from kncompanyscraper.repositories.dividend_repository import DividendRepository
     from kncompanyscraper.repositories.valuation_repository import ValuationRepository
+    from kncompanyscraper.repositories.job_repository import JobRepository
 
     result = BorsdataDividendJob(
         BorsdataClient(),
         DividendRepository(),
         ValuationRepository(),
+        JobRepository(),
     ).run(CompanyRepository().get_active_companies())
     print(
         f"Börsdata dividend sync complete: {result.synced} synced, "

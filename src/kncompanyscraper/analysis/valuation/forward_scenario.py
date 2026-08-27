@@ -4,6 +4,11 @@ from dataclasses import dataclass
 from math import floor, isfinite
 from typing import Literal
 from kncompanyscraper.models.enums import RankingModel
+from kncompanyscraper.analysis.policy_versions import (
+    FORWARD_RANKING_POLICY_VERSION,
+    FORWARD_SCENARIO_POLICY_VERSION,
+)
+from kncompanyscraper.analysis.statistics import cagr
 
 
 ScenarioKind = Literal[
@@ -14,6 +19,11 @@ ScenarioKind = Literal[
 ]
 EndpointSide = Literal["low", "high"]
 EvidenceConfidence = Literal["low", "medium", "high"]
+NetDebtChangeProvenance = Literal[
+    "source_backed",
+    "analyst_sensitivity",
+    "not_applicable",
+]
 ForwardScenarioStatus = Literal[
     "available",
     "insufficient_evidence",
@@ -31,6 +41,16 @@ class SourcedAssumption:
 
 
 @dataclass(frozen=True)
+class NetDebtChangeAssumption:
+    value: float
+    source_ids: tuple[str, ...]
+    rationale: str
+    mechanism: str
+    provenance_type: NetDebtChangeProvenance
+    guardrail_exception: str | None = None
+
+
+@dataclass(frozen=True)
 class ScenarioEndpoint:
     kind: ScenarioKind
     side: EndpointSide
@@ -39,7 +59,7 @@ class ScenarioEndpoint:
     ebit_margin: SourcedAssumption
     terminal_ev_ebit: SourcedAssumption
     net_debt: SourcedAssumption
-    net_debt_change: SourcedAssumption
+    net_debt_change: NetDebtChangeAssumption
     share_count_growth: SourcedAssumption
     distributions_per_share: SourcedAssumption
 
@@ -57,6 +77,8 @@ class ForwardScenarioInputs:
     terminal_multiple_guardrail: tuple[float | None, float | None]
     endpoints: tuple[ScenarioEndpoint, ...]
     ranking_model: RankingModel = RankingModel.GENERAL
+    price_currency: str | None = None
+    financial_currency: str | None = None
 
 
 @dataclass(frozen=True)
@@ -87,7 +109,7 @@ class ForwardScenarioAnalysis:
 class ForwardScenarioEngine:
     """Validate coherent bundles and calculate holding-period return bands."""
 
-    POLICY_VERSION = "forward-scenario-v2-share-growth"
+    POLICY_VERSION = FORWARD_SCENARIO_POLICY_VERSION
     HORIZONS = (24, 36, 48)
     KINDS: tuple[ScenarioKind, ...] = (
         "bear_multiple_compression",
@@ -136,6 +158,17 @@ class ForwardScenarioEngine:
     def _validate(self, inputs: ForwardScenarioInputs) -> tuple[list[str], list[str]]:
         flags: list[str] = []
         warnings: list[str] = []
+        price_currency = self._currency(inputs.price_currency)
+        financial_currency = self._currency(inputs.financial_currency)
+        if price_currency is None or financial_currency is None:
+            flags.append(
+                "price and financial currencies are required for forward valuation"
+            )
+        elif price_currency != financial_currency:
+            flags.append(
+                "forward valuation currency mismatch: "
+                f"price is {price_currency}, financial inputs are {financial_currency}"
+            )
         for name, value in (
             ("current_price", inputs.current_price),
             ("current_revenue", inputs.current_revenue),
@@ -193,6 +226,11 @@ class ForwardScenarioEngine:
 
         return flags, warnings
 
+    @staticmethod
+    def _currency(value: str | None) -> str | None:
+        normalized = (value or "").strip().upper()
+        return normalized or None
+
     @classmethod
     def _validate_endpoint(
         cls,
@@ -219,6 +257,36 @@ class ForwardScenarioEngine:
                 flags.append(f"{endpoint.key}.{name} requires at least one source ID")
             if not assumption.rationale.strip():
                 flags.append(f"{endpoint.key}.{name} requires a rationale")
+
+        change = endpoint.net_debt_change
+        provenance_type = getattr(change, "provenance_type", None)
+        mechanism = getattr(change, "mechanism", "")
+        if provenance_type not in (
+            "source_backed",
+            "analyst_sensitivity",
+            "not_applicable",
+        ):
+            flags.append(
+                f"{endpoint.key}.net_debt_change has an invalid provenance type"
+            )
+        if change.value == 0 and provenance_type != "not_applicable":
+            flags.append(
+                f"{endpoint.key}.zero net_debt_change must use not_applicable provenance"
+            )
+        if change.value != 0:
+            if provenance_type == "not_applicable":
+                flags.append(
+                    f"{endpoint.key}.non-zero net_debt_change requires provenance"
+                )
+            if not mechanism.strip():
+                flags.append(
+                    f"{endpoint.key}.net_debt_change requires a mechanism"
+                )
+            if provenance_type == "analyst_sensitivity":
+                warnings.append(
+                    f"{endpoint.key}.net_debt_change is an analyst sensitivity; "
+                    "its mechanism is not source-backed"
+                )
 
         if endpoint.revenue_cagr.value <= -1.0:
             flags.append(f"{endpoint.key}.revenue_cagr must be greater than -100%")
@@ -341,11 +409,9 @@ class ForwardScenarioEngine:
         diluted_shares = inputs.current_shares * (1.0 + endpoint.share_count_growth.value)
         value_per_share = equity_value / diluted_shares
         holding_value = value_per_share + endpoint.distributions_per_share.value
-        annualized_return = (
-            (holding_value / inputs.current_price) ** (1.0 / years) - 1.0
-            if holding_value > 0
-            else float("nan")
-        )
+        annualized_return = cagr(inputs.current_price, holding_value, years)
+        if annualized_return is None:
+            annualized_return = float("nan")
         return EndpointResult(
             key=endpoint.key,
             horizon_months=endpoint.horizon_months,
@@ -429,7 +495,7 @@ class ForwardRank:
 class ForwardScenarioRanker:
     """Apply the versioned hurdle-first, downside-first ranking policy."""
 
-    POLICY_VERSION = "forward-ranking-v1"
+    POLICY_VERSION = FORWARD_RANKING_POLICY_VERSION
     COMPARISON_TOLERANCE = 0.02
     _CONFIDENCE = {"low": 0, "medium": 1, "high": 2}
     _TIER_ORDER = {"A": 0, "B": 1, "C": 2, "IE": 3, "RESEARCH": 4}

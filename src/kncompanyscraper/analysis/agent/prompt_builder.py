@@ -24,7 +24,7 @@ class AgentPrompt:
 
 class AgentPromptBuilder:
     POLICY_NAME = "nordic-case-investing-policy"
-    POLICY_VERSION = "1.23.0"
+    POLICY_VERSION = "1.25.0"
 
     def build(self, candidate: AgentCandidate) -> AgentPrompt:
         policy = self._read_resource("resources/analyst_policy.md")
@@ -43,6 +43,11 @@ class AgentPromptBuilder:
             STOCK_ANALYSIS_OUTPUT_CONTRACT,
             ensure_ascii=False,
             indent=2,
+        )
+        output_contract += (
+            "\n\nCompact forward-scenario authoring is also accepted. For each endpoint, "
+            "use `base_endpoint`, `base_assumptions`, and `overrides` as described "
+            "in the workflow; the execution boundary expands it before persistence."
         )
 
         return AgentPrompt(

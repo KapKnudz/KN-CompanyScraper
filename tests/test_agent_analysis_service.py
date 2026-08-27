@@ -101,7 +101,9 @@ def test_agent_analysis_service_preserves_raw_response_before_validation():
         ).analyze([candidate])
 
     raw_repository.save_stock_analysis_raw.assert_called_once()
-    assert raw_repository.save_stock_analysis_raw.call_args.kwargs["metadata"]["analysis_mode"] == "initial"
+    raw_metadata = raw_repository.save_stock_analysis_raw.call_args.kwargs["metadata"]
+    assert raw_metadata["analysis_mode"] == "initial"
+    assert raw_metadata["artifact_type"] == "model_response"
     raw_repository.update_raw_validation.assert_called_once_with(
         77,
         "rejected",

@@ -73,38 +73,88 @@ def register(subparsers):
 
 
 def _cmd_backtest(args):
-    # This command is huge in main.py, I'll move its implementation logic if possible, 
-    # but for now I'll just import it from where it ends up.
-    # Actually, main.py is the one I'm emptying.
-    from kncompanyscraper.main import _cmd_backtest as main_backtest
-    main_backtest(args.periods, args.attribution_csv, args.scoring_audit_csv)
+    from kncompanyscraper.main import run_backtest_command
+    run_backtest_command(args.periods, args.attribution_csv, args.scoring_audit_csv)
 
 
 def _cmd_calibrate_weights(args):
-    from kncompanyscraper.main import _cmd_calibrate_weights as main_calibrate
-    main_calibrate(args.attribution_csv, args.ranking_model, args.horizon_months)
+    from kncompanyscraper.analysis.backtesting.weight_calibration import (
+        calibrate_weights,
+        load_attribution_rows,
+    )
+
+    model = RankingModel(args.ranking_model)
+    rows = load_attribution_rows(args.attribution_csv, model, args.horizon_months)
+    report = calibrate_weights(rows, model, args.horizon_months)
+    print(f"Calibration: {report.ranking_model.value}, {report.horizon_months}m")
+    print(f"Frozen weights: {report.frozen_weights}")
+    print(f"Candidate weights: {report.candidate_weights}")
+    print(f"Recommendation ready: {report.recommendation_ready}")
+    for reason in report.readiness_reasons:
+        print(f"Reason: {reason}")
 
 
 def _cmd_analyze_scoring_audit(args):
-    from kncompanyscraper.main import _cmd_analyze_scoring_audit as main_analyze
-    main_analyze(args.scoring_audit_csv, args.horizon_months)
+    from kncompanyscraper.analysis.backtesting.metric_audit_analysis import (
+        analyze_metric_audit,
+        load_metric_rows,
+    )
+
+    rows = load_metric_rows(args.scoring_audit_csv, args.horizon_months)
+    report = analyze_metric_audit(rows, args.horizon_months)
+    print(f"Metric audit: {report.horizon_months}m, {len(rows)} rows")
+    for diagnostic in report.diagnostics:
+        print(
+            f"{diagnostic.key}: coverage={diagnostic.coverage:.1%}, "
+            f"holdout excess delta={diagnostic.holdout_excess_delta:.1%}"
+        )
 
 
 def _cmd_evaluate_ranking_performance(args):
-    from kncompanyscraper.main import _cmd_evaluate_ranking_performance as main_eval
-    main_eval(args.max_horizon_months)
+    from kncompanyscraper.jobs.ranking_performance_job import RankingPerformanceJob
+    from kncompanyscraper.repositories.ranking_repository import RankingRepository
+    from kncompanyscraper.composition import build_ranking_performance_evaluator
+
+    result = RankingPerformanceJob(
+        RankingRepository(),
+        build_ranking_performance_evaluator(),
+    ).run(max_horizon_months=args.max_horizon_months)
+    print(f"Evaluated {result.evaluated_count} horizons ({result.complete_count} complete).")
 
 
 def _cmd_report_ranking_performance(args):
-    from kncompanyscraper.main import _cmd_report_ranking_performance as main_report
-    main_report(args.ranking_run_id, args.limit)
+    from kncompanyscraper.repositories.ranking_repository import RankingRepository
+
+    rows = RankingRepository().list_performance_evaluations(
+        ranking_run_id=args.ranking_run_id, limit=args.limit
+    )
+    for row in rows:
+        print(
+            f"Snapshot {row['snapshot_month']} · run {row['ranking_run_id']} · "
+            f"{row['horizon_months']}m · {row['status']}"
+        )
 
 
 def _cmd_evaluate_ranking_challengers(args):
-    from kncompanyscraper.main import _cmd_evaluate_ranking_challengers as main_eval_chall
-    main_eval_chall(args.max_horizon_months)
+    from kncompanyscraper.jobs.ranking_challenger_performance_job import RankingChallengerPerformanceJob
+    from kncompanyscraper.repositories.ranking_challenger_repository import RankingChallengerRepository
+    from kncompanyscraper.composition import build_ranking_challenger_performance_evaluator
+
+    result = RankingChallengerPerformanceJob(
+        RankingChallengerRepository(),
+        build_ranking_challenger_performance_evaluator(),
+    ).run(max_horizon_months=args.max_horizon_months)
+    print(f"Evaluated {result.evaluated_count} challenger horizons ({result.complete_count} complete).")
 
 
 def _cmd_report_ranking_challengers(args):
-    from kncompanyscraper.main import _cmd_report_ranking_challengers as main_report_chall
-    main_report_chall(args.challenger_snapshot_id, args.limit)
+    from kncompanyscraper.repositories.ranking_challenger_repository import RankingChallengerRepository
+
+    rows = RankingChallengerRepository().list_performance_evaluations(
+        challenger_snapshot_id=args.challenger_snapshot_id, limit=args.limit
+    )
+    for row in rows:
+        print(
+            f"Snapshot {row['snapshot_month']} · challenger "
+            f"{row['challenger_snapshot_id']} · {row['horizon_months']}m · {row['status']}"
+        )

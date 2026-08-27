@@ -1,10 +1,10 @@
 import random
-import time
 import requests
 from datetime import date, datetime
 
 from kncompanyscraper import config
 from kncompanyscraper.logger import get_logger
+from kncompanyscraper.http_transport import request_with_retry
 from kncompanyscraper.borsdata.report import Report
 from kncompanyscraper.borsdata.kpi import Kpi
 from kncompanyscraper.borsdata.kpi_history import KpiHistory, KpiHistoryPoint
@@ -227,74 +227,31 @@ class BorsdataClient:
 
         url = f"{self.BASE_URL}{path}"
 
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                response = requests.get(url, params=params, timeout=20)
-            except requests.exceptions.Timeout:
-                if attempt < self.MAX_RETRIES - 1:
-                    wait = self._backoff(attempt)
-                    logger.warning(
-                        "Börsdata timeout on %s, retrying in %.1fs (attempt %d/%d)",
-                        path, wait, attempt + 1, self.MAX_RETRIES,
-                    )
-                    time.sleep(wait)
-                    continue
-                logger.error("Börsdata timeout on %s after %d attempts", path, self.MAX_RETRIES)
-                raise requests.exceptions.Timeout(
-                    f"Börsdata request timed out: {path}"
-                ) from None
-            except requests.exceptions.ConnectionError:
-                if attempt < self.MAX_RETRIES - 1:
-                    wait = self._backoff(attempt)
-                    logger.warning(
-                        "Börsdata connection error on %s, retrying in %.1fs (attempt %d/%d)",
-                        path, wait, attempt + 1, self.MAX_RETRIES,
-                    )
-                    time.sleep(wait)
-                    continue
-                logger.error("Börsdata connection error on %s after %d attempts", path, self.MAX_RETRIES)
-                raise requests.exceptions.ConnectionError(
-                    f"Börsdata connection error: {path}"
-                ) from None
+        response = request_with_retry(
+            requests.get,
+            source="Börsdata",
+            method="GET",
+            url=url,
+            timeout=20,
+            retries=self.MAX_RETRIES,
+            backoff_base=self.RETRY_BACKOFF_BASE,
+            backoff_func=self._backoff,
+            return_last_response=True,
+            transport_error_factory=lambda exc: (
+                requests.exceptions.Timeout(f"Börsdata request timed out: {path}")
+                if isinstance(exc, requests.exceptions.Timeout)
+                else requests.exceptions.ConnectionError(f"Börsdata connection error: {path}")
+            ),
+            params=params,
+        )
 
-            # Rate limiting — honour Retry-After if present, else exponential backoff
-            if response.status_code == 429:
-                if attempt < self.MAX_RETRIES - 1:
-                    retry_after = response.headers.get("Retry-After")
-                    wait = float(retry_after) if retry_after else self._backoff(attempt)
-                    logger.warning(
-                        "Börsdata rate limited (429) on %s, waiting %.1fs (attempt %d/%d)",
-                        path, wait, attempt + 1, self.MAX_RETRIES,
-                    )
-                    time.sleep(wait)
-                    continue
-                logger.error("Börsdata rate limited (429) on %s after %d attempts", path, self.MAX_RETRIES)
-
-            # Transient server errors
-            if response.status_code >= 500:
-                if attempt < self.MAX_RETRIES - 1:
-                    wait = self._backoff(attempt)
-                    logger.warning(
-                        "Börsdata server error (%d) on %s, retrying in %.1fs (attempt %d/%d)",
-                        response.status_code, path, wait, attempt + 1, self.MAX_RETRIES,
-                    )
-                    time.sleep(wait)
-                    continue
-                logger.error(
-                    "Börsdata server error (%d) on %s after %d attempts",
-                    response.status_code, path, self.MAX_RETRIES,
-                )
-
-            if response.status_code >= 400:
-                # requests includes the full query string in HTTPError messages.
-                # Börsdata authenticates via query parameter, so strip it before
-                # raising to keep the API key out of logs and tracebacks.
-                response.url = url
-                response.raise_for_status()
-            logger.debug("Börsdata %s → 200", path)
-            return response.json()
-
-        raise RuntimeError(f"Börsdata request exhausted retries: {path}")
+        if response.status_code >= 400:
+            # Strip the authentication query parameter before raising so it cannot
+            # leak into HTTPError messages or tracebacks.
+            response.url = url
+            response.raise_for_status()
+        logger.debug("Börsdata %s → %d", path, response.status_code)
+        return response.json()
 
     def _backoff(self, attempt):
         """Exponential backoff with jitter: ~1s, ~2s, ~4s."""

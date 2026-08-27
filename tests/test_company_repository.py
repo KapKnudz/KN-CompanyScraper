@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from kncompanyscraper.repositories.company_repository import CompanyRepository
 from kncompanyscraper.watchlist_import import WatchlistCompany
@@ -11,11 +11,7 @@ def test_backtest_companies_include_inactive_names_with_price_history():
     connection.__enter__.return_value = connection
     connection.cursor.return_value.__enter__.return_value = cursor
 
-    with patch(
-        "kncompanyscraper.repositories.company_repository.get_connection",
-        return_value=connection,
-    ):
-        CompanyRepository().get_backtest_companies()
+    CompanyRepository(connection).get_backtest_companies()
 
     sql = cursor.execute.call_args.args[0]
     assert "EXISTS" in sql
@@ -29,17 +25,13 @@ def test_set_borsdata_identity_updates_id_and_listing_currency():
     connection.__enter__.return_value = connection
     connection.cursor.return_value.__enter__.return_value = cursor
 
-    with patch(
-        "kncompanyscraper.repositories.company_repository.get_connection",
-        return_value=connection,
-    ):
-        CompanyRepository().set_borsdata_identity(7, 700, "SEK", 1, 75)
+    CompanyRepository(connection).set_borsdata_identity(7, 700, "SEK", 1, 75)
 
     sql, params = cursor.execute.call_args[0]
     assert "SET borsdata_id = %s" in sql
     assert "sector_id = %s" in sql
     assert "branch_id = %s" in sql
-    assert params == (700, "SEK", 1, 75, 7)
+    assert params == (700, "SEK", "SEK", None, 1, 75, 7)
 
 
 def test_upsert_watchlist_companies_creates_and_activates_new_company():
@@ -49,13 +41,9 @@ def test_upsert_watchlist_companies_creates_and_activates_new_company():
     connection.__enter__.return_value = connection
     connection.cursor.return_value.__enter__.return_value = cursor
 
-    with patch(
-        "kncompanyscraper.repositories.company_repository.get_connection",
-        return_value=connection,
-    ):
-        result = CompanyRepository().upsert_watchlist_companies(
-            [WatchlistCompany(2516, "Navigo Invest", "NAVIGO STAM")]
-        )
+    result = CompanyRepository(connection).upsert_watchlist_companies(
+        [WatchlistCompany(2516, "Navigo Invest", "NAVIGO STAM")]
+    )
 
     assert result == (1, 0)
     queries = [call.args[0] for call in cursor.execute.call_args_list]
@@ -70,13 +58,9 @@ def test_upsert_watchlist_companies_updates_existing_borsdata_company():
     connection.__enter__.return_value = connection
     connection.cursor.return_value.__enter__.return_value = cursor
 
-    with patch(
-        "kncompanyscraper.repositories.company_repository.get_connection",
-        return_value=connection,
-    ):
-        result = CompanyRepository().upsert_watchlist_companies(
-            [WatchlistCompany(426, "Gränges", "GRNG")]
-        )
+    result = CompanyRepository(connection).upsert_watchlist_companies(
+        [WatchlistCompany(426, "Gränges", "GRNG")]
+    )
 
     assert result == (0, 1)
     update_call = next(
@@ -92,13 +76,9 @@ def test_upsert_watchlist_companies_falls_back_to_existing_ticker():
     connection.__enter__.return_value = connection
     connection.cursor.return_value.__enter__.return_value = cursor
 
-    with patch(
-        "kncompanyscraper.repositories.company_repository.get_connection",
-        return_value=connection,
-    ):
-        result = CompanyRepository().upsert_watchlist_companies(
-            [WatchlistCompany(426, "Gränges", "GRNG")]
-        )
+    result = CompanyRepository(connection).upsert_watchlist_companies(
+        [WatchlistCompany(426, "Gränges", "GRNG")]
+    )
 
     assert result == (0, 1)
     update_call = next(

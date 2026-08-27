@@ -66,8 +66,6 @@ def _rank_eligibility(ranking_model, financial, valuation, sector_data):
 
 
 def _compute_flags(quality: dict, growth: dict, val: dict, balance: dict, missing_data: list[str]) -> list[str]:
-    flags: list[str] = []
-
     q = quality["score"]
     g = growth["score"]
     v = val["score"]
@@ -79,37 +77,34 @@ def _compute_flags(quality: dict, growth: dict, val: dict, balance: dict, missin
     valuation_available = val.get("available", True)
     balance_available = balance.get("available", True)
 
-    if quality_available and valuation_available and q >= 75 and v >= 70:
-        flags.append("cheap_quality")
-    if quality_available and valuation_available and q >= 75 and v <= 30:
-        flags.append("high_quality_expensive")
-    if growth_available and valuation_available and g >= 75 and v <= 30:
-        flags.append("strong_growth_expensive")
-    if growth_available and valuation_available and g < 25 and v >= 70:
-        flags.append("cheap_but_weak_growth")
-    if balance_available and b <= 25:
-        flags.append("balance_sheet_risk")
+    predicates = (
+        (quality_available and valuation_available and q >= 75 and v >= 70, "cheap_quality"),
+        (quality_available and valuation_available and q >= 75 and v <= 30, "high_quality_expensive"),
+        (growth_available and valuation_available and g >= 75 and v <= 30, "strong_growth_expensive"),
+        (growth_available and valuation_available and g < 25 and v >= 70, "cheap_but_weak_growth"),
+        (balance_available and b <= 25, "balance_sheet_risk"),
+        (any("FCF margin" in p for p in quality["positives"]) and v >= 70, "fcf_quality"),
+        (growth_available and g < 25, "negative_growth"),
+        (
+            any("possible one-off" in warning for warning in growth["negatives"]),
+            "earnings_one_off_risk",
+        ),
+        (len(missing_data) >= 4, "low_data_quality"),
+    )
+    return [label for condition, label in predicates if condition]
 
-    # FCF quality flag
-    if any("FCF margin" in p for p in quality["positives"]) and v >= 70:
-        flags.append("fcf_quality")
 
-    # Negative growth flag
-    if growth_available and g < 25:
-        flags.append("negative_growth")
-
-    if any("possible one-off" in warning for warning in growth["negatives"]):
-        flags.append("earnings_one_off_risk")
-
-    # Data quality flag
-    if len(missing_data) >= 4:
-        flags.append("low_data_quality")
-
-    return flags
+OPTIONAL_METRICS = {
+    "roic not available",
+    "recent_revenue_growth not available",
+    "price_to_book not available",
+    "dividend_yield not available",
+    "net_debt_ebitda not available",
+}
 
 
 def _compute_data_quality(missing_data: list[str]) -> DataQuality:
-    missing_count = len(missing_data)
+    missing_count = sum(item not in OPTIONAL_METRICS for item in missing_data)
     if missing_count == 0:
         return DataQuality.HIGH
     elif missing_count <= 3:

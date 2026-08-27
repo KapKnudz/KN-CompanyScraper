@@ -1,15 +1,13 @@
 from psycopg2.extras import Json, RealDictCursor
 
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class AgentCohortRepository:
+class AgentCohortRepository(BaseRepository):
     def save(self, snapshot) -> tuple[int, bool]:
         payload = snapshot.to_dict()
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        return self._insert_or_get(
+            """
                     INSERT INTO agent_cohort_snapshots (
                         snapshot_month, deterministic_run_id, policy_version,
                         target_size, grace_months, eligible_universe_company_ids,
@@ -29,15 +27,9 @@ class AgentCohortRepository:
                         Json(payload["top_company_ids"]),
                         Json(payload["members"]),
                     ),
-                )
-                row = cur.fetchone()
-                if row:
-                    return row[0], True
-                cur.execute(
-                    "SELECT id FROM agent_cohort_snapshots WHERE snapshot_month = %s",
-                    (snapshot.snapshot_month,),
-                )
-                return cur.fetchone()[0], False
+            "SELECT id FROM agent_cohort_snapshots WHERE snapshot_month = %s",
+            (snapshot.snapshot_month,),
+        )
 
     def get_for_month(self, snapshot_month) -> dict | None:
         return self._get(
@@ -53,7 +45,7 @@ class AgentCohortRepository:
 
     @staticmethod
     def _get(where_clause: str, params: tuple) -> dict | None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     f"""

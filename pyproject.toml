@@ -28,6 +28,7 @@ where = ["src"]
 "kncompanyscraper.analysis.agent" = ["resources/*.md", "prompts/*.md"]
 
 [tool.pytest.ini_options]
+addopts = "-m 'not integration'"
 markers = [
     "integration: live Börsdata API tests (requires BORSDATA_API_KEY env var)",
 ]

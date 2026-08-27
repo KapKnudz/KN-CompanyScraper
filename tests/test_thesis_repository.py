@@ -18,7 +18,7 @@ def test_get_latest_thesis_returns_current_revision():
     connection.cursor.return_value.__enter__.return_value = cursor
 
     with patch(
-        "kncompanyscraper.repositories.thesis_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         thesis = ThesisRepository().get_latest(42)
@@ -26,6 +26,23 @@ def test_get_latest_thesis_returns_current_revision():
     assert thesis["revision"] == 3
     assert thesis["content"]["verdict"] == "watch"
     assert cursor.execute.call_args.args[1] == (42,)
+
+
+def test_get_revision_loads_an_exact_revision():
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {"id": 9, "company_id": 42, "revision": 2}
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.cursor.return_value.__enter__.return_value = cursor
+
+    with patch(
+        "kncompanyscraper.repositories.base_repository.get_connection",
+        return_value=connection,
+    ):
+        thesis = ThesisRepository().get_revision(9)
+
+    assert thesis == {"id": 9, "company_id": 42, "revision": 2}
+    assert cursor.execute.call_args.args[1] == (9,)
 
 
 def test_list_latest_facts_scopes_query_to_latest_revision():
@@ -43,7 +60,7 @@ def test_list_latest_facts_scopes_query_to_latest_revision():
     connection.cursor.return_value.__enter__.return_value = cursor
 
     with patch(
-        "kncompanyscraper.repositories.thesis_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         facts = ThesisRepository().list_latest_facts(42)

@@ -1,7 +1,7 @@
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class ScrapeRunRepository:
+class ScrapeRunRepository(BaseRepository):
 
     def start(self):
         query = """
@@ -10,11 +10,9 @@ class ScrapeRunRepository:
             RETURNING id
         """
 
-        with get_connection() as connection:
-            cursor = connection.cursor()
+        with self._get_cursor() as cursor:
             cursor.execute(query)
             scrape_run_id = cursor.fetchone()[0]
-            connection.commit()
 
         return scrape_run_id
 
@@ -28,8 +26,7 @@ class ScrapeRunRepository:
             WHERE id = %s
         """
 
-        with get_connection() as connection:
-            cursor = connection.cursor()
+        with self._get_cursor() as cursor:
             cursor.execute(
                 query,
                 (
@@ -39,7 +36,6 @@ class ScrapeRunRepository:
                     scrape_run_id
                 )
             )
-            connection.commit()
 
     def fail(self, scrape_run_id, error, companies_found, news_added):
         query = """
@@ -52,8 +48,7 @@ class ScrapeRunRepository:
             WHERE id = %s
         """
 
-        with get_connection() as connection:
-            cursor = connection.cursor()
+        with self._get_cursor() as cursor:
             cursor.execute(
                 query,
                 (
@@ -63,4 +58,3 @@ class ScrapeRunRepository:
                     scrape_run_id
                 )
             )
-            connection.commit()

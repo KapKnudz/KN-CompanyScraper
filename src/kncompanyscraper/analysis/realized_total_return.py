@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from kncompanyscraper.borsdata.stock_price import StockPrice
+from kncompanyscraper.analysis.date_utils import MAX_PRICE_AGE_DAYS
 
 
 @dataclass(frozen=True)
@@ -14,7 +15,7 @@ class RealizedReturnObservation:
 
 
 class RealizedTotalReturnCalculator:
-    MAX_PRICE_AGE_DAYS = 7
+    MAX_PRICE_AGE_DAYS = MAX_PRICE_AGE_DAYS
     MAX_UNREVIEWED_EVENT_PRICE_RATIO = 1.0
     MAX_UNREVIEWED_REINVESTMENT_MULTIPLIER = 2.0
 

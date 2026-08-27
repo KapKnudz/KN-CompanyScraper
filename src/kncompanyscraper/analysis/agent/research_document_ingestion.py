@@ -5,20 +5,13 @@ import re
 import requests
 
 from kncompanyscraper.logger import get_logger
+from kncompanyscraper.http_transport import request_with_retry
 from kncompanyscraper.models.research_document import ResearchDocument
 from kncompanyscraper.scraper.mfn_scraper import MfnScraper
+from kncompanyscraper.constants import REPORT_TITLE_TERMS
 
 
-REPORT_TERMS = (
-    "annual report",
-    "interim report",
-    "quarterly report",
-    "year-end report",
-    "årsredovisning",
-    "delårsrapport",
-    "kvartalsrapport",
-    "bokslutskommuniké",
-)
+REPORT_TERMS = REPORT_TITLE_TERMS
 
 logger = get_logger(__name__)
 
@@ -102,7 +95,13 @@ def _document_type(title: str) -> str:
 
 
 def _download(url: str) -> bytes:
-    response = requests.get(url, timeout=60)
+    response = request_with_retry(
+        requests.get,
+        source="research document",
+        method="GET",
+        url=url,
+        timeout=60,
+    )
     response.raise_for_status()
     return response.content
 

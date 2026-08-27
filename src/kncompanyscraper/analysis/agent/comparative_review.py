@@ -11,6 +11,7 @@ from kncompanyscraper.analysis.comparative_ranking import (
     ComparativeRankingSnapshot,
 )
 from kncompanyscraper.analysis.valuation.forward_scenario import ForwardRank
+from kncompanyscraper.analysis.policy_versions import comparative_ranking_policy_version
 
 
 COMPARATIVE_REVIEW_CONTRACT = {
@@ -191,7 +192,7 @@ class ComparativeReviewService:
         result = self._result_from_dict(stored["content"])
         final_ranking = ComparativeRankingSnapshot(
             as_of=(ranking_run.get("inputs_summary") or {})["as_of"],
-            policy_version="forward-ranking-v1+comparative-confidence-v1",
+            policy_version=comparative_ranking_policy_version(),
             ranks=tuple(
                 ForwardRank(
                     **{
@@ -279,7 +280,7 @@ class ComparativeReviewService:
         )
         return ComparativeRankingSnapshot(
             as_of=snapshot.as_of,
-            policy_version="forward-ranking-v1+comparative-confidence-v1",
+            policy_version=comparative_ranking_policy_version(),
             ranks=snapshot.ranks,
             analysis_ids=snapshot.analysis_ids,
         )

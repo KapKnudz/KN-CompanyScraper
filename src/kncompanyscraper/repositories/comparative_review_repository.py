@@ -1,11 +1,11 @@
 from psycopg2.extras import Json, RealDictCursor
 
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class ComparativeReviewRepository:
+class ComparativeReviewRepository(BaseRepository):
     def get_by_ranking_run(self, ranking_run_id: int) -> dict | None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -28,7 +28,7 @@ class ComparativeReviewRepository:
         created_by: str,
         metadata: dict,
     ) -> int:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -47,7 +47,7 @@ class ComparativeReviewRepository:
                 return row[0]
 
     def accept(self, review_id: int, result, final_ranking) -> None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -66,7 +66,7 @@ class ComparativeReviewRepository:
                     raise ValueError("comparative review cannot be accepted")
 
     def reject(self, review_id: int, error: str) -> None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -86,31 +86,13 @@ class ComparativeReviewRepository:
         final_actionable_company_ids: list[int],
         final_ranked_company_ids: list[int],
     ) -> None:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE ranking_runs
-                    SET inputs_summary = COALESCE(inputs_summary, '{}'::JSONB) || %s
-                    WHERE id = %s
-                      AND snapshot_month IS NOT NULL
-                      AND NOT (
-                          COALESCE(inputs_summary, '{}'::JSONB) ?
-                          'comparative_agent_review_id'
-                      )
-                    """,
-                    (
-                        Json(
-                            {
-                                "comparative_agent_review_id": review_id,
-                                "comparative_final_actionable_company_ids": (
-                                    final_actionable_company_ids
-                                ),
-                                "comparative_final_ranked_company_ids": (
-                                    final_ranked_company_ids
-                                ),
-                            }
-                        ),
-                        ranking_run_id,
-                    ),
-                )
+        self.merge_inputs_summary_once(
+            "ranking_runs",
+            ranking_run_id,
+            {
+                "comparative_agent_review_id": review_id,
+                "comparative_final_actionable_company_ids": final_actionable_company_ids,
+                "comparative_final_ranked_company_ids": final_ranked_company_ids,
+            },
+            "comparative_agent_review_id",
+        )

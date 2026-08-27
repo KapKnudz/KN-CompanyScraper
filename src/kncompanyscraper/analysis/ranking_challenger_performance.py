@@ -1,6 +1,5 @@
 from dataclasses import asdict, dataclass
 from datetime import date
-from math import sqrt
 from statistics import mean
 
 from kncompanyscraper.analysis.base.performance_evaluator import BasePerformanceEvaluator
@@ -8,6 +7,7 @@ from kncompanyscraper.analysis.ranking_performance import (
     PortfolioReturn,
     RankingPerformanceEvaluator,
 )
+from kncompanyscraper.analysis.statistics import pearson
 
 
 @dataclass(frozen=True)
@@ -83,6 +83,12 @@ class RankingChallengerPerformanceEvaluator(BasePerformanceEvaluator):
             benchmark_repository,
             dividend_repository,
         )
+
+    @staticmethod
+    def _difference(left: float | None, right: float | None) -> float | None:
+        if left is None or right is None:
+            return None
+        return left - right
 
     def evaluate(
         self,
@@ -400,14 +406,6 @@ class RankingChallengerPerformanceEvaluator(BasePerformanceEvaluator):
 
     @staticmethod
     def _pearson(left: list[float], right: list[float]) -> float | None:
-        left_mean = mean(left)
-        right_mean = mean(right)
-        numerator = sum(
-            (left_value - left_mean) * (right_value - right_mean)
-            for left_value, right_value in zip(left, right)
-        )
-        left_variance = sum((value - left_mean) ** 2 for value in left)
-        right_variance = sum((value - right_mean) ** 2 for value in right)
-        denominator = sqrt(left_variance * right_variance)
-        return numerator / denominator if denominator else None
-
+        if len(left) != len(right) or len(left) < 3:
+            return None
+        return pearson(left, right)

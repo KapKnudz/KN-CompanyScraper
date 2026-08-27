@@ -3,6 +3,7 @@ from typing import Optional
 from kncompanyscraper.analysis.insider.current_insider_activity import CurrentInsiderActivity
 from kncompanyscraper.analysis.insider.historical_insider_activity import HistoricalInsiderActivity
 from kncompanyscraper.analysis.insider.insider_result import InsiderResult
+from kncompanyscraper.analysis.statistics import safe_div
 
 
 class InsiderCalculator:
@@ -11,6 +12,8 @@ class InsiderCalculator:
         self,
         current: CurrentInsiderActivity,
         historical: HistoricalInsiderActivity,
+        *,
+        data_available: bool = True,
     ) -> InsiderResult:
         """Compute InsiderResult from current and historical activity."""
         net_buying = current.buy_value - current.sell_value
@@ -21,6 +24,7 @@ class InsiderCalculator:
             average_buy_size=self._ratio(current.buy_value, current.buy_count),
             average_sell_size=self._ratio(current.sell_value, current.sell_count),
             insider_buying_trend=self._calculate_trend(net_buying, historical),
+            data_available=data_available,
         )
 
     def _calculate_trend(
@@ -48,6 +52,4 @@ class InsiderCalculator:
     @staticmethod
     def _ratio(numerator: float, denominator: float) -> Optional[float]:
         """Safe division — returns None when denominator is zero."""
-        if denominator == 0:
-            return None
-        return numerator / denominator
+        return safe_div(numerator, denominator)

@@ -14,5 +14,28 @@ def register(subparsers):
 
 
 def _cmd_select_portfolio(args):
-    from kncompanyscraper.main import _cmd_select_portfolio as main_select
-    main_select(args.target_size, args.output)
+    import json
+    from datetime import date
+    from kncompanyscraper.analysis.portfolio_selection import PortfolioSelectionService
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
+    from kncompanyscraper.repositories.ranking_repository import RankingRepository
+    from kncompanyscraper.repositories.portfolio_repository import PortfolioRepository
+
+    as_of = date.today()
+    ranking = RankingRepository().get_latest_monthly_run_before(as_of.replace(day=1))
+    if ranking is None:
+        raise SystemExit("No monthly ranking run found; run comparative ranking first.")
+    ranking_scores = ranking.get("scores", [])
+    analyses = AnalysisRepository().get_latest_validated_stock_analyses()
+    from kncompanyscraper.analysis.ranking.company_score import CompanyScore, WatchlistRanking
+
+    scores = [CompanyScore(**score) for score in ranking_scores]
+    selection = PortfolioSelectionService().select(
+        WatchlistRanking(scores=scores), analyses, as_of=as_of, target_size=args.target_size
+    )
+    PortfolioRepository().save_run(selection.to_dict())
+    payload = json.dumps(selection.to_dict(), indent=2, ensure_ascii=False)
+    if args.output:
+        args.output.write_text(payload + "\n", encoding="utf-8")
+    else:
+        print(payload)

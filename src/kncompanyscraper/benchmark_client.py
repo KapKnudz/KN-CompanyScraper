@@ -6,6 +6,7 @@ from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
 import requests
+from kncompanyscraper.http_transport import request_with_retry
 
 
 NASDAQ_OMXS30GI_EXPORT_URL = (
@@ -31,8 +32,11 @@ class NasdaqBenchmarkClient:
     ) -> NasdaqBenchmarkHistory:
         if start_date > end_date:
             raise ValueError("benchmark start date must not exceed end date")
-        response = self.request_func(
-            NASDAQ_OMXS30GI_EXPORT_URL,
+        response = request_with_retry(
+            self.request_func,
+            source="Nasdaq benchmark",
+            method="GET",
+            url=NASDAQ_OMXS30GI_EXPORT_URL,
             params={
                 "startDate": f"{start_date.isoformat()}T00:00:00.000",
                 "endDate": f"{end_date.isoformat()}T00:00:00.000",

@@ -7,6 +7,7 @@ from kncompanyscraper.analysis.ranking.score_rules import (
 )
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
 from kncompanyscraper.models.enums import RankingModel
+from kncompanyscraper.analysis.statistics import cagr
 
 
 def _cagr_from_snapshot_history(
@@ -19,10 +20,10 @@ def _cagr_from_snapshot_history(
     earliest_date, earliest_value = history[0]
     latest_date, latest_value = history[-1]
     span_days = (latest_date - earliest_date).days
-    if span_days < min_span_days or earliest_value <= 0:
+    if span_days < min_span_days:
         return None
     years = span_days / 365.25
-    return (latest_value / earliest_value) ** (1.0 / years) - 1.0
+    return cagr(earliest_value, latest_value, years)
 
 
 def ranking_model_for_branch(branch_id: int | None) -> RankingModel:
@@ -59,64 +60,60 @@ def score_property(financial, valuation, sector_data: dict):
     history for NOI/share or property-income/share spans ≥1 year, its
     CAGR replaces financial revenue growth as the growth metric.
     """
-    current = sector_data.get("current", {}) if isinstance(sector_data, dict) else sector_data
-    histories = sector_data.get("histories", {}) if isinstance(sector_data, dict) else {}
-
-    # Backward compatibility: if called the old way (plain dict), treat it as current values.
-    if not isinstance(sector_data, dict) or "current" not in sector_data:
-        current = sector_data
-        histories = {}
-
-    occupancy = current.get(KpiIds.PROPERTY_OCCUPANCY)
-    interest_coverage = current.get(KpiIds.PROPERTY_INTEREST_COVERAGE)
-    ltv = current.get(KpiIds.PROPERTY_LTV)
-    nav_discount = current.get(KpiIds.PROPERTY_NAV_DISCOUNT)
-    price_to_income = current.get(KpiIds.PROPERTY_PRICE_TO_INCOME)
-
-    quality_missing = [] if occupancy is not None else ["Property occupancy not available"]
-    quality_positives = []
-    quality_negatives = []
-    quality_flags = []
-    if occupancy is not None:
-        if occupancy >= 95:
-            quality_positives.append(f"Occupancy {occupancy:.1f}% — strong")
-        elif occupancy < 90:
-            quality_negatives.append(f"Occupancy {occupancy:.1f}% — low")
-            quality_flags.append("low_occupancy")
-    quality = _result(
-        [(_linear_score(occupancy, 85.0, 100.0), 1.0)],
-        quality_positives,
-        quality_negatives,
-        quality_missing,
-        quality_flags,
+    current, histories = _sector_inputs(sector_data)
+    return (
+        _property_quality(current),
+        _property_growth(financial, histories),
+        _property_valuation(valuation, current),
+        _property_balance(current),
     )
 
-    # ── Growth: prefer NOI/share CAGR from dated snapshots ──────────
-    noi_share_history = histories.get(KpiIds.PROPERTY_NOI_PER_SHARE, [])
-    income_share_history = histories.get(KpiIds.PROPERTY_INCOME_PER_SHARE, [])
-    snapshot_growth = _cagr_from_snapshot_history(noi_share_history)
+
+def _sector_inputs(sector_data):
+    if isinstance(sector_data, dict) and "current" in sector_data:
+        return sector_data.get("current", {}), sector_data.get("histories", {})
+    return sector_data or {}, {}
+
+
+def _property_quality(current):
+    occupancy = current.get(KpiIds.PROPERTY_OCCUPANCY)
+    positives, negatives, flags = [], [], []
+    if occupancy is not None:
+        if occupancy >= 95:
+            positives.append(f"Occupancy {occupancy:.1f}% — strong")
+        elif occupancy < 90:
+            negatives.append(f"Occupancy {occupancy:.1f}% — low")
+            flags.append("low_occupancy")
+    return _result(
+        [(_linear_score(occupancy, 85.0, 100.0), 1.0)],
+        positives,
+        negatives,
+        [] if occupancy is not None else ["Property occupancy not available"],
+        flags,
+    )
+
+
+def _property_growth(financial, histories):
+    snapshot_growth = _cagr_from_snapshot_history(
+        histories.get(KpiIds.PROPERTY_NOI_PER_SHARE, [])
+    )
     growth_source = "NOI/share"
     if snapshot_growth is None:
-        snapshot_growth = _cagr_from_snapshot_history(income_share_history)
+        snapshot_growth = _cagr_from_snapshot_history(
+            histories.get(KpiIds.PROPERTY_INCOME_PER_SHARE, [])
+        )
         growth_source = "property income/share"
-
-    growth_missing: list[str] = []
-    growth_positives: list[str] = []
-    growth_negatives: list[str] = []
-    growth_flags: list[str] = []
-
+    positives, negatives, missing, flags = [], [], [], []
     if snapshot_growth is not None:
-        # Use the KPI-based growth
         if snapshot_growth >= 0.10:
-            growth_positives.append(
+            positives.append(
                 f"Property {growth_source} growth {snapshot_growth:.0%} (CAGR) — strong"
             )
         elif snapshot_growth < 0:
-            growth_negatives.append(
+            negatives.append(
                 f"Property {growth_source} growth {snapshot_growth:.0%} (CAGR) — declining"
             )
     else:
-        # Fall back to financial revenue growth
         revenue_growth = None
         if financial:
             revenue_growth = (
@@ -124,7 +121,9 @@ def score_property(financial, valuation, sector_data: dict):
                 if financial.revenue_per_share_growth is not None
                 else financial.revenue_growth
             )
-        if revenue_growth is not None:
+        if revenue_growth is None:
+            missing.append("Property revenue growth not available")
+        else:
             snapshot_growth = revenue_growth
             years = getattr(financial, "revenue_growth_years", 1)
             period = f"{years}y CAGR" if years > 1 else "YoY"
@@ -134,111 +133,84 @@ def score_property(financial, valuation, sector_data: dict):
                 else "Property revenue growth"
             )
             if revenue_growth >= 0.10:
-                growth_positives.append(
-                    f"{label} {revenue_growth:.0%} ({period}) — strong"
-                )
+                positives.append(f"{label} {revenue_growth:.0%} ({period}) — strong")
             elif revenue_growth < 0:
-                growth_negatives.append(
-                    f"{label} {revenue_growth:.0%} ({period}) — declining"
-                )
-        else:
-            growth_missing.append("Property revenue growth not available")
-
+                negatives.append(f"{label} {revenue_growth:.0%} ({period}) — declining")
     if financial and financial.share_dilution:
-        growth_negatives.append(
-            f"Share count growth {financial.share_count_growth:.0%} — dilution"
-        )
-        growth_flags.append("share_dilution")
-    growth = _result(
-        [(_growth_score(snapshot_growth, 0.15), 1.0)],
-        growth_positives,
-        growth_negatives,
-        growth_missing,
-        growth_flags,
+        negatives.append(f"Share count growth {financial.share_count_growth:.0%} — dilution")
+        flags.append("share_dilution")
+    return _result(
+        [(_growth_score(snapshot_growth, 0.15), 1.0)], positives, negatives, missing, flags
     )
 
+
+def _property_valuation(valuation, current):
+    nav_discount = current.get(KpiIds.PROPERTY_NAV_DISCOUNT)
+    price_to_income = current.get(KpiIds.PROPERTY_PRICE_TO_INCOME)
     dividend_yield = valuation.dividend_yield if valuation else None
-    valuation_scored = [
-        (_inverted_linear_score(nav_discount, -30.0, 20.0), 0.45),
-        (_inverted_linear_score(price_to_income, 8.0, 25.0), 0.35),
-        (_linear_score(dividend_yield, 0.0, 8.0), 0.20),
-    ]
-    valuation_missing = []
-    if nav_discount is None:
-        valuation_missing.append("Property NAV discount not available")
-    if price_to_income is None:
-        valuation_missing.append("P/property income not available")
-    if dividend_yield is None:
-        valuation_missing.append("Dividend yield not available")
-    valuation_positives = []
-    valuation_negatives = []
-    valuation_flags = []
+    positives, negatives, flags = [], [], []
     if nav_discount is not None:
         if nav_discount <= -15:
-            valuation_positives.append(f"NAV discount {-nav_discount:.1f}% — attractive")
+            positives.append(f"NAV discount {-nav_discount:.1f}% — attractive")
         elif nav_discount > 0:
-            valuation_negatives.append(f"NAV premium {nav_discount:.1f}%")
-            valuation_flags.append("nav_premium")
+            negatives.append(f"NAV premium {nav_discount:.1f}%")
+            flags.append("nav_premium")
     if price_to_income is not None:
         if price_to_income <= 12:
-            valuation_positives.append(f"P/property income {price_to_income:.1f}x — attractive")
+            positives.append(f"P/property income {price_to_income:.1f}x — attractive")
         elif price_to_income >= 22:
-            valuation_negatives.append(f"P/property income {price_to_income:.1f}x — demanding")
-    valuation_result = _result(
-        valuation_scored,
-        valuation_positives,
-        valuation_negatives,
-        valuation_missing,
-        valuation_flags,
+            negatives.append(f"P/property income {price_to_income:.1f}x — demanding")
+    missing = []
+    if nav_discount is None:
+        missing.append("Property NAV discount not available")
+    if price_to_income is None:
+        missing.append("P/property income not available")
+    if dividend_yield is None:
+        missing.append("Dividend yield not available")
+    return _result(
+        [
+            (_inverted_linear_score(nav_discount, -30.0, 20.0), 0.45),
+            (_inverted_linear_score(price_to_income, 8.0, 25.0), 0.35),
+            (_linear_score(dividend_yield, 0.0, 8.0), 0.20),
+        ], positives, negatives, missing, flags
     )
 
-    balance_scored = [
-        (_inverted_linear_score(ltv, 30.0, 65.0), 0.60),
-        (_linear_score(interest_coverage, 1.0, 4.0), 0.40),
-    ]
-    balance_missing = []
+
+def _property_balance(current):
+    ltv = current.get(KpiIds.PROPERTY_LTV)
+    interest_coverage = current.get(KpiIds.PROPERTY_INTEREST_COVERAGE)
+    positives, negatives, flags, missing = [], [], [], []
     if ltv is None:
-        balance_missing.append("Property LTV not available")
+        missing.append("Property LTV not available")
+    elif ltv <= 40:
+        positives.append(f"LTV {ltv:.1f}% — conservative")
+    elif ltv >= 55:
+        negatives.append(f"LTV {ltv:.1f}% — high")
+        flags.append("high_ltv")
     if interest_coverage is None:
-        balance_missing.append("Property interest coverage not available")
-    balance_positives = []
-    balance_negatives = []
-    balance_flags = []
-    if ltv is not None:
-        if ltv <= 40:
-            balance_positives.append(f"LTV {ltv:.1f}% — conservative")
-        elif ltv >= 55:
-            balance_negatives.append(f"LTV {ltv:.1f}% — high")
-            balance_flags.append("high_ltv")
-    if interest_coverage is not None:
-        if interest_coverage >= 3:
-            balance_positives.append(f"Interest coverage {interest_coverage:.1f}x — strong")
-        elif interest_coverage < 1.5:
-            balance_negatives.append(f"Interest coverage {interest_coverage:.1f}x — weak")
-            balance_flags.append("weak_interest_coverage")
-    balance = _result(
-        balance_scored,
-        balance_positives,
-        balance_negatives,
-        balance_missing,
-        balance_flags,
+        missing.append("Property interest coverage not available")
+    elif interest_coverage >= 3:
+        positives.append(f"Interest coverage {interest_coverage:.1f}x — strong")
+    elif interest_coverage < 1.5:
+        negatives.append(f"Interest coverage {interest_coverage:.1f}x — weak")
+        flags.append("weak_interest_coverage")
+    return _result(
+        [
+            (_inverted_linear_score(ltv, 30.0, 65.0), 0.60),
+            (_linear_score(interest_coverage, 1.0, 4.0), 0.40),
+        ], positives, negatives, missing, flags
     )
-
-    return quality, growth, valuation_result, balance
 
 
 def score_bank(financial, valuation, sector_data: dict):
-    # Unpack the new {current, histories} structure, falling back for plain-dict callers.
-    kpis = sector_data.get("current", {}) if isinstance(sector_data, dict) else sector_data
-    if not isinstance(sector_data, dict) or "current" not in sector_data:
-        kpis = sector_data or {}
+    kpis, _ = _sector_inputs(sector_data)
 
     roe = financial.roe if financial else None
     cost_income = kpis.get(KpiIds.BANK_COST_INCOME)
     credit_losses = kpis.get(KpiIds.BANK_CREDIT_LOSSES)
 
     quality_scored = [
-        (_linear_score(roe, 0.0, 0.20), 0.40),
+        (_linear_score(roe, 0.0, 0.25), 0.40),
         (_inverted_linear_score(cost_income, 30.0, 70.0), 0.35),
         (_inverted_linear_score(credit_losses, 0.0, 1.0), 0.25),
     ]
@@ -320,13 +292,33 @@ def score_bank(financial, valuation, sector_data: dict):
         valuation_missing.append("P/E percentile not available")
     if dividend_yield is None:
         valuation_missing.append("Dividend yield not available")
+    valuation_positives = []
+    valuation_negatives = []
+    valuation_flags = []
+    if pb_relative is not None:
+        if pb_relative <= 0.8:
+            valuation_positives.append(f"P/B is {pb_relative:.2f}x historical average — attractive")
+        elif pb_relative >= 1.2:
+            valuation_negatives.append(f"P/B is {pb_relative:.2f}x historical average — demanding")
+            valuation_flags.append("high_relative_pb")
+    if pe_percentile is not None:
+        if pe_percentile <= 25:
+            valuation_positives.append(f"P/E is at the {pe_percentile:.0f}th historical percentile — attractive")
+        elif pe_percentile >= 75:
+            valuation_negatives.append(f"P/E is at the {pe_percentile:.0f}th historical percentile — demanding")
+            valuation_flags.append("high_pe_percentile")
+    if dividend_yield is not None and dividend_yield >= 5:
+        valuation_positives.append(f"Dividend yield {dividend_yield:.1f}% — supportive")
     valuation_result = _result(
         [
             (_inverted_linear_score(pb_relative, 0.6, 1.4), 0.40),
             (_inverted_linear_score(pe_percentile, 0.0, 100.0), 0.35),
             (_linear_score(dividend_yield, 0.0, 8.0), 0.25),
         ],
-        missing=valuation_missing,
+        valuation_positives,
+        valuation_negatives,
+        valuation_missing,
+        valuation_flags,
     )
 
     cet1 = kpis.get(KpiIds.BANK_CET1)

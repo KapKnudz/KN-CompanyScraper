@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import requests
 
 from kncompanyscraper import config
+from kncompanyscraper.http_transport import request_with_retry
 
 
 class DeepSeekResponseError(RuntimeError):
@@ -47,8 +48,11 @@ class DeepSeekChatAdapter:
         self.request_func = request_func or requests.post
 
     def generate(self, prompt) -> DeepSeekModelResponse:
-        response = self.request_func(
-            self.BASE_URL,
+        response = request_with_retry(
+            self.request_func,
+            source="DeepSeek Chat API",
+            method="POST",
+            url=self.BASE_URL,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",

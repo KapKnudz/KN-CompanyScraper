@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from psycopg2.extras import RealDictCursor
 
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 from kncompanyscraper.logger import get_logger
 from kncompanyscraper.models.insider_transaction import InsiderTransaction
 
@@ -26,11 +26,11 @@ def _row_to_transaction(row: dict) -> InsiderTransaction:
     )
 
 
-class InsiderRepository:
+class InsiderRepository(BaseRepository):
 
     def save(self, transaction: InsiderTransaction, company_id: int) -> bool:
         """Insert an insider transaction unless it has already been stored."""
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 self._insert(cur, transaction, company_id)
                 inserted = cur.rowcount == 1
@@ -51,7 +51,7 @@ class InsiderRepository:
         company_id: int,
     ) -> int:
         inserted = 0
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 for transaction in transactions:
                     self._insert(cur, transaction, company_id)
@@ -114,7 +114,7 @@ class InsiderRepository:
             query += " LIMIT %s"
             params.append(limit)
 
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, tuple(params))
                 rows = cur.fetchall()

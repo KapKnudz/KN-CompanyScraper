@@ -110,3 +110,15 @@ def test_research_evidence_does_not_score_insider_activity():
         "180d": None,
         "365d": None,
     }
+
+
+def test_research_evidence_can_reconstruct_an_original_source_packet():
+    evidence = ResearchEvidenceBuilder(
+        StubDocumentRepository(),
+        StubNewsRepository(),
+        StubInsiderRepository(),
+        StubValuationRepository(),
+    ).build(company_id=42, as_of=date(2026, 8, 9), filter_ids={"news:21"})
+
+    assert [item.source_id for item in evidence.documents] == ["news:21"]
+    assert evidence.insider_transactions == []

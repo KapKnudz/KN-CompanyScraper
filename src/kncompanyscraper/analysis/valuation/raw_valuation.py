@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from kncompanyscraper.borsdata.report import Report
 from kncompanyscraper.borsdata.stock_price import StockPrice
+from kncompanyscraper.analysis.statistics import safe_div
 
 
 @dataclass
@@ -86,13 +87,9 @@ def compute_raw_valuation(
 
 def _yield(numerator: float | None, denominator: float | None) -> float | None:
     """Yield = numerator / denominator. Returns None when inputs are invalid."""
-    if numerator is None or denominator in (None, 0):
-        return None
-    return numerator / denominator
+    return safe_div(numerator, denominator)
 
 
 def _multiple(numerator: float | None, denominator: float | None) -> float | None:
     """Multiple = numerator / denominator. Returns None when inputs are invalid."""
-    if numerator is None or denominator in (None, 0):
-        return None
-    return numerator / denominator
+    return safe_div(numerator, denominator)

@@ -2,10 +2,10 @@ from dataclasses import asdict
 
 from psycopg2.extras import Json, RealDictCursor
 
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class ThesisChallengeRepository:
+class ThesisChallengeRepository(BaseRepository):
     def save(
         self,
         *,
@@ -19,7 +19,7 @@ class ThesisChallengeRepository:
     ) -> int:
         status = "upheld" if result.verdict == "survives" else "open"
         content = {"result": asdict(result), "metadata": metadata}
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -49,7 +49,7 @@ class ThesisChallengeRepository:
                 return cur.fetchone()[0]
 
     def unresolved_high_company_ids(self) -> set[int]:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -63,7 +63,7 @@ class ThesisChallengeRepository:
     def resolve(self, challenge_id: int, status: str, note: str) -> None:
         if status not in {"upheld", "revised", "rejected"}:
             raise ValueError("challenge resolution must be upheld, revised, or rejected")
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -77,7 +77,7 @@ class ThesisChallengeRepository:
                     raise ValueError("open thesis challenge not found")
 
     def attach_response_attempt(self, challenge_id: int, raw_analysis_id: int) -> None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -101,7 +101,7 @@ class ThesisChallengeRepository:
     ) -> None:
         if status not in {"upheld", "revised"}:
             raise ValueError("analyst response must resolve as upheld or revised")
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -127,7 +127,7 @@ class ThesisChallengeRepository:
                     )
 
     def get(self, challenge_id: int) -> dict | None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("SELECT * FROM thesis_challenges WHERE id = %s", (challenge_id,))
                 row = cur.fetchone()

@@ -11,6 +11,7 @@ from kncompanyscraper.analysis.valuation.required_return_policy import (
     RequiredReturnDecision,
     RequiredReturnPolicy,
 )
+from kncompanyscraper.analysis.statistics import cagr
 from kncompanyscraper.borsdata.report import Report
 
 
@@ -50,12 +51,17 @@ class HistoricalOperatingYear:
 @dataclass(frozen=True)
 class HistoricalOperatingBenchmarks:
     annuals: tuple[HistoricalOperatingYear, ...]
+    observed_period_count: int
     three_year_revenue_cagr: float | None
     five_year_revenue_cagr: float | None
     three_year_average_ebit_margin: float | None
     five_year_average_ebit_margin: float | None
+    periods_below_three_year_margin: int | None
+    periods_below_five_year_margin: int | None
     peak_ebit_margin: float
     peak_ebit_margin_year: int | None
+    trough_ebit_margin: float
+    trough_ebit_margin_year: int | None
 
 
 @dataclass(frozen=True)
@@ -207,7 +213,11 @@ class DcfAssumptionPolicy:
             net_reinvestment_rate=reinvestment,
             reinvestment_return=roic_fraction,
             revenue_growth_fade_to=self.TERMINAL_GROWTH,
-            ebit_margin_start=current_report.ebit / current_report.revenue,
+            ebit_margin_start=(
+                current_report.ebit / current_report.revenue
+                if current_report.ebit is not None
+                else None
+            ),
         )
         return DcfPolicyDecision(
             available=True,
@@ -279,31 +289,43 @@ class DcfAssumptionPolicy:
             previous = report
 
         latest_five = annuals[-5:]
-        peak = max(latest_five, key=lambda report: report.ebit / report.revenue)
+        peak = max(annuals, key=lambda report: report.ebit / report.revenue)
+        trough = min(annuals, key=lambda report: report.ebit / report.revenue)
+        three_year_margin = (
+            cls._window(annuals[-3:]).ebit_margin if len(annuals) >= 3 else None
+        )
+        five_year_margin = (
+            cls._window(latest_five).ebit_margin if len(annuals) >= 5 else None
+        )
+
+        def count_below(baseline: float | None) -> int | None:
+            if baseline is None:
+                return None
+            return sum(report.ebit / report.revenue < baseline for report in annuals)
+
         return HistoricalOperatingBenchmarks(
             annuals=tuple(points[-5:]),
+            observed_period_count=len(points),
             three_year_revenue_cagr=cls._exact_revenue_cagr(annuals, 3),
             five_year_revenue_cagr=cls._exact_revenue_cagr(annuals, 5),
-            three_year_average_ebit_margin=(
-                cls._window(annuals[-3:]).ebit_margin if len(annuals) >= 3 else None
-            ),
-            five_year_average_ebit_margin=(
-                cls._window(latest_five).ebit_margin if len(annuals) >= 5 else None
-            ),
+            three_year_average_ebit_margin=three_year_margin,
+            five_year_average_ebit_margin=five_year_margin,
+            periods_below_three_year_margin=count_below(three_year_margin),
+            periods_below_five_year_margin=count_below(five_year_margin),
             peak_ebit_margin=peak.ebit / peak.revenue,
             peak_ebit_margin_year=peak.year,
+            trough_ebit_margin=trough.ebit / trough.revenue,
+            trough_ebit_margin_year=trough.year,
         )
 
     @staticmethod
     def _annualized_growth(previous: Report, current: Report) -> float | None:
-        if previous.revenue <= 0 or current.revenue <= 0:
-            return None
         periods = 1
         if previous.year is not None and current.year is not None:
             periods = current.year - previous.year
             if periods <= 0:
                 return None
-        return (current.revenue / previous.revenue) ** (1.0 / periods) - 1.0
+        return cagr(previous.revenue, current.revenue, periods)
 
     @staticmethod
     def _exact_revenue_cagr(reports: list[Report], years: int) -> float | None:
@@ -314,9 +336,9 @@ class DcfAssumptionPolicy:
             (report for report in reports if report.year == latest.year - years),
             None,
         )
-        if baseline is None or baseline.revenue <= 0 or latest.revenue <= 0:
+        if baseline is None:
             return None
-        return (latest.revenue / baseline.revenue) ** (1.0 / years) - 1.0
+        return cagr(baseline.revenue, latest.revenue, years)
 
     @staticmethod
     def _missing_operating_inputs(report: Report | None) -> list[str]:
@@ -435,64 +457,17 @@ class DcfAssumptionPolicy:
         three_year: NormalizationWindow | None,
         five_year: NormalizationWindow | None,
     ) -> NormalizationDiagnostics:
-        fcf_margins = [
-            report.free_cash_flow / report.revenue
-            for report in annuals[-5:]
-            if report.free_cash_flow is not None
-        ]
-        negative_years = sum(value <= 0 for value in fcf_margins)
-        sign_changes = sum(
-            (fcf_margins[index] > 0) != (fcf_margins[index - 1] > 0)
-            for index in range(1, len(fcf_margins))
-        )
-        stddev = pstdev(fcf_margins) if len(fcf_margins) >= 2 else None
-        margin_range = (
-            max(fcf_margins) - min(fcf_margins) if fcf_margins else None
-        )
-        average = mean(fcf_margins) if fcf_margins else None
-        highly_volatile = len(fcf_margins) >= 3 and (
-            stddev >= cls.FCF_MARGIN_VOLATILITY
-            or margin_range >= cls.FCF_MARGIN_RANGE
-            or sign_changes >= 2
-            or (
-                average is not None
-                and abs(average) >= 0.01
-                and stddev / abs(average) >= 1.0
-            )
-        )
-        disagreement = (
-            three_year is not None
-            and five_year is not None
-            and (
-                abs(three_year.ebit_margin - five_year.ebit_margin)
-                >= cls.WINDOW_DISAGREEMENT
-                or (
-                    three_year.reported_fcf_margin is not None
-                    and five_year.reported_fcf_margin is not None
-                    and abs(
-                        three_year.reported_fcf_margin
-                        - five_year.reported_fcf_margin
-                    )
-                    >= cls.WINDOW_DISAGREEMENT
-                )
-            )
-        )
-        investing_margins = [
-            cls._investing_cash_flow(report) / report.revenue
-            for report in annuals[-5:]
-            if cls._investing_cash_flow(report) is not None
-        ]
-        material_investing = bool(investing_margins) and (
-            abs(mean(investing_margins)) >= cls.MATERIAL_INVESTING_MARGIN
-            or max(abs(value) for value in investing_margins)
-            >= cls.EXTREME_INVESTING_YEAR
-        )
+        fcf = cls._fcf_diagnostics(annuals)
+        disagreement = cls._window_disagreement(three_year, five_year)
+        material_investing = cls._investing_diagnostics(annuals)
         reasons: list[str] = []
         if selected.years < 3:
             reasons.append("fewer than three valid annual observations")
-        if negative_years:
-            reasons.append(f"reported FCF is non-positive in {negative_years} observed year(s)")
-        if highly_volatile:
+        if fcf["negative_years"]:
+            reasons.append(
+                f"reported FCF is non-positive in {fcf['negative_years']} observed year(s)"
+            )
+        if fcf["highly_volatile"]:
             reasons.append("annual reported FCF margins are highly volatile")
         if disagreement:
             reasons.append("three- and five-year normalized margins materially disagree")
@@ -506,14 +481,76 @@ class DcfAssumptionPolicy:
             selected_window_years=selected.years,
             three_year=three_year,
             five_year=five_year,
-            annual_fcf_margin_stddev=stddev,
-            annual_fcf_margin_range=margin_range,
-            negative_fcf_years=negative_years,
-            fcf_sign_changes=sign_changes,
-            highly_volatile_fcf=highly_volatile,
+            annual_fcf_margin_stddev=fcf["stddev"],
+            annual_fcf_margin_range=fcf["margin_range"],
+            negative_fcf_years=fcf["negative_years"],
+            fcf_sign_changes=fcf["sign_changes"],
+            highly_volatile_fcf=fcf["highly_volatile"],
             material_window_disagreement=disagreement,
             material_aggregate_investing=material_investing,
             reasons=tuple(reasons),
+        )
+
+    @classmethod
+    def _fcf_diagnostics(cls, annuals: list[Report]) -> dict:
+        margins = [
+            report.free_cash_flow / report.revenue
+            for report in annuals[-5:]
+            if report.free_cash_flow is not None
+        ]
+        negative_years = sum(value <= 0 for value in margins)
+        sign_changes = sum(
+            (margins[index] > 0) != (margins[index - 1] > 0)
+            for index in range(1, len(margins))
+        )
+        stddev = pstdev(margins) if len(margins) >= 2 else None
+        margin_range = max(margins) - min(margins) if margins else None
+        average = mean(margins) if margins else None
+        highly_volatile = len(margins) >= 3 and (
+            stddev >= cls.FCF_MARGIN_VOLATILITY
+            or margin_range >= cls.FCF_MARGIN_RANGE
+            or sign_changes >= 2
+            or (
+                average is not None
+                and abs(average) >= 0.01
+                and stddev / abs(average) >= 1.0
+            )
+        )
+        return {
+            "negative_years": negative_years,
+            "sign_changes": sign_changes,
+            "stddev": stddev,
+            "margin_range": margin_range,
+            "highly_volatile": highly_volatile,
+        }
+
+    @classmethod
+    def _window_disagreement(cls, three_year, five_year) -> bool:
+        if three_year is None or five_year is None:
+            return False
+        return (
+            abs(three_year.ebit_margin - five_year.ebit_margin)
+            >= cls.WINDOW_DISAGREEMENT
+            or (
+                three_year.reported_fcf_margin is not None
+                and five_year.reported_fcf_margin is not None
+                and abs(
+                    three_year.reported_fcf_margin - five_year.reported_fcf_margin
+                )
+                >= cls.WINDOW_DISAGREEMENT
+            )
+        )
+
+    @classmethod
+    def _investing_diagnostics(cls, annuals: list[Report]) -> bool:
+        margins = [
+            cls._investing_cash_flow(report) / report.revenue
+            for report in annuals[-5:]
+            if cls._investing_cash_flow(report) is not None
+        ]
+        return bool(margins) and (
+            abs(mean(margins)) >= cls.MATERIAL_INVESTING_MARGIN
+            or max(abs(value) for value in margins) >= cls.EXTREME_INVESTING_YEAR
         )
 
     @staticmethod
@@ -583,7 +620,7 @@ class DcfAssumptionPolicy:
         else:
             periods = min(3, len(candidates))
             baseline = candidates[-periods]
-        return (latest.revenue / baseline.revenue) ** (1.0 / periods) - 1.0
+        return cagr(baseline.revenue, latest.revenue, periods)
 
     @staticmethod
     def _clamp(value: float, lower: float, upper: float) -> float:

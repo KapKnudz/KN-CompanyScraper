@@ -14,3 +14,7 @@ class InsiderResult:
     average_sell_size: float | None
 
     insider_buying_trend: float | None
+
+    # False means no transactions were available; zero net buying then means
+    # “no observed activity,” not balanced insider trading.
+    data_available: bool = True

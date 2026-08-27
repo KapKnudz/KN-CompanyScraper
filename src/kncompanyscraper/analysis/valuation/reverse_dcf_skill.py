@@ -21,6 +21,8 @@ from kncompanyscraper.analysis.valuation.required_return_policy import (
     RequiredReturnDecision,
     RiskProfile,
 )
+from kncompanyscraper.analysis.statistics import cagr
+from kncompanyscraper.analysis.date_utils import MAX_PRICE_AGE_DAYS
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
 
 
@@ -96,6 +98,8 @@ class ReverseDcfAnalysis:
     current_revenue: float | None = None
     current_shares: float | None = None
     current_net_debt: float | None = None
+    price_currency: str | None = None
+    financial_currency: str | None = None
     assumptions: DcfAssumptions | None = None
     assumption_sources: dict[str, str] | None = None
     normalized_fcf_margin: float | None = None
@@ -113,7 +117,7 @@ class ReverseDcfAnalysis:
 
 
 class ReverseDcfSkill(Skill):
-    MAX_PRICE_AGE_DAYS = 7
+    MAX_PRICE_AGE_DAYS = MAX_PRICE_AGE_DAYS
     SHARES_TO_UNITS = 1_000_000.0
     EXPECTATION_CURVE_GROWTH_RATES = (
         -0.05,
@@ -267,6 +271,8 @@ class ReverseDcfSkill(Skill):
                     current_report.shares_outstanding if current_report else None
                 ),
                 current_net_debt=current_report.total_debt if current_report else None,
+                price_currency=price.currency if price else None,
+                financial_currency=current_report.currency if current_report else None,
                 assumptions=decision.assumptions,
                 assumption_sources=decision.assumption_sources,
                 normalized_fcf_margin=decision.normalized_fcf_margin,
@@ -317,6 +323,8 @@ class ReverseDcfSkill(Skill):
             current_revenue=current_report.revenue,
             current_shares=current_report.shares_outstanding,
             current_net_debt=current_report.total_debt,
+            price_currency=price.currency,
+            financial_currency=current_report.currency,
             assumptions=decision.assumptions,
             assumption_sources=decision.assumption_sources,
             normalized_fcf_margin=decision.normalized_fcf_margin,
@@ -592,9 +600,7 @@ class ReverseDcfSkill(Skill):
 
     @staticmethod
     def _cagr(start: float | None, end: float | None, years: int) -> float | None:
-        if start is None or end is None or start <= 0 or end <= 0:
-            return None
-        return (end / start) ** (1.0 / years) - 1.0
+        return cagr(start, end, years)
 
     @staticmethod
     def _outside_direction(

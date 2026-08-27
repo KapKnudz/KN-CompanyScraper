@@ -3,11 +3,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
-SCRAPE_INTERVAL_MINUTES = int(os.getenv("SCRAPE_INTERVAL_MINUTES", "60"))
+SCRAPE_INTERVAL_MINUTES = _env_int("SCRAPE_INTERVAL_MINUTES", 60)
 BORSDATA_SYNC_TIME = os.getenv("BORSDATA_SYNC_TIME", "02:00")
 BORSDATA_INSIDER_SYNC_TIME = os.getenv("BORSDATA_INSIDER_SYNC_TIME", "03:00")
 COMPARATIVE_RANKING_TIME = os.getenv("COMPARATIVE_RANKING_TIME", "04:00")
@@ -17,8 +27,8 @@ BORSDATA_API_KEY = os.getenv("BORSDATA_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-sol")
 OPENAI_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "medium")
-OPENAI_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "6000"))
+OPENAI_MAX_OUTPUT_TOKENS = _env_int("OPENAI_MAX_OUTPUT_TOKENS", 6000)
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
 DEEPSEEK_REASONING_EFFORT = os.getenv("DEEPSEEK_REASONING_EFFORT", "high")
-DEEPSEEK_MAX_OUTPUT_TOKENS = int(os.getenv("DEEPSEEK_MAX_OUTPUT_TOKENS", "30000"))
+DEEPSEEK_MAX_OUTPUT_TOKENS = _env_int("DEEPSEEK_MAX_OUTPUT_TOKENS", 30000)

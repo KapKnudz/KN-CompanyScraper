@@ -8,6 +8,10 @@ from kncompanyscraper.analysis.valuation.forward_scenario import (
     RankedForwardCase,
     forward_analysis_from_dict,
 )
+from kncompanyscraper.models.stored_analysis import as_stored_analysis
+from kncompanyscraper.analysis.policy_versions import (
+    FORWARD_SCENARIO_POLICY_VERSION,
+)
 
 
 @dataclass(frozen=True)
@@ -117,26 +121,26 @@ class ComparativeRankingService:
         cases = []
         analysis_ids = {}
         for company_id, stored in analyses_by_company.items():
-            content = stored["content"]
-            payload = content.get("forward_scenario_analysis")
+            stored = as_stored_analysis(stored)
+            payload = stored.forward_scenario
             if payload is None:
                 analysis = self._insufficient("forward scenario analysis is missing")
             else:
                 analysis = forward_analysis_from_dict(payload)
 
-            forward_metadata = stored.get("metadata", {}).get("forward_scenario", {})
-            required_return = forward_metadata.get("required_return")
+            forward_metadata = stored.forward_scenario_metadata
+            required_return = stored.required_return
             if analysis.status == "available" and required_return is None:
                 analysis = self._insufficient("required return is unavailable")
 
             cases.append(
                 RankedForwardCase(
                     company_id=company_id,
-                    ticker=content["ticker"],
+                    ticker=stored.ticker,
                     analysis=analysis,
                     required_return=required_return or 0.0,
                     evidence_confidence=confidence_overrides.get(
-                        company_id, content["confidence"]
+                        company_id, stored.confidence
                     ),
                     unresolved_high_severity_challenge=bool(
                         forward_metadata.get("unresolved_high_severity_challenge")
@@ -144,7 +148,7 @@ class ComparativeRankingService:
                     or company_id in blocked_company_ids,
                 )
             )
-            analysis_ids[company_id] = stored["analysis_id"]
+            analysis_ids[company_id] = stored.analysis_id
 
         return ComparativeRankingSnapshot(
             as_of=as_of.isoformat(),
@@ -157,6 +161,6 @@ class ComparativeRankingService:
     def _insufficient(reason: str) -> ForwardScenarioAnalysis:
         return ForwardScenarioAnalysis(
             status="insufficient_evidence",
-            policy_version="forward-scenario-v2-share-growth",
+            policy_version=FORWARD_SCENARIO_POLICY_VERSION,
             methodology_flags=(reason,),
         )

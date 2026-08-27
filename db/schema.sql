@@ -176,7 +176,9 @@ CREATE TABLE public.companies (
     country character varying(50),
     currency character varying(3) DEFAULT 'SEK'::character varying,
     sector_id integer,
-    branch_id integer
+    branch_id integer,
+    stock_price_currency character varying(3),
+    report_currency character varying(3)
 );
 
 
@@ -2160,4 +2162,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260818140000'),
     ('20260818150000'),
     ('20260818160000'),
-    ('20260818170000');
+    ('20260818170000'),
+    ('20260824120000');

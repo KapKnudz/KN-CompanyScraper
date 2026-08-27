@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import csv
-import math
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from statistics import mean
 from kncompanyscraper.models.enums import RankingModel
+from kncompanyscraper.analysis.statistics import pearson
 
 
 COMPONENTS = (
@@ -213,7 +213,7 @@ def evaluate_weights(
             else 0.0
         )
         correlations.append(
-            _pearson([(score, row.realized_return) for row, score in period_rows])
+            pearson([(score, row.realized_return) for row, score in period_rows])
         )
         sector_correlations.append(_peer_neutral_correlation(period_rows, "sector"))
         size_correlations.append(_peer_neutral_correlation(period_rows, "size"))
@@ -279,20 +279,7 @@ def _peer_neutral_correlation(period_rows, control: str) -> float:
             (score - score_mean, row.realized_return - return_mean)
             for row, score in group
         )
-    return _pearson(pairs)
-
-
-def _pearson(pairs: list[tuple[float, float]]) -> float:
-    if len(pairs) < 3:
-        return 0.0
-    xs, ys = zip(*pairs)
-    x_mean, y_mean = mean(xs), mean(ys)
-    numerator = sum((x - x_mean) * (y - y_mean) for x, y in pairs)
-    denominator = math.sqrt(
-        sum((x - x_mean) ** 2 for x in xs)
-        * sum((y - y_mean) ** 2 for y in ys)
-    )
-    return numerator / denominator if denominator else 0.0
+    return pearson(pairs)
 
 
 def _selection_key(metrics: WeightMetrics) -> tuple[float, float, float]:

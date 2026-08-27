@@ -67,7 +67,7 @@ def test_save_ranking_run_inserts_row():
     conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
     conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-    with patch("kncompanyscraper.repositories.ranking_repository.get_connection", return_value=conn):
+    with patch("kncompanyscraper.repositories.base_repository.get_connection", return_value=conn):
         run_id = repository.save_ranking_run(
             model_version="2026-08-09",
             company_count=10,
@@ -92,7 +92,7 @@ def test_save_monthly_ranking_run_is_idempotent():
     conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
     conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-    with patch("kncompanyscraper.repositories.ranking_repository.get_connection", return_value=conn):
+    with patch("kncompanyscraper.repositories.base_repository.get_connection", return_value=conn):
         run_id, created = repository.save_monthly_ranking_run(
             snapshot_month=date(2026, 8, 1),
             model_version="combined-v1",
@@ -129,7 +129,7 @@ def test_get_recent_runs_returns_list():
     conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
     conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-    with patch("kncompanyscraper.repositories.ranking_repository.get_connection", return_value=conn):
+    with patch("kncompanyscraper.repositories.base_repository.get_connection", return_value=conn):
         runs = repository.get_recent_runs(limit=5)
 
     assert len(runs) == 1
@@ -147,7 +147,7 @@ def test_get_run_returns_none_for_missing_id():
     conn.cursor.return_value.__enter__ = MagicMock(return_value=cursor)
     conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
-    with patch("kncompanyscraper.repositories.ranking_repository.get_connection", return_value=conn):
+    with patch("kncompanyscraper.repositories.base_repository.get_connection", return_value=conn):
         result = repository.get_run(999)
 
     assert result is None
@@ -174,7 +174,7 @@ def test_get_latest_deterministic_run_returns_frozen_scores():
     conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
     with patch(
-        "kncompanyscraper.repositories.ranking_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=conn,
     ):
         result = repository.get_latest_deterministic_run(date(2026, 8, 16))
@@ -202,7 +202,7 @@ def test_complete_performance_evaluation_is_not_overwritten():
     conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
     with patch(
-        "kncompanyscraper.repositories.ranking_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=conn,
     ):
         evaluation_id, changed = repository.save_performance_evaluation(
@@ -239,7 +239,7 @@ def test_list_performance_evaluations_returns_snapshot_provenance():
     conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
     with patch(
-        "kncompanyscraper.repositories.ranking_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=conn,
     ):
         rows = repository.list_performance_evaluations(

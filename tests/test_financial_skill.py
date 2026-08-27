@@ -98,3 +98,19 @@ class TestFinancialSkill:
     def test_name_is_financial(self):
         skill = FinancialSkill(FakeFinancialRepository([]))
         assert skill.name == "financial"
+
+    def test_run_compares_latest_quarter_with_matching_prior_year_quarter(self):
+        reports = reports_from_mock()
+        prior_year = copy.deepcopy(reports[-2])
+        prior_year.year = 2024
+        prior_year.period = 1
+        prior_year.revenue = 100
+        latest = copy.deepcopy(reports[-1])
+        latest.year = 2025
+        latest.period = 1
+        latest.revenue = 125
+        repository = FakeFinancialRepository(reports, quarter_reports=[prior_year, latest])
+
+        result = FinancialSkill(repository).run(make_company())
+
+        assert result.recent_revenue_growth == pytest.approx(0.25)

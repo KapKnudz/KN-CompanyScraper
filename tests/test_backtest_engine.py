@@ -410,6 +410,32 @@ class TestBacktestEngine:
         assert result.attributions[0].contribution_6m == pytest.approx(0.20)
         assert result.attributions[-1].decile == 10
 
+    def test_decile_coverage_assigns_membership_and_counts_available_returns(self):
+        engine = BacktestEngine(MagicMock(), MagicMock(), MagicMock())
+        scores = [SimpleNamespace(company_id=index) for index in range(1, 11)]
+        observations = {
+            index: {
+                6: RealizedReturnObservation(
+                    0.10 if index != 2 else None, None, None, date(2025, 7, 30)
+                ),
+                12: RealizedReturnObservation(
+                    0.20 if index <= 5 else None, None, None, date(2026, 1, 31)
+                ),
+            }
+            for index in range(1, 11)
+        }
+
+        membership, coverage = engine._decile_coverage(scores, observations)
+
+        assert membership[1] == 1
+        assert membership[10] == 10
+        assert coverage[1][6] == 1
+        assert coverage[1][12] == 1
+        assert coverage[2][6] == 0
+        assert coverage[2][12] == 1
+        assert sum(item[6] for item in coverage.values()) == 9
+        assert sum(item[12] for item in coverage.values()) == 5
+
     def test_attribution_contributions_sum_to_decile_average(self):
         engine = BacktestEngine(MagicMock(), MagicMock(), MagicMock())
         companies = {

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import math
-from calendar import monthrange
 from datetime import date, timedelta
 from statistics import mean
 from typing import TYPE_CHECKING
+from kncompanyscraper.analysis.statistics import pearson
+from kncompanyscraper.analysis.date_utils import MAX_PRICE_AGE_DAYS, add_months
 
 from kncompanyscraper.analysis.backtesting.backtest_result import (
     CategoryCorrelation,
@@ -50,7 +50,6 @@ _CATEGORIES = (
 _NUM_DECILES = 10
 _ANNUAL_REPORT_LAG_DAYS = 90
 _INTERIM_REPORT_LAG_DAYS = 45
-_MAX_PRICE_AGE_DAYS = 7
 _RETURN_HORIZONS = (6, 12, 24, 36, 48)
 
 # KPIs we try to reconstruct from snapshot history for each backtest date.
@@ -163,7 +162,7 @@ class BacktestEngine:
             observation_price = self.valuation_repository.get_stock_price_on_date(
                 company.id,
                 period_date,
-                max_age_days=_MAX_PRICE_AGE_DAYS,
+                max_age_days=MAX_PRICE_AGE_DAYS,
             )
             if observation_price is None:
                 continue
@@ -431,7 +430,7 @@ class BacktestEngine:
         stock_price = self.valuation_repository.get_stock_price_on_date(
             company_id,
             period_date,
-            max_age_days=_MAX_PRICE_AGE_DAYS,
+            max_age_days=MAX_PRICE_AGE_DAYS,
         )
         raw = compute_raw_valuation(stock_price, report)
 
@@ -499,7 +498,7 @@ class BacktestEngine:
         start_price = self.valuation_repository.get_stock_price_on_date(
             company_id,
             from_date,
-            max_age_days=_MAX_PRICE_AGE_DAYS,
+            max_age_days=MAX_PRICE_AGE_DAYS,
         )
         if self.total_return_calculator is None:
             unavailable = RealizedReturnObservation(
@@ -532,7 +531,7 @@ class BacktestEngine:
         start_price = self.valuation_repository.get_stock_price_on_date(
             company_id,
             from_date,
-            max_age_days=_MAX_PRICE_AGE_DAYS,
+            max_age_days=MAX_PRICE_AGE_DAYS,
         )
         for horizon in (24, 36, 48):
             if self.total_return_calculator is None:
@@ -567,12 +566,12 @@ class BacktestEngine:
         start = self.benchmark_repository.get_value_on_or_before(
             "OMXS30GI",
             from_date,
-            max_age_days=_MAX_PRICE_AGE_DAYS,
+            max_age_days=MAX_PRICE_AGE_DAYS,
         )
         end = self.benchmark_repository.get_value_on_or_before(
             "OMXS30GI",
             from_date + timedelta(days=days),
-            max_age_days=_MAX_PRICE_AGE_DAYS,
+            max_age_days=MAX_PRICE_AGE_DAYS,
         )
         if start is None or end is None or start[1] <= 0:
             return None
@@ -580,10 +579,7 @@ class BacktestEngine:
 
     @staticmethod
     def _add_months(value: date, months: int) -> date:
-        month_index = value.month - 1 + months
-        year = value.year + month_index // 12
-        month = month_index % 12 + 1
-        return date(year, month, min(value.day, monthrange(year, month)[1]))
+        return add_months(value, months)
 
     # ------------------------------------------------------------------
     # Aggregation helpers
@@ -647,26 +643,9 @@ class BacktestEngine:
     ) -> list[CompanyAttribution]:
         results_by_company = results_by_company or {}
         benchmarks = benchmarks or {}
-        decile_by_company = {}
-        counts_by_decile = {}
-        if len(scores) >= _NUM_DECILES:
-            for i in range(_NUM_DECILES):
-                start = i * len(scores) // _NUM_DECILES
-                end = (i + 1) * len(scores) // _NUM_DECILES
-                bucket = scores[start:end]
-                decile = i + 1
-                counts_by_decile[decile] = {
-                    horizon: sum(
-                        BacktestEngine._observation_for_horizon(
-                            forward_observations[score.company_id], horizon
-                        ).total_return
-                        is not None
-                        for score in bucket
-                    )
-                    for horizon in _RETURN_HORIZONS
-                }
-                for score in bucket:
-                    decile_by_company[score.company_id] = decile
+        decile_by_company, counts_by_decile = BacktestEngine._decile_coverage(
+            scores, forward_observations
+        )
 
         attributions = []
         for rank, score in enumerate(scores, 1):
@@ -724,6 +703,31 @@ class BacktestEngine:
             )
         return attributions
 
+    @staticmethod
+    def _decile_coverage(scores, forward_observations):
+        decile_by_company = {}
+        counts_by_decile = {}
+        if len(scores) < _NUM_DECILES:
+            return decile_by_company, counts_by_decile
+        for i in range(_NUM_DECILES):
+            start = i * len(scores) // _NUM_DECILES
+            end = (i + 1) * len(scores) // _NUM_DECILES
+            bucket = scores[start:end]
+            decile = i + 1
+            counts_by_decile[decile] = {
+                horizon: sum(
+                    BacktestEngine._observation_for_horizon(
+                        forward_observations[score.company_id], horizon
+                    ).total_return
+                    is not None
+                    for score in bucket
+                )
+                for horizon in _RETURN_HORIZONS
+            }
+            for score in bucket:
+                decile_by_company[score.company_id] = decile
+        return decile_by_company, counts_by_decile
+
     def _compute_category_correlations(self, scores, forward_returns):
         correlations: list[CategoryCorrelation] = []
         for category in _CATEGORIES:
@@ -739,7 +743,7 @@ class BacktestEngine:
                         pairs[horizon].append((cat_value, value))
             horizon_fields = {
                 f"correlation_{horizon}m": (
-                    self._pearson(pairs[horizon])
+                    pearson(pairs[horizon])
                     if len(pairs[horizon]) >= 5
                     else None
                 )
@@ -792,8 +796,8 @@ class BacktestEngine:
                             category=category,
                             metric=component["name"],
                             raw_value=component["raw_value"],
-                            normalized_score=component["normalized_score"],
-                            configured_weight=component["configured_weight"],
+                            normalized_score=component["score"],
+                            configured_weight=component["weight"],
                             effective_weight=component["effective_weight"],
                             category_contribution=component["category_contribution"],
                             category_score=audit["production_score"],
@@ -842,15 +846,5 @@ class BacktestEngine:
 
     @staticmethod
     def _pearson(pairs: list[tuple[float, float]]) -> float:
-        xs = [p[0] for p in pairs]
-        ys = [p[1] for p in pairs]
-        if len(xs) < 3:
-            return 0.0
-        mean_x = mean(xs)
-        mean_y = mean(ys)
-        num = sum((x - mean_x) * (y - mean_y) for x, y in pairs)
-        denom_x = math.sqrt(sum((x - mean_x) ** 2 for x in xs))
-        denom_y = math.sqrt(sum((y - mean_y) ** 2 for y in ys))
-        if denom_x == 0 or denom_y == 0:
-            return 0.0
-        return num / (denom_x * denom_y)
+        """Compatibility accessor backed by the shared statistics helper."""
+        return pearson(pairs)

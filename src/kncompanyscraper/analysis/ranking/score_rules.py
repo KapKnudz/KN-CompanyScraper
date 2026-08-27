@@ -188,7 +188,7 @@ def score_quality(
     fundamental_kpis: dict[int, float | None] | None = None,
 ) -> dict:
     if financial is None:
-        return {"score": 0.0, "positives": [], "negatives": [], "missing": ["financial data not available"]}
+        return {"score": 0.0, "positives": [], "negatives": [], "missing": ["financial data not available"], "available": False}
 
     metric_defs = _quality_metrics_definitions(financial, fundamental_kpis)
     results = [m.evaluate() for m in metric_defs]
@@ -199,7 +199,7 @@ def score_quality(
     missing = [m for r in results for m in r.missing]
     
     score = sum(scores) / len(scores) if scores else 0.0
-    return {"score": score, "positives": positives, "negatives": negatives, "missing": missing}
+    return {"score": score, "positives": positives, "negatives": negatives, "missing": missing, "available": bool(scores)}
 
 
 def _growth_metrics_definitions(financial) -> list[Metric]:
@@ -332,7 +332,7 @@ def _growth_metrics_definitions(financial) -> list[Metric]:
 
 def score_growth(financial: FinancialResult | None) -> dict:
     if financial is None:
-        return {"score": 0.0, "positives": [], "negatives": [], "missing": ["financial data not available"]}
+        return {"score": 0.0, "positives": [], "negatives": [], "missing": ["financial data not available"], "available": False}
 
     metric_defs = _growth_metrics_definitions(financial)
     results = [m.evaluate() for m in metric_defs]
@@ -344,7 +344,7 @@ def score_growth(financial: FinancialResult | None) -> dict:
     flags = [f for r in results for f in r.flags]
     
     score = sum(scores) / len(scores) if scores else 0.0
-    return {"score": score, "positives": positives, "negatives": negatives, "missing": missing, "flags": flags}
+    return {"score": score, "positives": positives, "negatives": negatives, "missing": missing, "flags": flags, "available": bool(scores)}
 
 
 def _valuation_metrics_definitions(valuation, debt_to_equity, quality_score, growth_score) -> list[Metric]:
@@ -407,9 +407,9 @@ def _valuation_metrics_definitions(valuation, debt_to_equity, quality_score, gro
         Metric("earnings_yield", lambda: earnings_yield, lambda v: _linear_score(v, 0.0, 0.10), weight=0.16, transformation="linear[0,0.10]", dependencies=("net_income", "market_cap"), describe=_earn_yield_desc),
         Metric("ev_ebit_percentile", lambda: valuation.ev_ebit_percentile, lambda v: _inverted_linear_score(v, 0.0, 100.0), weight=0.16, transformation="inverted_linear[0,100]", dependencies=("ev_ebit_history",), describe=_ev_ebit_desc),
         Metric("pe_percentile", lambda: valuation.pe_percentile, lambda v: _inverted_linear_score(v, 0.0, 100.0), weight=0.12, transformation="inverted_linear[0,100]", dependencies=("pe_history",), describe=_pe_desc),
-        Metric("margin_of_safety", _mos_raw, lambda v: _linear_score(v, -0.05, 0.05), weight=0.12, transformation="linear[-0.05,0.05]", dependencies=("fcf_yield", "debt_to_equity", "quality_score", "growth_score"), cross_category_dependencies=("quality", "growth"), describe=_mos_desc),
-        Metric("price_to_book", lambda: valuation.price_to_book, lambda v: _inverted_linear_score(v, 0.0, 5.0), weight=0.10, transformation="inverted_linear[0,5.0]", dependencies=("equity", "market_cap")),
-        Metric("dividend_yield", lambda: valuation.dividend_yield, lambda v: _linear_score(v, 0.0, 0.07), weight=0.10, transformation="linear[0,0.07]", dependencies=("dividends", "market_cap")),
+        Metric("margin_of_safety", _mos_raw, lambda v: _linear_score(v, -0.05, 0.05), weight=0.12, transformation="linear[-0.05,0.05]", dependencies=("fcf_yield", "debt_to_equity", "quality_score", "growth_score"), cross_category_dependencies=("quality_score", "growth_score"), describe=_mos_desc),
+        Metric("price_to_book", lambda: getattr(valuation, "price_to_book", None), lambda v: _inverted_linear_score(v, 0.0, 5.0), weight=0.10, transformation="inverted_linear[0,5.0]", dependencies=("equity", "market_cap")),
+        Metric("dividend_yield", lambda: getattr(valuation, "dividend_yield", None), lambda v: _linear_score(v, 0.0, 8.0), weight=0.10, transformation="linear[0,8.0]", dependencies=("dividends", "market_cap")),
     ]
 
 def score_valuation(
@@ -419,7 +419,7 @@ def score_valuation(
     growth_score: float | None = None,
 ) -> dict:
     if valuation is None:
-        return {"score": 0.0, "positives": [], "negatives": [], "missing": ["valuation data not available"]}
+        return {"score": 0.0, "positives": [], "negatives": [], "missing": ["valuation data not available"], "available": False}
 
     metric_defs = _valuation_metrics_definitions(valuation, debt_to_equity, quality_score, growth_score)
     results = [m.evaluate() for m in metric_defs]
@@ -486,7 +486,7 @@ def score_balance_sheet(
     fundamental_kpis: dict[int, float | None] | None = None,
 ) -> dict:
     if financial is None:
-        return {"score": 0.0, "positives": [], "negatives": [], "missing": ["financial data not available"]}
+        return {"score": 0.0, "positives": [], "negatives": [], "missing": ["financial data not available"], "available": False}
 
     metric_defs = _balance_metrics_definitions(financial, fundamental_kpis)
     results = [m.evaluate() for m in metric_defs]
@@ -497,4 +497,4 @@ def score_balance_sheet(
     missing = [m for r in results for m in r.missing]
     
     score = sum(scores) / len(scores) if scores else 0.0
-    return {"score": score, "positives": positives, "negatives": negatives, "missing": missing}
+    return {"score": score, "positives": positives, "negatives": negatives, "missing": missing, "available": bool(scores)}

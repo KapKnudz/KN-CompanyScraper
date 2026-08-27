@@ -1,6 +1,7 @@
 from statistics import pstdev
 
 from kncompanyscraper.analysis.financial.financial_result import FinancialResult, CurrentFinancials, HistoricalFinancials
+from kncompanyscraper.analysis.statistics import safe_div
 
 
 class FinancialCalculator:
@@ -16,110 +17,20 @@ class FinancialCalculator:
 
         growth_current = growth_current or current
 
-        revenue_growth, revenue_years = self._growth(
-            growth_current.revenue,
-            historical.revenue_history,
-        )
-        ebit_growth, ebit_years = self._growth(
-            growth_current.ebit,
-            historical.ebit_history,
-        )
-        net_income_growth, net_income_years = self._growth(
-            growth_current.net_income,
-            historical.net_income_history,
-        )
-
-        revenue_yoy = self.calculate_yoy_change(growth_current.revenue, historical.revenue_history)
-        ebit_yoy = self.calculate_yoy_change(growth_current.ebit, historical.ebit_history)
-        net_income_yoy = self.calculate_yoy_change(
-            growth_current.net_income,
-            historical.net_income_history,
-        )
-        one_off_risk = self.has_earnings_one_off_risk(
-            revenue_yoy,
-            ebit_yoy,
-            net_income_yoy,
-        )
-
-        per_share_history = {
-            "revenue": self._per_share_values(
-                historical.revenue_history,
-                historical.shares_history,
-            ),
-            "ebit": self._per_share_values(
-                historical.ebit_history,
-                historical.shares_history,
-            ),
-            "net_income": self._per_share_values(
-                historical.net_income_history,
-                historical.shares_history,
-            ),
-            "fcf": self._per_share_values(
-                historical.fcf_history,
-                historical.shares_history,
-            ),
-            "equity": self._per_share_values(
-                historical.equity_history,
-                historical.shares_history,
-            ),
-        }
-        revenue_per_share_growth, per_share_years = self._growth(
-            self.calculate_ratio(
-                growth_current.revenue,
-                growth_current.shares_outstanding,
-            ),
-            per_share_history["revenue"],
-        )
-        ebit_per_share_growth, _ = self._growth(
-            self.calculate_ratio(growth_current.ebit, growth_current.shares_outstanding),
-            per_share_history["ebit"],
-        )
-        net_income_per_share_growth, _ = self._growth(
-            self.calculate_ratio(
-                growth_current.net_income,
-                growth_current.shares_outstanding,
-            ),
-            per_share_history["net_income"],
-        )
-        fcf_per_share_growth, _ = self._growth(
-            self.calculate_ratio(
-                growth_current.free_cash_flow,
-                growth_current.shares_outstanding,
-            ),
-            per_share_history["fcf"],
-        )
-        book_value_per_share_growth, _ = self._growth(
-            self.calculate_ratio(growth_current.equity, growth_current.shares_outstanding),
-            per_share_history["equity"],
-        )
-        share_count_growth, _ = self._growth(
-            growth_current.shares_outstanding,
-            historical.shares_history,
-        )
-
-        recent_revenue_growth = None
-        if latest_quarter is not None and prior_year_quarter is not None:
-            recent_revenue_growth = self.calculate_pair_change(
-                latest_quarter.revenue,
-                prior_year_quarter.revenue,
-            )
-
-        operating_margins = self._margin_history(
-            growth_current.operating_profit,
-            growth_current.revenue,
-            historical.operating_profit_history,
-            historical.revenue_history,
-        )
-        margin_volatility = pstdev(operating_margins) if len(operating_margins) >= 2 else None
-        fcf_values = [
-            value
-            for value in historical.fcf_history + [growth_current.free_cash_flow]
-            if value is not None
-        ]
-        positive_fcf_ratio = (
-            sum(value > 0 for value in fcf_values) / len(fcf_values)
-            if fcf_values
-            else None
+        (
+            revenue_growth, revenue_years, ebit_growth, ebit_years,
+            net_income_growth, net_income_years, one_off_risk,
+        ) = self._growth_metrics(growth_current, historical)
+        (
+            revenue_per_share_growth, ebit_per_share_growth,
+            net_income_per_share_growth, fcf_per_share_growth,
+            book_value_per_share_growth, per_share_years, share_count_growth,
+        ) = self._per_share_metrics(growth_current, historical)
+        (
+            margin_volatility, positive_fcf_ratio, recent_revenue_growth,
+            recent_growth_acceleration, recent_growth_slowdown,
+        ) = self._quality_metrics(
+            growth_current, historical, latest_quarter, prior_year_quarter, revenue_growth
         )
 
         return FinancialResult(
@@ -181,16 +92,69 @@ class FinancialCalculator:
             operating_margin_volatility=margin_volatility,
             positive_fcf_ratio=positive_fcf_ratio,
             recent_revenue_growth=recent_revenue_growth,
-            recent_growth_acceleration=bool(
-                recent_revenue_growth is not None
-                and revenue_growth is not None
-                and recent_revenue_growth >= revenue_growth + 0.10
-            ),
-            recent_growth_slowdown=bool(
-                recent_revenue_growth is not None
-                and revenue_growth is not None
-                and recent_revenue_growth <= revenue_growth - 0.10
-            ),
+            recent_growth_acceleration=recent_growth_acceleration,
+            recent_growth_slowdown=recent_growth_slowdown,
+        )
+
+    def _growth_metrics(self, current, historical):
+        growths = [
+            self._growth(current.revenue, historical.revenue_history),
+            self._growth(current.ebit, historical.ebit_history),
+            self._growth(current.net_income, historical.net_income_history),
+        ]
+        yoy = [
+            self.calculate_yoy_change(current.revenue, historical.revenue_history),
+            self.calculate_yoy_change(current.ebit, historical.ebit_history),
+            self.calculate_yoy_change(current.net_income, historical.net_income_history),
+        ]
+        return (
+            growths[0][0], growths[0][1], growths[1][0], growths[1][1],
+            growths[2][0], growths[2][1], self.has_earnings_one_off_risk(*yoy),
+        )
+
+    def _per_share_metrics(self, current, historical):
+        histories = {
+            name: self._per_share_values(values, historical.shares_history)
+            for name, values in {
+                "revenue": historical.revenue_history,
+                "ebit": historical.ebit_history,
+                "net_income": historical.net_income_history,
+                "fcf": historical.fcf_history,
+                "equity": historical.equity_history,
+            }.items()
+        }
+        values = {
+            "revenue": current.revenue,
+            "ebit": current.ebit,
+            "net_income": current.net_income,
+            "fcf": current.free_cash_flow,
+            "equity": current.equity,
+        }
+        growths = [
+            self._growth(self.calculate_ratio(value, current.shares_outstanding), histories[name])
+            for name, value in values.items()
+        ]
+        share_growth = self._growth(current.shares_outstanding, historical.shares_history)
+        return (*[item[0] for item in growths], growths[0][1], share_growth[0])
+
+    def _quality_metrics(self, current, historical, latest_quarter, prior_year_quarter, growth):
+        recent = (
+            self.calculate_pair_change(latest_quarter.revenue, prior_year_quarter.revenue)
+            if latest_quarter is not None and prior_year_quarter is not None
+            else None
+        )
+        margins = self._margin_history(
+            current.operating_profit, current.revenue,
+            historical.operating_profit_history, historical.revenue_history,
+        )
+        fcf_values = [value for value in historical.fcf_history + [current.free_cash_flow] if value is not None]
+        positive_fcf_ratio = sum(value > 0 for value in fcf_values) / len(fcf_values) if fcf_values else None
+        return (
+            pstdev(margins) if len(margins) >= 2 else None,
+            positive_fcf_ratio,
+            recent,
+            bool(recent is not None and growth is not None and recent >= growth + 0.10),
+            bool(recent is not None and growth is not None and recent <= growth - 0.10),
         )
 
     def calculate_growth(self, current_value: float | None, history: list[float | None]) -> float | None:
@@ -294,7 +258,4 @@ class FinancialCalculator:
         )
 
     def calculate_ratio(self, numerator: float | None, denominator: float | None) -> float | None:
-        if numerator is None or denominator in (None, 0):
-            return None
-
-        return numerator / denominator
+        return safe_div(numerator, denominator)

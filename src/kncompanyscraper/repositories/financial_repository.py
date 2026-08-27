@@ -3,10 +3,10 @@ from datetime import date, timedelta
 from psycopg2.extras import Json, RealDictCursor
 
 from kncompanyscraper.borsdata.report import Report
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class FinancialRepository:
+class FinancialRepository(BaseRepository):
 
     def save_reports(self, company_id: int, period_type: str, reports: list[Report]) -> None:
         query = """
@@ -41,7 +41,7 @@ class FinancialRepository:
                 operating_cash_flow = EXCLUDED.operating_cash_flow,
                 fetched_at = NOW()
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 for report in reports:
                     period_end = report.period_end or date(report.year, 12, 31)
@@ -120,7 +120,7 @@ class FinancialRepository:
             query += " LIMIT %s"
             params.append(limit)
 
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, tuple(params))
                 rows = cur.fetchall()

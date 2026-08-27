@@ -1,9 +1,9 @@
 from psycopg2.extras import Json
 
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class CyclicalityRepository:
+class CyclicalityRepository(BaseRepository):
     def save_consensus(
         self,
         company_id: int,
@@ -26,7 +26,7 @@ class CyclicalityRepository:
                 consensus = EXCLUDED.consensus,
                 classified_at = now()
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     query,
@@ -44,7 +44,7 @@ class CyclicalityRepository:
             FROM company_cyclicality_consensus
             WHERE company_id = %s
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(query, (company_id,))
                 row = cur.fetchone()

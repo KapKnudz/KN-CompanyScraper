@@ -6,6 +6,12 @@ from kncompanyscraper.analysis.comparative_ranking import (
     MonthlyTierHysteresisPolicy,
 )
 from kncompanyscraper.analysis.agent_cohort import AgentCohortService
+from kncompanyscraper.models.stored_analysis import as_stored_analysis
+from kncompanyscraper.jobs.job import run_isolated
+from kncompanyscraper.logger import get_logger
+from kncompanyscraper.analysis.policy_versions import compose_policy_version
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -23,13 +29,23 @@ class ComparativeRankingJob:
         challenge_repository,
         ranking_repository,
         cohort_repository=None,
+        job_repository=None,
     ):
         self.analysis_repository = analysis_repository
         self.challenge_repository = challenge_repository
         self.ranking_repository = ranking_repository
         self.cohort_repository = cohort_repository
+        self.job_repository = job_repository
 
     def run(self, *, as_of: date | None = None) -> ComparativeRankingJobResult:
+        return run_isolated(
+            lambda: self._run(as_of=as_of),
+            logger=logger,
+            job_repository=self.job_repository,
+            job_type="comparative_ranking",
+        )
+
+    def _run(self, *, as_of: date | None = None) -> ComparativeRankingJobResult:
         as_of = as_of or date.today()
         analyses = self.analysis_repository.get_latest_validated_stock_analyses()
         if not analyses:
@@ -45,9 +61,7 @@ class ComparativeRankingJob:
         month = as_of.replace(day=1)
         previous_run = self.ranking_repository.get_latest_monthly_run_before(month)
         required_returns = {
-            company_id: stored.get("metadata", {})
-            .get("forward_scenario", {})
-            .get("required_return")
+            company_id: as_stored_analysis(stored).required_return
             for company_id, stored in analyses.items()
         }
         hysteresis_policy = MonthlyTierHysteresisPolicy()
@@ -90,7 +104,9 @@ class ComparativeRankingJob:
         run_id, created = self.ranking_repository.save_monthly_ranking_run(
             snapshot_month=month,
             model_version=(
-                f"{snapshot.policy_version}+{hysteresis_policy.POLICY_VERSION}"
+                compose_policy_version(
+                    snapshot.policy_version, hysteresis_policy.POLICY_VERSION
+                )
             ),
             company_count=len(snapshot.ranks),
             eligible_count=sum(item.actionable for item in snapshot.ranks),

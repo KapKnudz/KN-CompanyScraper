@@ -41,7 +41,7 @@ class TestInsiderRepository:
         mock_conn = _mock_connection(mock_cur)
 
         with patch(
-            "kncompanyscraper.repositories.insider_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
             return_value=mock_conn,
         ):
             repo = InsiderRepository()
@@ -71,7 +71,7 @@ class TestInsiderRepository:
         mock_conn = _mock_connection(mock_cur)
 
         with patch(
-            "kncompanyscraper.repositories.insider_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
             return_value=mock_conn,
         ):
             repo = InsiderRepository()
@@ -115,7 +115,7 @@ class TestInsiderRepository:
         mock_conn = _mock_connection(mock_cur)
 
         with patch(
-            "kncompanyscraper.repositories.insider_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
             return_value=mock_conn,
         ):
             repo = InsiderRepository()
@@ -136,7 +136,7 @@ class TestInsiderRepository:
         mock_conn = _mock_connection(mock_cur)
 
         with patch(
-            "kncompanyscraper.repositories.insider_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
             return_value=mock_conn,
         ):
             repo = InsiderRepository()
@@ -152,7 +152,7 @@ class TestInsiderRepository:
         mock_conn = _mock_connection(mock_cur)
 
         with patch(
-            "kncompanyscraper.repositories.insider_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
             return_value=mock_conn,
         ):
             repo = InsiderRepository()
@@ -168,7 +168,7 @@ class TestInsiderRepository:
         mock_conn = _mock_connection(mock_cur)
 
         with patch(
-            "kncompanyscraper.repositories.insider_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
             return_value=mock_conn,
         ):
             repo = InsiderRepository()
@@ -186,7 +186,7 @@ class TestInsiderRepository:
         mock_conn = _mock_connection(mock_cur)
 
         with patch(
-            "kncompanyscraper.repositories.insider_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
             return_value=mock_conn,
         ):
             repo = InsiderRepository()
@@ -204,7 +204,7 @@ class TestInsiderRepository:
         mock_conn = _mock_connection(mock_cur)
 
         with patch(
-            "kncompanyscraper.repositories.insider_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
             return_value=mock_conn,
         ):
             repo = InsiderRepository()
@@ -221,7 +221,7 @@ class TestInsiderRepository:
         mock_conn = _mock_connection(mock_cur)
 
         with patch(
-            "kncompanyscraper.repositories.insider_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
             return_value=mock_conn,
         ):
             repo = InsiderRepository()
@@ -237,7 +237,7 @@ class TestInsiderRepository:
         mock_conn = _mock_connection(mock_cur)
 
         with patch(
-            "kncompanyscraper.repositories.insider_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
             return_value=mock_conn,
         ):
             repo = InsiderRepository()
@@ -268,7 +268,7 @@ class TestInsiderRepository:
         mock_conn = _mock_connection(mock_cur)
 
         with patch(
-            "kncompanyscraper.repositories.insider_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
             return_value=mock_conn,
         ):
             repo = InsiderRepository()
