@@ -8,6 +8,7 @@ from kncompanyscraper.analysis.insider.current_insider_activity import CurrentIn
 from kncompanyscraper.analysis.insider.historical_insider_activity import HistoricalInsiderActivity
 from kncompanyscraper.analysis.insider.insider_calculator import InsiderCalculator
 from kncompanyscraper.analysis.insider.insider_mapper import InsiderMapper
+from kncompanyscraper.analysis.insider.insider_skill import InsiderSkill
 from kncompanyscraper.models.insider_transaction import InsiderTransaction
 
 
@@ -376,6 +377,25 @@ class TestInsiderCalculator:
 # --- integration test ---
 
 class TestInsiderAnalysisIntegration:
+
+    def test_unknown_transaction_types_are_ignored_consistently(self):
+        transaction = make_txn(transaction_type="transfer")
+
+        mapper = InsiderMapper()
+
+        assert mapper.to_current([transaction]).buy_count == 0
+        assert mapper.to_current([transaction]).sell_count == 0
+        assert mapper.to_historical([transaction]).monthly_net_buying == []
+
+    def test_skill_marks_empty_history_as_unavailable(self):
+        repository = type("EmptyRepository", (), {
+            "list_for_company": lambda self, _company_id: []
+        })()
+
+        result = InsiderSkill(repository).run(type("Company", (), {"id": 42})())
+
+        assert result.net_buying == 0.0
+        assert result.data_available is False
 
     def test_full_pipeline_mixed(self):
         """Transactions flow through mapper → calculator → InsiderResult."""

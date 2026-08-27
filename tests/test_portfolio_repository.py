@@ -17,7 +17,7 @@ def test_save_run_persists_portfolio_json_and_returns_id():
     }
 
     with patch(
-        "kncompanyscraper.repositories.portfolio_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         run_id = PortfolioRepository().save_run(run)

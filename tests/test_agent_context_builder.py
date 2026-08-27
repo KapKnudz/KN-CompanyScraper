@@ -98,6 +98,44 @@ def test_context_builder_injects_structured_financial_history():
     assert candidate.full_results["financial_history"] == {"company": 42}
 
 
+def test_context_builder_injects_peer_comparison():
+    peer_comparison = SimpleNamespace(
+        build=lambda company_id, target_terminal_ev_ebit: {
+            "company_id": company_id,
+            "target_terminal_ev_ebit": target_terminal_ev_ebit,
+        }
+    )
+    score = SimpleNamespace(
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        ranking_model="general",
+        rank_eligible=True,
+        eligibility_reasons=[],
+        total_score=50.0,
+        quality_score=60.0,
+        growth_score=55.0,
+        valuation_score=45.0,
+        balance_sheet_score=50.0,
+        data_quality="medium",
+        flags=[],
+        candidate_reason=None,
+        positives=[],
+        negatives=[],
+        missing_data=[],
+    )
+
+    candidate = AgentContextBuilder(peer_comparison_builder=peer_comparison).build(
+        SimpleNamespace(scores=[score]),
+        {42: {"valuation": {"ev_ebit_guardrail_low": 8.0, "ev_ebit_guardrail_high": 12.0}}},
+    )[0]
+
+    assert candidate.full_results["peer_comparison"] == {
+        "company_id": 42,
+        "target_terminal_ev_ebit": (8.0, 12.0),
+    }
+
+
 def test_context_builder_uses_persisted_cohort_order():
     def score(company_id):
         return SimpleNamespace(

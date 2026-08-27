@@ -236,6 +236,8 @@ def test_bank_model_uses_capital_and_liquidity_instead_of_debt_equity():
     assert score.quality_score > 70
     assert score.balance_sheet_score > 80
     assert not any("D/E" in item for item in score.negatives)
+    assert any("P/B" in item for item in score.positives)
+    assert any("Dividend yield" in item for item in score.positives)
 
 
 def test_bank_model_emits_capital_liquidity_and_credit_flags():

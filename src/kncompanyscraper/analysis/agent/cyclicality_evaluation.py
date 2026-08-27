@@ -471,6 +471,7 @@ def build_cyclicality_consensus(
                     "risk_profile": None,
                     "profile_driver": None,
                     "consensus_strength": "incomplete",
+                    "evidence_confidence": "low",
                     "review_required": True,
                     "material_votes": {},
                     "material_runs": {},
@@ -525,6 +526,16 @@ def build_cyclicality_consensus(
             supporting_runs = []
             evidence = []
 
+        confidence_rank = {"low": 0, "medium": 1, "high": 2}
+        evidence_confidence = (
+            min(
+                (run.classification.confidence for run in supporting),
+                key=confidence_rank.get,
+            )
+            if supporting_runs
+            else "low"
+        )
+
         unanimous = driver_votes in (0, required_runs)
         results.append(
             {
@@ -533,6 +544,7 @@ def build_cyclicality_consensus(
                 "risk_profile": risk_profile,
                 "profile_driver": profile_driver,
                 "consensus_strength": "unanimous" if unanimous else "majority",
+                "evidence_confidence": evidence_confidence,
                 "review_required": not unanimous,
                 "material_votes": material_votes,
                 "material_runs": material_runs,

@@ -162,6 +162,21 @@ class TestFinancialCalculator:
         assert calc.calculate_growth(100.0, [-50.0]) is None
         assert calc.is_turnaround(100.0, [-50.0]) is True
 
+    @pytest.mark.parametrize(
+        ("current", "history", "expected"),
+        [(0.0, [10.0], True), (-1.0, [10.0], True), (10.0, [0.0], False)],
+    )
+    def test_is_deterioration_detects_loss_after_positive_history(
+        self, current, history, expected
+    ):
+        assert FinancialCalculator.is_deterioration(current, history) is expected
+
+    def test_one_off_risk_requires_revenue_growth_and_material_earnings_jump(self):
+        calculator = FinancialCalculator()
+        assert calculator.has_earnings_one_off_risk(None, 2.0, 2.0) is False
+        assert calculator.has_earnings_one_off_risk(0.10, 0.80, None) is True
+        assert calculator.has_earnings_one_off_risk(0.10, 0.75, None) is False
+
     def test_all_none_when_current_is_empty(self):
         calc = FinancialCalculator()
         current = CurrentFinancials(

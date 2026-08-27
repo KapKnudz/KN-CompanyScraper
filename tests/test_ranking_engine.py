@@ -9,6 +9,7 @@ import pytest
 from kncompanyscraper.analysis.financial.financial_result import FinancialResult
 from kncompanyscraper.analysis.valuation.valuation_result import ValuationResult
 from kncompanyscraper.analysis.ranking.ranking_engine import RankingEngine
+from kncompanyscraper.analysis.ranking.score_rules import _valuation_metrics_definitions
 from kncompanyscraper.analysis.ranking.company_score import CompanyScore, WatchlistRanking
 from kncompanyscraper.models.company import Company
 
@@ -313,6 +314,8 @@ class TestMissingSkillResult:
         assert cs.balance_sheet_score == 0.0
         assert cs.valuation_score > 0
         assert "financial data not available" in cs.missing_data
+        assert "negative_growth" not in cs.flags
+        assert "balance_sheet_risk" not in cs.flags
 
     def test_missing_valuation_scores_zero(self):
         company = make_company(1, "TST", "Test")
@@ -338,6 +341,18 @@ class TestMissingSkillResult:
         assert cs.valuation_score == 0.0
         assert cs.balance_sheet_score == 0.0
         assert len(cs.missing_data) >= 2
+
+    def test_general_dividend_yield_uses_percentage_scale(self):
+        valuation = make_cheap_valuation()
+        valuation.dividend_yield = 4.0
+
+        metric = next(
+            item
+            for item in _valuation_metrics_definitions(valuation, None, 50.0, 50.0)
+            if item.name == "dividend_yield"
+        )
+
+        assert metric.evaluate().score == pytest.approx(50.0)
 
 
 class TestRankingSorting:

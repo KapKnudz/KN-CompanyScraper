@@ -16,6 +16,17 @@ from kncompanyscraper.borsdata.kpi_history import KpiHistory
 from kncompanyscraper.borsdata.stock_price import StockPrice
 from kncompanyscraper.borsdata.report import Report
 
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not os.getenv("BORSDATA_API_KEY"),
+        reason="BORSDATA_API_KEY not set; live network tests are opt-in",
+    ),
+]
+
+if not os.getenv("BORSDATA_API_KEY"):
+    pytest.skip("BORSDATA_API_KEY not set; live network tests are opt-in", allow_module_level=True)
+
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -58,7 +69,6 @@ class TestClientInit:
 # KPI endpoints
 # ---------------------------------------------------------------------------
 
-@pytest.mark.integration
 class TestLiveKpis:
     def test_get_kpis_returns_kpi(self, client):
         result = client.get_kpis(TEST_INSTRUMENT_ID, 2)  # KPI 2 = P/E
@@ -73,7 +83,6 @@ class TestLiveKpis:
         assert exc_info.value.response.status_code == 400
 
 
-@pytest.mark.integration
 class TestLiveKpiHistory:
     def test_get_kpi_history_returns_points(self, client):
         result = client.get_kpi_history(TEST_INSTRUMENT_ID, 2, max_count=5)
@@ -94,7 +103,6 @@ class TestLiveKpiHistory:
 # Report endpoints
 # ---------------------------------------------------------------------------
 
-@pytest.mark.integration
 class TestLiveReports:
     def test_get_reports_returns_list(self, client):
         result = client.get_reports(TEST_INSTRUMENT_ID, max_count=5)
@@ -117,7 +125,6 @@ class TestLiveReports:
 # Stock price endpoint
 # ---------------------------------------------------------------------------
 
-@pytest.mark.integration
 class TestLiveStockPrices:
     def test_get_stock_price_returns_list(self, client):
         result = client.get_stock_price(TEST_INSTRUMENT_ID)
@@ -141,7 +148,6 @@ class TestLiveStockPrices:
 # Response shape validation
 # ---------------------------------------------------------------------------
 
-@pytest.mark.integration
 class TestResponseShape:
     """Verify the live API returns fields the mappers expect."""
 

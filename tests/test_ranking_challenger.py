@@ -152,7 +152,7 @@ def test_challenger_repository_save_is_idempotent():
     )
 
     with patch(
-        "kncompanyscraper.repositories.ranking_challenger_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=conn,
     ):
         snapshot_id, created = repository.save(snapshot)

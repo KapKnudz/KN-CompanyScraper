@@ -151,6 +151,21 @@ def test_current_loss_does_not_block_positive_historical_margin_normalization():
     assert decision.assumptions.ebit_margin == pytest.approx(0.10)
 
 
+def test_missing_current_ebit_uses_annual_history_without_starting_margin():
+    current = _report(1_200.0, None, 110.0, 2026)
+    latest = _report(1_100.0, 110.0, 80.0, 2025)
+    history = [
+        _report(900.0, 90.0, 60.0, 2023),
+        _report(1_000.0, 100.0, 70.0, 2024),
+    ]
+
+    decision = DcfAssumptionPolicy().build(current, latest, history)
+
+    assert decision.available
+    assert decision.assumptions.ebit_margin == pytest.approx(0.10)
+    assert decision.assumptions.ebit_margin_start is None
+
+
 @pytest.mark.parametrize(
     ("field", "value", "reason"),
     [

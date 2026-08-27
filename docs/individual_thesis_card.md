@@ -18,8 +18,12 @@ Each packet contains:
 - deterministic rank, category scores, flags, and missing-data indicators;
 - calculated financial, valuation, reverse-DCF, sector, and fundamental results;
 - the newest 10 annual and 12 quarterly structured reports plus latest R12;
+- deterministic latest-H1 versus prior-year-H1 framing when complete Q1/Q2
+  pairs are available;
 - up to four primary report documents and eight company releases;
 - available insider events and completed cyclicality consensus.
+- deterministic peer ranges, included/excluded peer reasons, and metric
+  provenance when comparable coverage is available.
 
 Structured report history is bounded to keep one company's packet reviewable
 while normally covering a full operating cycle. Every report has a stable

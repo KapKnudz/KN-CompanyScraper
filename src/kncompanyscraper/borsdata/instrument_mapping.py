@@ -35,6 +35,7 @@ class BorsdataInstrumentMappingService:
                 instrument.stock_price_currency,
                 instrument.sector_id,
                 instrument.branch_id,
+                report_currency=instrument.report_currency,
             )
             mapped += 1
 

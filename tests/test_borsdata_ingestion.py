@@ -147,7 +147,7 @@ def test_sync_company_labels_converted_reports_with_listing_currency():
         MagicMock(),
     ).sync_company(company)
 
-    assert report.currency == "SEK"
+    assert report.currency == "USD"
     assert financial_repository.save_reports.call_args_list[0].args == (7, "year", [report])
 
 
@@ -162,3 +162,20 @@ def test_sync_company_requires_both_identifiers(company):
 
     with pytest.raises(ValueError, match="both id and borsdata_id"):
         service.sync_company(company)
+
+
+def test_sync_companies_continues_after_one_company_failure():
+    service = BorsdataIngestionService(
+        MagicMock(), MagicMock(), MagicMock(), MagicMock()
+    )
+    failing = make_company(company_id=1)
+    succeeding = make_company(company_id=2)
+    service.sync_company = MagicMock(
+        side_effect=[RuntimeError("temporary failure"), None]
+    )
+
+    assert service.sync_companies([failing, succeeding]) == 1
+    assert service.sync_company.call_args_list == [
+        call(failing),
+        call(succeeding),
+    ]

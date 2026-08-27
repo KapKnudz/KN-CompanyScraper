@@ -27,4 +27,5 @@ class InsiderSkill(Skill):
         return self.calculator.calculate(
             self.mapper.to_current(recent),
             self.mapper.to_historical(historical),
+            data_available=bool(transactions),
         )

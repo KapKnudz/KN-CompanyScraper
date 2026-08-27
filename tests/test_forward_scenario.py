@@ -6,6 +6,7 @@ from kncompanyscraper.analysis.valuation.forward_scenario import (
     ForwardScenarioEngine,
     ForwardScenarioInputs,
     ForwardScenarioRanker,
+    NetDebtChangeAssumption,
     RankedForwardCase,
     ScenarioEndpoint,
     SourcedAssumption,
@@ -18,6 +19,20 @@ def assumption(value: float, *, exception: str | None = None) -> SourcedAssumpti
         source_ids=("report:2026-q2",),
         rationale="Bounded from reported history and the stated operating mechanism.",
         guardrail_exception=exception,
+    )
+
+
+def debt_change_assumption(value: float) -> NetDebtChangeAssumption:
+    return NetDebtChangeAssumption(
+        value=value,
+        source_ids=("report:2026-q2",),
+        rationale="Bounded from reported history and the stated operating mechanism.",
+        mechanism=(
+            "No projected net-debt change."
+            if value == 0
+            else "Retained cash flow and distributions drive the projected change."
+        ),
+        provenance_type="not_applicable" if value == 0 else "source_backed",
     )
 
 
@@ -40,7 +55,7 @@ def endpoint(
         ebit_margin=assumption(margin),
         terminal_ev_ebit=assumption(multiple),
         net_debt=assumption(debt),
-        net_debt_change=assumption(debt),
+        net_debt_change=debt_change_assumption(debt),
         share_count_growth=assumption(shares / 10 - 1),
         distributions_per_share=assumption(distributions),
     )
@@ -119,6 +134,8 @@ def valid_inputs() -> ForwardScenarioInputs:
                 distributions=1,
             ),
         ),
+        price_currency="SEK",
+        financial_currency="SEK",
     )
 
 
@@ -165,13 +182,68 @@ def test_engine_exposes_coherence_failures_as_insufficient_evidence():
     endpoints[0] = replace(
         compression,
         net_debt=assumption(1),
-        net_debt_change=assumption(1),
+        net_debt_change=debt_change_assumption(1),
     )
 
     result = ForwardScenarioEngine().analyze(replace(inputs, endpoints=tuple(endpoints)))
 
     assert result.status == "insufficient_evidence"
     assert any("must copy base operating" in flag for flag in result.methodology_flags)
+
+
+def test_engine_requires_a_mechanism_for_non_zero_net_debt_change():
+    inputs = valid_inputs()
+    endpoint_to_change = inputs.endpoints[0]
+    endpoints = list(inputs.endpoints)
+    endpoints[0] = replace(
+        endpoint_to_change,
+        net_debt_change=NetDebtChangeAssumption(
+            value=1,
+            source_ids=("report:2026-q2",),
+            rationale="A change is expected.",
+            mechanism="",
+            provenance_type="source_backed",
+        ),
+        net_debt=assumption(1),
+    )
+
+    result = ForwardScenarioEngine().analyze(replace(inputs, endpoints=tuple(endpoints)))
+
+    assert result.status == "insufficient_evidence"
+    assert any("requires a mechanism" in flag for flag in result.methodology_flags)
+
+
+def test_engine_labels_analyst_net_debt_sensitivity():
+    inputs = valid_inputs()
+    change = inputs.endpoints[2].net_debt_change
+    endpoints = list(inputs.endpoints)
+    endpoints[2] = replace(
+        inputs.endpoints[2],
+        net_debt_change=replace(
+            change,
+            provenance_type="analyst_sensitivity",
+        ),
+    )
+
+    result = ForwardScenarioEngine().analyze(replace(inputs, endpoints=tuple(endpoints)))
+
+    assert result.status == "available"
+    assert any("analyst sensitivity" in warning for warning in result.warnings)
+
+
+def test_engine_blocks_missing_and_mismatched_currencies():
+    missing = ForwardScenarioEngine().analyze(
+        replace(valid_inputs(), price_currency=None)
+    )
+    mismatched = ForwardScenarioEngine().analyze(
+        replace(valid_inputs(), financial_currency="EUR")
+    )
+
+    assert missing.status == "insufficient_evidence"
+    assert any("currencies are required" in flag for flag in missing.methodology_flags)
+    assert mismatched.status == "insufficient_evidence"
+    assert any("currency mismatch" in flag for flag in mismatched.methodology_flags)
+    assert mismatched.results == ()
 
 
 def test_engine_requires_sourced_assumptions_and_flags_guardrail_exceptions():

@@ -13,6 +13,7 @@ from kncompanyscraper.analysis.ranking.score_rules import (
     _linear_score,
     compute_margin_of_safety,
 )
+from kncompanyscraper.analysis.statistics import pearson
 
 
 @dataclass(frozen=True)
@@ -410,7 +411,7 @@ def evaluate_metric_policy(
         top_return = mean(item[2] for item in top)
         excesses.append(top_return - top[0][3])
         spreads.append(top_return - mean(item[2] for item in bottom))
-        correlations.append(_pearson([(item[1], item[2]) for item in ranked]))
+        correlations.append(pearson([(item[1], item[2]) for item in ranked]))
     return RankingMetrics(
         top_excess=mean(excesses),
         top_bottom_spread=mean(spreads),
@@ -489,7 +490,7 @@ def _average_metric_correlation(rows: list[MetricRow]) -> float:
     for row in rows:
         by_date.setdefault(row.observation_date, []).append(row)
     values = [
-        _pearson(
+        pearson(
             [(row.normalized_score, row.realized_return) for row in period_rows]
         )
         for period_rows in by_date.values()
@@ -513,7 +514,7 @@ def _redundant_pairs(
         common = values[first].keys() & values[second].keys()
         if len(common) < 30:
             continue
-        correlation = _pearson(
+        correlation = pearson(
             [(values[first][key], values[second][key]) for key in common]
         )
         if abs(correlation) >= threshold:
@@ -539,20 +540,6 @@ def _cross_dependencies(rows: list[MetricRow]) -> dict[str, tuple[str, ...]]:
         if row.cross_category_dependencies:
             result[row.key] = row.cross_category_dependencies
     return dict(sorted(result.items()))
-
-
-def _pearson(pairs) -> float:
-    pairs = list(pairs)
-    if len(pairs) < 3:
-        return 0.0
-    xs, ys = zip(*pairs)
-    x_mean, y_mean = mean(xs), mean(ys)
-    numerator = sum((x - x_mean) * (y - y_mean) for x, y in pairs)
-    denominator = math.sqrt(
-        sum((x - x_mean) ** 2 for x in xs)
-        * sum((y - y_mean) ** 2 for y in ys)
-    )
-    return numerator / denominator if denominator else 0.0
 
 
 def _optional_float(value: str) -> float | None:

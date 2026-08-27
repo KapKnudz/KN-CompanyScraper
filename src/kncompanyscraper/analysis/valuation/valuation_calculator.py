@@ -2,6 +2,7 @@ from kncompanyscraper.analysis.valuation.valuation_result import ValuationResult
 from kncompanyscraper.analysis.valuation.current_valuation import CurrentValuation
 from kncompanyscraper.analysis.valuation.historical_valuation import HistoricalValuation
 from kncompanyscraper.analysis.valuation.raw_valuation import RawValuation
+from kncompanyscraper.analysis.statistics import safe_div
 
 
 class ValuationCalculator:
@@ -90,10 +91,7 @@ class ValuationCalculator:
         return values_below / len(history) * 100
 
     def calculate_ratio(self, value: float | None, denominator: float | None) -> float | None:
-        if value is None or denominator in (None, 0):
-            return None
-
-        return value / denominator
+        return safe_div(value, denominator)
 
     @staticmethod
     def calculate_history_bound(history: list[float], percentile: float) -> float | None:

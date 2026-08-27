@@ -331,6 +331,7 @@ def test_consensus_escalates_only_on_same_dimension_majority():
     assert consensus["material_votes"]["project_dependence"] == 2
     assert consensus["material_runs"]["project_dependence"] == [1, 2]
     assert consensus["supporting_runs"] == [1, 2]
+    assert consensus["evidence_confidence"] == "medium"
     assert [item["passage_id"] for item in consensus["evidence"]] == [
         "document:1#project_dependence",
         "document:2#project_dependence",
@@ -366,6 +367,7 @@ def test_unanimous_baseline_consensus_does_not_require_review():
 
     assert consensus["risk_profile"] == "slightly_cyclical"
     assert consensus["consensus_strength"] == "unanimous"
+    assert consensus["evidence_confidence"] == "low"
     assert consensus["review_required"] is False
 
 

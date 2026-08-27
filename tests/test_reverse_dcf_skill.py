@@ -88,6 +88,8 @@ def test_skill_wires_policy_and_all_three_solvers_into_analysis_result():
     assert result.status == "available"
     assert result.policy_version == "reverse-dcf-v10"
     assert result.analysis_date == date.today().isoformat()
+    assert result.price_currency == "SEK"
+    assert result.financial_currency == "SEK"
     assert result.baseline_valuation.value_per_share == pytest.approx(target)
     assert result.reinvestment_roic == pytest.approx(0.20)
     assert result.assumptions.reinvestment_return == pytest.approx(0.20)
@@ -219,6 +221,11 @@ def test_operating_history_exposes_company_specific_growth_and_margin_benchmarks
     )
     assert history.peak_ebit_margin == pytest.approx(0.20)
     assert history.peak_ebit_margin_year == 2024
+    assert history.trough_ebit_margin == pytest.approx(0.10)
+    assert history.trough_ebit_margin_year == 2020
+    assert history.observed_period_count == 6
+    assert history.periods_below_three_year_margin == 5
+    assert history.periods_below_five_year_margin == 4
 
 
 @pytest.mark.parametrize(
@@ -288,6 +295,8 @@ def test_skill_rejects_stale_or_currency_mismatched_price():
     assert result.status == "unavailable"
     assert "stock price is older than 7 days" in result.missing_information
     assert "stock price and report currencies differ" in result.missing_information
+    assert result.price_currency == "EUR"
+    assert result.financial_currency == "SEK"
 
 
 def test_skill_explains_which_side_of_a_solver_bound_the_price_requires():

@@ -4,6 +4,7 @@ import requests
 
 from kncompanyscraper import config
 from kncompanyscraper.analysis.agent.output_schema import stock_analysis_json_schema
+from kncompanyscraper.http_transport import request_with_retry
 
 
 class OpenAIResponseError(RuntimeError):
@@ -46,8 +47,11 @@ class OpenAIResponsesAdapter:
         self.request_func = request_func or requests.post
 
     def generate(self, prompt) -> OpenAIModelResponse:
-        response = self.request_func(
-            self.BASE_URL,
+        response = request_with_retry(
+            self.request_func,
+            source="OpenAI Responses API",
+            method="POST",
+            url=self.BASE_URL,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",

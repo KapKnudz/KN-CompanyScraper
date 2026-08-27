@@ -2,11 +2,15 @@ from datetime import date
 
 from kncompanyscraper.repositories.valuation_repository import ValuationRepository
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
+from kncompanyscraper.constants import BORSDATA_DIVIDEND_SOURCE
+from kncompanyscraper.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class BorsdataIngestionService:
 
-    DIVIDEND_SOURCE = "borsdata:dividend_calendar"
+    DIVIDEND_SOURCE = BORSDATA_DIVIDEND_SOURCE
 
     def __init__(
         self,
@@ -26,13 +30,12 @@ class BorsdataIngestionService:
 
         for report_type in ("year", "r12", "quarter"):
             reports = self.client.get_reports(company.borsdata_id, report_type=report_type)
-            if company.currency:
-                for report in reports:
-                    report.currency = company.currency
             self.financial_repository.save_reports(company.id, report_type, reports)
 
         stock_prices = self.client.get_stock_price(company.borsdata_id)
-        self.valuation_repository.save_stock_prices(company.id, stock_prices, company.currency)
+        self.valuation_repository.save_stock_prices(
+            company.id, stock_prices, company.listing_currency
+        )
         dividends_by_instrument = self.client.get_dividends([company.borsdata_id])
         if company.borsdata_id not in dividends_by_instrument:
             raise ValueError(
@@ -95,6 +98,13 @@ class BorsdataIngestionService:
     def sync_companies(self, companies: list) -> int:
         synced = 0
         for company in companies:
-            self.sync_company(company)
+            try:
+                self.sync_company(company)
+            except Exception:
+                logger.exception(
+                    "Börsdata sync failed for %s; continuing with next company",
+                    company.name,
+                )
+                continue
             synced += 1
         return synced

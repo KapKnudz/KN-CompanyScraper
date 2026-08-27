@@ -56,8 +56,10 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "Three return engines" in prompt.system
     assert "Follow the steps in order" in prompt.system
     assert prompt.policy_name == "nordic-case-investing-policy"
-    assert prompt.policy_version == "1.23.0"
+    assert prompt.policy_version == "1.25.0"
     assert "company_fact_ledger" in prompt.user
+    assert "half_year_comparison" in prompt.user
+    assert "do not reconstruct H1" in prompt.user
     assert "individual-thesis-card-v1" in prompt.user
     assert "business_model_profile" in prompt.user
     assert "analysis_status" in prompt.user
@@ -80,7 +82,8 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "year-one revenue growth" in prompt.system
     assert "year-five EBIT margin" in prompt.system
     assert "Reverse DCF produces no scalar score" in prompt.system
-    assert "copy its `risk_profile` exactly" in prompt.system
+    assert "copy its `risk_profile` and `evidence_confidence` exactly" in prompt.system
+    assert "is not evidence confidence" in prompt.system
     assert "consensus is absent or incomplete" in prompt.system
     assert "Do not independently classify cyclicality" in prompt.system
     assert "discount_rate_sensitivities" in prompt.system

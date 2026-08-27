@@ -1,6 +1,10 @@
 from dataclasses import asdict, dataclass
 from datetime import date
 
+AGENT_COHORT_POLICY_VERSION = "agent-cohort-v1"
+AGENT_COHORT_TARGET_SIZE = 30
+AGENT_COHORT_GRACE_MONTHS = 3
+
 
 @dataclass(frozen=True)
 class AgentCohortMember:
@@ -18,18 +22,18 @@ class AgentCohortSnapshot:
     eligible_universe_company_ids: tuple[int, ...]
     top_company_ids: tuple[int, ...]
     members: tuple[AgentCohortMember, ...]
-    policy_version: str = "agent-cohort-v1"
-    target_size: int = 30
-    grace_months: int = 3
+    policy_version: str = AGENT_COHORT_POLICY_VERSION
+    target_size: int = AGENT_COHORT_TARGET_SIZE
+    grace_months: int = AGENT_COHORT_GRACE_MONTHS
 
     def to_dict(self) -> dict:
         return asdict(self)
 
 
 class AgentCohortService:
-    POLICY_VERSION = "agent-cohort-v1"
-    TARGET_SIZE = 30
-    GRACE_MONTHS = 3
+    POLICY_VERSION = AGENT_COHORT_POLICY_VERSION
+    TARGET_SIZE = AGENT_COHORT_TARGET_SIZE
+    GRACE_MONTHS = AGENT_COHORT_GRACE_MONTHS
 
     def __init__(self, repository):
         self.repository = repository
@@ -98,6 +102,9 @@ class AgentCohortService:
             eligible_universe_company_ids=eligible_ids,
             top_company_ids=top_ids,
             members=tuple(members),
+            policy_version=self.POLICY_VERSION,
+            target_size=self.TARGET_SIZE,
+            grace_months=self.GRACE_MONTHS,
         )
         snapshot_id, created = self.repository.save(snapshot)
         if not created:
@@ -105,8 +112,8 @@ class AgentCohortService:
             return snapshot_id, self._from_dict(stored), False
         return snapshot_id, snapshot, True
 
-    @staticmethod
-    def _from_dict(stored: dict) -> AgentCohortSnapshot:
+    @classmethod
+    def _from_dict(cls, stored: dict) -> AgentCohortSnapshot:
         return AgentCohortSnapshot(
             snapshot_month=stored["snapshot_month"].isoformat()
             if hasattr(stored["snapshot_month"], "isoformat")
@@ -117,7 +124,7 @@ class AgentCohortService:
             ),
             top_company_ids=tuple(stored["top_company_ids"]),
             members=tuple(AgentCohortMember(**member) for member in stored["members"]),
-            policy_version=stored.get("policy_version", "agent-cohort-v1"),
-            target_size=stored.get("target_size", 30),
-            grace_months=stored.get("grace_months", 3),
+            policy_version=stored.get("policy_version", cls.POLICY_VERSION),
+            target_size=stored.get("target_size", cls.TARGET_SIZE),
+            grace_months=stored.get("grace_months", cls.GRACE_MONTHS),
         )

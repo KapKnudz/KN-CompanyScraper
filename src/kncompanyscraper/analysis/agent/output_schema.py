@@ -76,6 +76,25 @@ class ManagementClaimAssessment:
     observed_outcome: str | None
     result: ClaimResult
     source_ids: list[str] = field(default_factory=list)
+    claim_source_ids: list[str] = field(default_factory=list)
+    outcome_source_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ManagementCredibilityCoverage:
+    eligible_claim_count: int = 0
+    assessed_claim_count: int = 0
+    pending_claim_count: int = 0
+    omitted_claim_count: int = 0
+    omission_reasons: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AssessmentClaim:
+    statement: str
+    evidence_kind: FactEvidenceKind
+    source_ids: list[str] = field(default_factory=list)
+    limitations: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -197,9 +216,14 @@ class StockAnalysisResult:
     forward_scenario_assumptions: list[ScenarioEndpoint] = field(default_factory=list)
     forward_scenario_analysis: ForwardScenarioAnalysis | None = None
     management_assessment: str = ""
+    management_claims: list[AssessmentClaim] = field(default_factory=list)
     management_credibility_ledger: list[ManagementClaimAssessment] = field(default_factory=list)
+    management_credibility_coverage: ManagementCredibilityCoverage = field(
+        default_factory=ManagementCredibilityCoverage
+    )
     ownership_and_flow_assessment: str = ""
     insider_assessment: str = ""
+    insider_claims: list[AssessmentClaim] = field(default_factory=list)
     confirming_evidence: list[str] = field(default_factory=list)
     disconfirming_evidence: list[str] = field(default_factory=list)
     thesis_break_conditions: list[str] = field(default_factory=list)
@@ -340,27 +364,64 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
             ),
             "side": "low | high",
             "horizon_months": "integer",
-            **{
-                name: {
-                    "value": "number",
-                    "source_ids": ["string"],
-                    "rationale": "string",
-                    "guardrail_exception": "string | null",
-                }
-                for name in (
-                    "revenue_cagr",
-                    "ebit_margin",
-                    "terminal_ev_ebit",
-                    "net_debt",
-                    "net_debt_change",
-                    "share_count_growth",
-                    "distributions_per_share",
-                )
+            "revenue_cagr": {
+                "value": "number",
+                "source_ids": ["string"],
+                "rationale": "string",
+                "guardrail_exception": "string | null",
+            },
+            "ebit_margin": {
+                "value": "number",
+                "source_ids": ["string"],
+                "rationale": "string",
+                "guardrail_exception": "string | null",
+            },
+            "terminal_ev_ebit": {
+                "value": "number",
+                "source_ids": ["string"],
+                "rationale": "string",
+                "guardrail_exception": "string | null",
+            },
+            "net_debt": {
+                "value": "number",
+                "source_ids": ["string"],
+                "rationale": "string",
+                "guardrail_exception": "string | null",
+            },
+            "net_debt_change": {
+                "value": "number",
+                "source_ids": ["string"],
+                "rationale": "string",
+                "mechanism": "string",
+                "provenance_type": (
+                    "source_backed | analyst_sensitivity | not_applicable"
+                ),
+                "guardrail_exception": "string | null",
+            },
+            "share_count_growth": {
+                "value": "number",
+                "source_ids": ["string"],
+                "rationale": "string",
+                "guardrail_exception": "string | null",
+            },
+            "distributions_per_share": {
+                "value": "number",
+                "source_ids": ["string"],
+                "rationale": "string",
+                "guardrail_exception": "string | null",
             },
         }
     ],
     "forward_scenario_analysis": "null",
     "management_assessment": "string",
+    "management_claims": [
+        {
+            "statement": "string",
+            "evidence_kind": "fact | management_claim | analyst_inference",
+            "source_ids": ["string"],
+            "limitations": ["string"],
+        }
+    ],
     "management_credibility_ledger": [
         {
             "date": "string",
@@ -369,10 +430,27 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
             "observed_outcome": "string | null",
             "result": "kept | delayed | missed | changed | unverifiable",
             "source_ids": ["string"],
+            "claim_source_ids": ["string"],
+            "outcome_source_ids": ["string"],
         }
     ],
+    "management_credibility_coverage": {
+        "eligible_claim_count": "integer",
+        "assessed_claim_count": "integer",
+        "pending_claim_count": "integer",
+        "omitted_claim_count": "integer",
+        "omission_reasons": ["string"],
+    },
     "ownership_and_flow_assessment": "string",
     "insider_assessment": "string",
+    "insider_claims": [
+        {
+            "statement": "string",
+            "evidence_kind": "fact | management_claim | analyst_inference",
+            "source_ids": ["string"],
+            "limitations": ["string"],
+        }
+    ],
     "confirming_evidence": ["string"],
     "disconfirming_evidence": ["string"],
     "thesis_break_conditions": ["string"],
@@ -415,11 +493,138 @@ THESIS_UPDATE_OUTPUT_CONTRACT = {
 
 
 def stock_analysis_json_schema() -> dict:
-    return _contract_to_json_schema(STOCK_ANALYSIS_OUTPUT_CONTRACT)
+    schema = _contract_to_json_schema(STOCK_ANALYSIS_OUTPUT_CONTRACT)
+    expanded_endpoint = schema["properties"]["forward_scenario_assumptions"][
+        "items"
+    ]
+    schema["properties"]["forward_scenario_assumptions"]["items"] = {
+        "oneOf": [expanded_endpoint, _compact_endpoint_json_schema()]
+    }
+    return schema
 
 
 def thesis_update_json_schema() -> dict:
-    return _contract_to_json_schema(THESIS_UPDATE_OUTPUT_CONTRACT)
+    schema = _contract_to_json_schema(THESIS_UPDATE_OUTPUT_CONTRACT)
+    schema["properties"]["thesis"]["properties"][
+        "forward_scenario_assumptions"
+    ]["items"] = {
+        "oneOf": [
+            schema["properties"]["thesis"]["properties"][
+                "forward_scenario_assumptions"
+            ]["items"],
+            _compact_endpoint_json_schema(),
+        ]
+    }
+    return schema
+
+
+def _compact_endpoint_json_schema() -> dict:
+    generic_assumption = _assumption_json_schema()
+    net_debt_change = _assumption_json_schema(
+        extra_properties={
+            "mechanism": {"type": "string"},
+            "provenance_type": {
+                "type": "string",
+                "enum": [
+                    "source_backed",
+                    "analyst_sensitivity",
+                    "not_applicable",
+                ],
+            },
+        }
+    )
+    base_assumptions = {
+        "type": "object",
+        "properties": {
+            name: net_debt_change if name == "net_debt_change" else generic_assumption
+            for name in (
+                "revenue_cagr",
+                "ebit_margin",
+                "terminal_ev_ebit",
+                "net_debt",
+                "net_debt_change",
+                "share_count_growth",
+                "distributions_per_share",
+            )
+        },
+        "required": [
+            "revenue_cagr",
+            "ebit_margin",
+            "terminal_ev_ebit",
+            "net_debt",
+            "net_debt_change",
+            "share_count_growth",
+            "distributions_per_share",
+        ],
+        "additionalProperties": False,
+    }
+    override = {
+        "type": "object",
+        "properties": {
+            "field": {
+                "type": "string",
+                "enum": [
+                    "revenue_cagr",
+                    "ebit_margin",
+                    "terminal_ev_ebit",
+                    "net_debt",
+                    "net_debt_change",
+                    "share_count_growth",
+                    "distributions_per_share",
+                ],
+            },
+            "assumption": {
+                "oneOf": [generic_assumption, net_debt_change]
+            },
+        },
+        "required": ["field", "assumption"],
+        "additionalProperties": False,
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "kind": {
+                "type": "string",
+                "enum": [
+                    "bear_multiple_compression",
+                    "bear_fundamental_impairment",
+                    "base",
+                    "bull",
+                ],
+            },
+            "side": {"type": "string", "enum": ["low", "high"]},
+            "horizon_months": {"type": "integer"},
+            "base_endpoint": {"type": ["string", "null"]},
+            "base_assumptions": {"oneOf": [base_assumptions, {"type": "null"}]},
+            "overrides": {"type": "array", "items": override},
+        },
+        "required": [
+            "kind",
+            "side",
+            "horizon_months",
+            "base_endpoint",
+            "base_assumptions",
+            "overrides",
+        ],
+        "additionalProperties": False,
+    }
+
+
+def _assumption_json_schema(extra_properties: dict | None = None) -> dict:
+    properties = {
+        "value": {"type": "number"},
+        "source_ids": {"type": "array", "items": {"type": "string"}},
+        "rationale": {"type": "string"},
+        "guardrail_exception": {"type": ["string", "null"]},
+    }
+    if extra_properties:
+        properties.update(extra_properties)
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
 
 
 def _contract_to_json_schema(specification) -> dict:

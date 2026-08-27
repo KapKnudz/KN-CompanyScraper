@@ -1,9 +1,4 @@
 from pathlib import Path
-from kncompanyscraper.logger import get_logger
-
-logger = get_logger("cli.agent")
-
-
 def register(subparsers):
     export_prompts_parser = subparsers.add_parser(
         "export-agent-prompts", help="Export model-ready prompts for deterministic shortlist"
@@ -85,20 +80,26 @@ def register(subparsers):
 
 def _cmd_export_agent_prompts(args):
     from kncompanyscraper.analysis.agent.prompt_exporter import AgentPromptExporter
-    from kncompanyscraper.main import _build_watchlist_analysis_service, _build_agent_cohort_candidates
+    from kncompanyscraper.composition import (
+        build_agent_cohort_candidates,
+        build_watchlist_analysis_service,
+    )
 
-    run = _build_watchlist_analysis_service().analyze_watchlist()
-    candidates = _build_agent_cohort_candidates(run, limit=args.max_candidates)
+    run = build_watchlist_analysis_service().analyze_watchlist()
+    candidates = build_agent_cohort_candidates(run, limit=args.max_candidates)
     paths = AgentPromptExporter().export(candidates, args.output_dir)
     print(f"Exported {len(paths)} agent prompts to {args.output_dir}.")
 
 
 def _cmd_check_agent_readiness(args):
     from kncompanyscraper.analysis.agent.readiness import AgentReadinessGate
-    from kncompanyscraper.main import _build_watchlist_analysis_service, _build_agent_cohort_candidates
+    from kncompanyscraper.composition import (
+        build_agent_cohort_candidates,
+        build_watchlist_analysis_service,
+    )
 
-    run = _build_watchlist_analysis_service().analyze_watchlist()
-    candidates = _build_agent_cohort_candidates(run, limit=args.max_candidates)
+    run = build_watchlist_analysis_service().analyze_watchlist()
+    candidates = build_agent_cohort_candidates(run, limit=args.max_candidates)
     if not candidates:
         print("No companies available in the agent shortlist.")
         return
@@ -118,23 +119,26 @@ def _cmd_analyze_shortlist(args):
     from kncompanyscraper.analysis.agent.agent_analysis_service import (
         AgentAnalysisService,
     )
-    from kncompanyscraper.main import (
-        _build_agent_model_adapter,
-        _build_agent_context_builder,
-        _build_watchlist_analysis_service,
+    from kncompanyscraper.composition import (
+        build_agent_context_builder,
+        build_agent_model_adapter,
+        build_watchlist_analysis_service,
     )
+    from kncompanyscraper.analysis.agent.execution_boundary import AgentExecutionBoundary
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
 
-    model_adapter = _build_agent_model_adapter(
+    model_adapter = build_agent_model_adapter(
         args.provider, args.model, args.reasoning_effort
     )
     service = AgentAnalysisService(
         model_adapter,
-        _build_agent_context_builder(),
+        AgentExecutionBoundary(AnalysisRepository()),
+        raw_response_repository=AnalysisRepository(),
     )
 
-    run = _build_watchlist_analysis_service().analyze_watchlist()
-    candidates = _build_agent_context_builder().build_shortlist(
-        run,
+    run = build_watchlist_analysis_service().analyze_watchlist()
+    candidates = build_agent_context_builder().build_shortlist(
+        run.ranking,
         run.results_by_company,
         limit=args.max_candidates,
         company_ids=tuple(args.company_ids) if args.company_ids else None,
@@ -145,42 +149,25 @@ def _cmd_analyze_shortlist(args):
     else:
         result = service.analyze(candidates)
 
-    print(f"Analysis complete: {result.succeeded} accepted, {result.failed} rejected.")
+    print(f"Analysis complete: {len(result)} accepted.")
 
 
 def _cmd_update_shortlist(args):
-    from kncompanyscraper.analysis.agent.thesis_update_service import (
-        ThesisUpdateService,
-    )
-    from kncompanyscraper.analysis.agent.execution_boundary import (
-        AgentExecutionBoundary,
-    )
-    from kncompanyscraper.repositories.thesis_repository import ThesisRepository
-    from kncompanyscraper.repositories.research_document_repository import (
-        ResearchDocumentRepository,
-    )
-    from kncompanyscraper.main import (
-        _build_agent_model_adapter,
-        _build_agent_context_builder,
-        _build_watchlist_analysis_service,
+    from kncompanyscraper.composition import (
+        build_agent_context_builder,
+        build_agent_model_adapter,
+        build_thesis_update_service,
+        build_watchlist_analysis_service,
     )
 
-    model_adapter = _build_agent_model_adapter(
+    model_adapter = build_agent_model_adapter(
         args.provider, args.model, args.reasoning_effort
     )
-    boundary = AgentExecutionBoundary(
-        ThesisRepository(),
-        ResearchDocumentRepository(),
-    )
-    service = ThesisUpdateService(
-        model_adapter,
-        _build_agent_context_builder(),
-        boundary,
-    )
+    service = build_thesis_update_service(model_adapter)
 
-    run = _build_watchlist_analysis_service().analyze_watchlist()
-    candidates = _build_agent_context_builder().build_shortlist(
-        run,
+    run = build_watchlist_analysis_service().analyze_watchlist()
+    candidates = build_agent_context_builder().build_shortlist(
+        run.ranking,
         run.results_by_company,
         limit=args.max_candidates,
         company_ids=tuple(args.company_ids) if args.company_ids else None,
@@ -192,60 +179,107 @@ def _cmd_update_shortlist(args):
         result = service.update(candidates)
 
     print(
-        f"Updates complete: {result.succeeded} accepted, {result.failed} rejected, {result.skipped} skipped."
+        f"Updates complete: {sum(item.status == 'persisted' for item in result)} accepted, "
+        f"{sum(item.status == 'full_reassessment_required' for item in result)} require full reassessment, "
+        f"{sum(item.status in {'no_current_thesis', 'no_new_evidence'} for item in result)} skipped."
     )
 
 
 def _cmd_grill_thesis(args):
     from kncompanyscraper.analysis.agent.thesis_challenge import ThesisChallengeService
-    from kncompanyscraper.repositories.thesis_repository import ThesisRepository
-    from kncompanyscraper.main import (
-        _build_agent_model_adapter,
-        _original_research_evidence,
+    from kncompanyscraper.repositories.thesis_challenge_repository import (
+        ThesisChallengeRepository,
+    )
+    from kncompanyscraper.composition import (
+        build_agent_model_adapter,
+        build_original_research_evidence,
     )
 
     thesis_repo = ThesisRepository()
-    revision = thesis_repo.get_latest_revision(args.company_id)
+    revision = thesis_repo.get_latest(args.company_id)
     if not revision:
         raise SystemExit(f"No thesis found for company {args.company_id}")
 
-    model_adapter = _build_agent_model_adapter(
+    model_adapter = build_agent_model_adapter(
         args.provider, args.model, args.reasoning_effort
     )
-    service = ThesisChallengeService(model_adapter)
+    service = ThesisChallengeService(model_adapter, ThesisChallengeRepository())
 
-    evidence = _original_research_evidence(args.company_id, revision.evidence_ids)
-    challenge = service.criticize(revision, evidence, args.question)
+    evidence = build_original_research_evidence(
+        args.company_id,
+        set((revision.get("metadata") or {}).get("evidence_source_ids") or []),
+    )
+    challenge_id, result = service.challenge(revision, evidence, args.question)
 
-    print(f"Challenge {challenge.id} persisted: {challenge.claim}")
+    print(f"Challenge {challenge_id} persisted: {result.challenged_claim}")
 
 
 def _cmd_respond_to_thesis_challenge(args):
-    from kncompanyscraper.analysis.agent.thesis_challenge import ThesisChallengeService
+    from kncompanyscraper.analysis.agent.execution_boundary import AgentExecutionBoundary
+    from kncompanyscraper.analysis.agent.thesis_challenge import (
+        ThesisChallengeResponseService,
+    )
+    from kncompanyscraper.analysis.agent.thesis_update_service import (
+        ThesisUpdateExecutionBoundary,
+    )
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
     from kncompanyscraper.repositories.thesis_challenge_repository import (
         ThesisChallengeRepository,
     )
     from kncompanyscraper.repositories.thesis_repository import ThesisRepository
-    from kncompanyscraper.main import (
-        _build_agent_model_adapter,
-        _original_research_evidence,
-    )
-
     challenge_repo = ThesisChallengeRepository()
-    challenge = challenge_repo.get_challenge(args.challenge_id)
+    challenge = challenge_repo.get(args.challenge_id)
     if not challenge:
         raise SystemExit(f"Challenge {args.challenge_id} not found")
 
     thesis_repo = ThesisRepository()
-    revision = thesis_repo.get_revision(challenge.thesis_revision_id)
-    evidence = _original_research_evidence(challenge.company_id, revision.evidence_ids)
+    revision_id = challenge["thesis_revision_id"]
+    revision = thesis_repo.get_revision(revision_id)
+    if not revision:
+        raise SystemExit(
+            f"Thesis revision {revision_id} for challenge "
+            f"{args.challenge_id} not found"
+        )
+    from kncompanyscraper.composition import (
+        build_agent_context_builder,
+        build_agent_model_adapter,
+        build_original_research_evidence,
+        build_watchlist_analysis_service,
+    )
 
-    model_adapter = _build_agent_model_adapter(
+    run = build_watchlist_analysis_service().analyze_watchlist()
+    candidates = build_agent_context_builder().build_shortlist(
+        run.ranking,
+        run.results_by_company,
+        company_ids=(challenge["company_id"],),
+        limit=1,
+    )
+    if not candidates:
+        raise SystemExit(f"Company {challenge['company_id']} is not in the current ranking")
+    candidate = candidates[0]
+    evidence = build_original_research_evidence(
+        challenge["company_id"],
+        set((revision.get("metadata") or {}).get("evidence_source_ids") or []),
+    )
+
+    model_adapter = build_agent_model_adapter(
         args.provider, args.model, args.reasoning_effort
     )
-    service = ThesisChallengeService(model_adapter)
+    analysis_repository = AnalysisRepository()
+    service = ThesisChallengeResponseService(
+        model_adapter,
+        ThesisUpdateExecutionBoundary(AgentExecutionBoundary(analysis_repository)),
+        challenge_repo,
+        analysis_repository,
+    )
 
-    outcome = service.respond(challenge, revision, evidence)
+    outcome = service.respond(
+        challenge,
+        revision,
+        candidate,
+        evidence,
+        thesis_repo.list_latest_facts(challenge["company_id"]),
+    )
     print(f"Response processed: {outcome.status}")
 
 
@@ -254,57 +288,67 @@ def _cmd_resolve_thesis_challenge(args):
         ThesisChallengeRepository,
     )
 
-    ThesisChallengeRepository().resolve_challenge(
+    ThesisChallengeRepository().resolve(
         args.challenge_id, args.status, args.note
     )
     print(f"Challenge {args.challenge_id} resolved as {args.status}.")
 
 
 def _cmd_sync_agent_evidence(args):
-    from kncompanyscraper.scraper.mfn_scraper import MfnScraper
+    from kncompanyscraper.analysis.agent.research_document_ingestion import (
+        ResearchDocumentIngestionService,
+    )
     from kncompanyscraper.repositories.company_repository import CompanyRepository
+    from kncompanyscraper.repositories.news_repository import NewsRepository
     from kncompanyscraper.repositories.research_document_repository import (
         ResearchDocumentRepository,
     )
-    from kncompanyscraper.main import _build_watchlist_analysis_service
+    from kncompanyscraper.composition import build_watchlist_analysis_service
 
     company_repo = CompanyRepository()
-    doc_repo = ResearchDocumentRepository()
-    scraper = MfnScraper(doc_repo)
+    ingestion = ResearchDocumentIngestionService(
+        NewsRepository(), ResearchDocumentRepository()
+    )
 
-    run = _build_watchlist_analysis_service().analyze_watchlist()
+    run = build_watchlist_analysis_service().analyze_watchlist()
     shortlist = run.shortlist_for_agent(max_total=args.max_candidates)
 
     for cs in shortlist:
-        company = company_repo.get_company(cs.company_id)
+        company = company_repo.get_by_id(cs.company_id)
         if company and company.mfn_id:
             print(f"Syncing evidence for {company.name}...")
-            scraper.sync_company(company)
+            try:
+                result = ingestion.sync_company(company)
+            except Exception as exc:
+                print(f"  failed: {exc}")
+                continue
+            print(
+                f"  {result.releases_added} releases, "
+                f"{result.documents_added} report PDFs added"
+            )
 
 
 def _cmd_adjudicate_monthly_ranking(args):
-    from kncompanyscraper.analysis.agent.comparative_review import (
-        ComparativeReviewService,
-    )
     from kncompanyscraper.repositories.ranking_repository import RankingRepository
-    from kncompanyscraper.repositories.thesis_repository import ThesisRepository
-    from kncompanyscraper.repositories.comparative_review_repository import (
-        ComparativeReviewRepository,
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
+    from kncompanyscraper.composition import (
+        build_agent_model_adapter,
+        build_comparative_review_service,
     )
-    from kncompanyscraper.main import _build_agent_model_adapter
 
     ranking_repo = RankingRepository()
     run = ranking_repo.get_ranking_run(args.ranking_run_id)
     if not run:
         raise SystemExit(f"Ranking run {args.ranking_run_id} not found")
 
-    latest_theses = ThesisRepository().get_latest_accepted_theses()
-    model_adapter = _build_agent_model_adapter(
+    analyses = AnalysisRepository().get_latest_validated_stock_analyses()
+    model_adapter = build_agent_model_adapter(
         args.provider, args.model, args.reasoning_effort
     )
-    service = ComparativeReviewService(model_adapter, ComparativeReviewRepository())
+    service = build_comparative_review_service(model_adapter)
 
-    result = service.adjudicate(run, latest_theses)
+    result = service.review(run, analyses)
     print(
-        f"Adjudication complete for run {args.ranking_run_id}: {len(result.calibrations)} companies calibrated."
+        f"Adjudication complete for run {args.ranking_run_id}: "
+        f"{len(result.review.cases)} companies calibrated."
     )

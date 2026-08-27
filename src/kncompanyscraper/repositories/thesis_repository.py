@@ -1,9 +1,24 @@
 from psycopg2.extras import RealDictCursor
 
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class ThesisRepository:
+class ThesisRepository(BaseRepository):
+    def get_revision(self, revision_id: int) -> dict | None:
+        query = """
+            SELECT id, company_id, revision, previous_revision_id,
+                   source_analysis_id, change_type, evidence_as_of,
+                   confidence, confidence_limitations, content,
+                   created_by, metadata, created_at
+            FROM company_thesis_revisions
+            WHERE id = %s
+        """
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, (revision_id,))
+                row = cur.fetchone()
+        return dict(row) if row else None
+
     def get_latest(self, company_id: int) -> dict | None:
         query = """
             SELECT id, company_id, revision, previous_revision_id,
@@ -15,7 +30,7 @@ class ThesisRepository:
             ORDER BY revision DESC
             LIMIT 1
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, (company_id,))
                 row = cur.fetchone()
@@ -36,7 +51,7 @@ class ThesisRepository:
               )
             ORDER BY f.heading, f.id
         """
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, (company_id, company_id))
                 rows = cur.fetchall()

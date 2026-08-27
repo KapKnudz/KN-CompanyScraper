@@ -1,4 +1,3 @@
-from dataclasses import dataclass, field
 from datetime import datetime
 import re
 import unicodedata
@@ -7,40 +6,16 @@ from zoneinfo import ZoneInfo
 from playwright.sync_api import sync_playwright, Page
 from kncompanyscraper.logger import get_logger
 from kncompanyscraper.models.company import Company
+from kncompanyscraper.models.scraped_article import ArticleAttachment, ScrapedArticle
+from kncompanyscraper.constants import REPORT_TITLE_TERMS as SHARED_REPORT_TITLE_TERMS
 
 logger = get_logger(__name__)
-
-
-@dataclass
-class ArticleAttachment:
-    title: str
-    url: str
-
-
-@dataclass
-class ScrapedArticle:
-    company: str
-    slug: str
-    url: str
-    title: str
-    body: str
-    published_at: datetime | None = None
-    attachments: list[ArticleAttachment] = field(default_factory=list)
 
 
 class MfnScraper:
     BASE_URL = "https://mfn.se"
     MAX_ARTICLES = 24
-    REPORT_TITLE_TERMS = (
-        "annual report",
-        "interim report",
-        "quarterly report",
-        "year-end report",
-        "årsredovisning",
-        "delårsrapport",
-        "kvartalsrapport",
-        "bokslutskommuniké",
-    )
+    REPORT_TITLE_TERMS = SHARED_REPORT_TITLE_TERMS
 
     def __init__(self, company: Company, headless: bool = True):
         self.company = company
@@ -50,11 +25,9 @@ class MfnScraper:
         with sync_playwright() as p:
             logger.info("Launching browser")
             browser = p.chromium.launch(headless=self.headless)
-
-            logger.info("Creating page")
-            page = browser.new_page()
-
             try:
+                logger.info("Creating page")
+                page = browser.new_page()
                 logger.info("Starting feed scrape")
                 matches = self._scrape_feed(page)
                 logger.info("Feed scrape finished. Matches: %d", len(matches))
@@ -86,12 +59,7 @@ class MfnScraper:
             if not href:
                 continue
 
-            path_parts = href.strip("/").split("/")
-            item_author_slug = (
-                path_parts[2]
-                if len(path_parts) >= 4 and path_parts[:2] == ["cis", "a"]
-                else path_parts[1] if len(path_parts) >= 3 else author_slug
-            )
+            item_author_slug = _author_slug_from_href(href, author_slug)
             title = link_el.inner_text().strip()
             matched.append(
                 {
@@ -189,3 +157,12 @@ class MfnScraper:
 def _slugify(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
     return re.sub(r"[^a-z0-9]+", "-", normalized.casefold()).strip("-")
+
+
+def _author_slug_from_href(href: str, fallback: str) -> str:
+    path_parts = href.strip("/").split("/")
+    if len(path_parts) >= 4 and path_parts[:2] == ["cis", "a"]:
+        return path_parts[2]
+    if len(path_parts) >= 3:
+        return path_parts[1]
+    return fallback

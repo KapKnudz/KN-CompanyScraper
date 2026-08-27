@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date
+from kncompanyscraper.constants import BORSDATA_DIVIDEND_SOURCE
 
 
 @dataclass(frozen=True)
@@ -11,12 +12,13 @@ class BorsdataDividendJobResult:
 
 class BorsdataDividendJob:
     BATCH_SIZE = 50
-    SOURCE = "borsdata:dividend_calendar"
+    SOURCE = BORSDATA_DIVIDEND_SOURCE
 
-    def __init__(self, client, dividend_repository, valuation_repository):
+    def __init__(self, client, dividend_repository, valuation_repository, job_repository=None):
         self.client = client
         self.dividend_repository = dividend_repository
         self.valuation_repository = valuation_repository
+        self.job_repository = job_repository
 
     def run(
         self,
@@ -37,10 +39,16 @@ class BorsdataDividendJob:
         for offset in range(0, len(mapped), self.BATCH_SIZE):
             batch = mapped[offset:offset + self.BATCH_SIZE]
             instrument_ids = [company.borsdata_id for company in batch]
+            job_id = (
+                self.job_repository.start("borsdata_dividends", None)
+                if self.job_repository is not None else None
+            )
             try:
                 calendars = self.client.get_dividends(instrument_ids)
             except Exception as exc:
                 failures.extend(f"{company.name}: {exc}" for company in batch)
+                if job_id is not None:
+                    self.job_repository.fail(job_id, str(exc))
                 continue
 
             for company in batch:
@@ -66,5 +74,8 @@ class BorsdataDividendJob:
                     failures.append(f"{company.name}: {exc}")
                     continue
                 synced += 1
+
+            if job_id is not None:
+                self.job_repository.complete(job_id, {"synced": len(batch)})
 
         return BorsdataDividendJobResult(synced, len(failures), tuple(failures))

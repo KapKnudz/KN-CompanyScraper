@@ -20,7 +20,7 @@ class PersistedStockAnalysis:
 
 
 class AgentExecutionBoundary:
-    VALIDATION_VERSION = "agent-boundary-v15-readiness-status"
+    VALIDATION_VERSION = "agent-boundary-v19-management-ledger"
     NO_INSIDER_ASSESSMENT = (
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
@@ -36,6 +36,12 @@ class AgentExecutionBoundary:
         created_by: str,
         metadata: dict | None = None,
     ) -> PersistedStockAnalysis:
+        result = self.validate_response(raw_response, candidate)
+        return self._persist_validated_response(result, candidate, created_by, metadata)
+
+    @staticmethod
+    def validate_response(raw_response: str, candidate) -> StockAnalysisResult:
+        """Parse and validate model identity before persistence-side normalization."""
         result = parse_stock_analysis_result(raw_response)
         if result.company_id != candidate.company_id:
             raise StockAnalysisValidationError(
@@ -50,6 +56,15 @@ class AgentExecutionBoundary:
                 "model-backed analysis_status must be complete; blocked packets belong "
                 "to the deterministic readiness output"
             )
+        return result
+
+    def _persist_validated_response(
+        self,
+        result: StockAnalysisResult,
+        candidate,
+        created_by: str,
+        metadata: dict | None,
+    ) -> PersistedStockAnalysis:
 
         document_source_ids = {
             source.get("source_id")
@@ -84,6 +99,12 @@ class AgentExecutionBoundary:
             citation.source_id = valuation_source_aliases.get(
                 citation.source_id, citation.source_id
             )
+        self._normalize_assessment_claims(
+            result.management_claims, valuation_source_aliases
+        )
+        self._normalize_assessment_claims(
+            result.insider_claims, valuation_source_aliases
+        )
         result.risk_profile_evidence = [
             valuation_source_aliases.get(source_id, source_id)
             for source_id in result.risk_profile_evidence
@@ -157,47 +178,47 @@ class AgentExecutionBoundary:
             | prior_source_ids
             | set(valuation_source_aliases.values())
         )
-        unknown_source_ids = sorted(
-            {citation.source_id for citation in result.citations} - known_source_ids
+        self._validate_known_sources(
+            known_source_ids,
+            (
+                (
+                    "result cites unknown evidence source(s)",
+                    {citation.source_id for citation in result.citations},
+                ),
+                ("risk profile cites unknown evidence source(s)", set(result.risk_profile_evidence)),
+                ("company facts cite unknown evidence source(s)", fact_source_ids),
+                ("thesis card cites unknown evidence source(s)", thesis_card_source_ids),
+                ("forward assumptions cite unknown evidence source(s)", forward_source_ids),
+                (
+                    "management claims cite unknown evidence source(s)",
+                    {
+                        source_id
+                        for claim in result.management_claims
+                        for source_id in claim.source_ids
+                    },
+                ),
+                (
+                    "insider claims cite unknown evidence source(s)",
+                    {
+                        source_id
+                        for claim in result.insider_claims
+                        for source_id in claim.source_ids
+                    },
+                ),
+            ),
         )
-        if unknown_source_ids:
-            raise StockAnalysisValidationError(
-                "result cites unknown evidence source(s): " + ", ".join(unknown_source_ids)
-            )
-        unknown_risk_source_ids = sorted(
-            set(result.risk_profile_evidence) - known_source_ids
-        )
-        if unknown_risk_source_ids:
-            raise StockAnalysisValidationError(
-                "risk profile cites unknown evidence source(s): "
-                + ", ".join(unknown_risk_source_ids)
-            )
-        unknown_fact_source_ids = sorted(fact_source_ids - known_source_ids)
-        if unknown_fact_source_ids:
-            raise StockAnalysisValidationError(
-                "company facts cite unknown evidence source(s): "
-                + ", ".join(unknown_fact_source_ids)
-            )
-        unknown_thesis_card_source_ids = sorted(
-            thesis_card_source_ids - known_source_ids
-        )
-        if unknown_thesis_card_source_ids:
-            raise StockAnalysisValidationError(
-                "thesis card cites unknown evidence source(s): "
-                + ", ".join(unknown_thesis_card_source_ids)
-            )
-        unknown_forward_source_ids = sorted(forward_source_ids - known_source_ids)
-        if unknown_forward_source_ids:
-            raise StockAnalysisValidationError(
-                "forward assumptions cite unknown evidence source(s): "
-                + ", ".join(unknown_forward_source_ids)
-            )
 
         deterministic_checks, deterministic_warnings = self._validate_model_owned_arithmetic(
             result, candidate
         )
         self._validate_scenario_characterization(result)
+        management_coverage = self._validate_management_ledger(result)
         self._validate_management_sources(result, document_source_ids)
+        self._validate_assessment_sections(
+            result,
+            document_source_ids=document_source_ids,
+            insider_source_ids=insider_source_ids,
+        )
         self._validate_activated_case(result, candidate)
         self._validate_portfolio_eligibility(result)
         self._validate_risk_profile(result, candidate)
@@ -212,7 +233,11 @@ class AgentExecutionBoundary:
         if insider_source_ids:
             cited_source_ids = {
                 citation.source_id for citation in result.citations
-            } | fact_source_ids
+            } | fact_source_ids | {
+                source_id
+                for claim in result.insider_claims
+                for source_id in claim.source_ids
+            }
             if not cited_source_ids.intersection(insider_source_ids):
                 raise StockAnalysisValidationError(
                     "insider assessment must cite at least one supplied insider transaction"
@@ -224,6 +249,7 @@ class AgentExecutionBoundary:
             if result.insider_assessment != self.NO_INSIDER_ASSESSMENT:
                 warnings.append("model insider assessment replaced because no events were supplied")
             result.insider_assessment = self.NO_INSIDER_ASSESSMENT
+            result.insider_claims = []
             insider_checks.append("no-data insider assessment normalized")
 
         validation_metadata = dict(metadata or {})
@@ -239,9 +265,17 @@ class AgentExecutionBoundary:
                 result.forward_scenario_analysis.methodology_flags
             ),
             "warnings": list(result.forward_scenario_analysis.warnings),
+            "net_debt_bridges": self._net_debt_bridges(result, candidate),
         }
+        consensus = candidate.full_results.get("cyclicality_consensus") or {}
+        validation_metadata["risk_profile"] = {
+            "consensus_strength": self._field(consensus, "consensus_strength"),
+            "evidence_confidence": result.risk_profile_confidence,
+        }
+        validation_metadata["management_credibility"] = management_coverage
         validation_metadata.update(
             {
+                "artifact_type": "validated_analysis",
                 "validation_version": self.VALIDATION_VERSION,
                 "validation_status": "accepted",
                 "analysis_status": result.analysis_status,
@@ -262,6 +296,15 @@ class AgentExecutionBoundary:
             metadata=validation_metadata,
         )
         return PersistedStockAnalysis(analysis_id=analysis_id, result=result)
+
+    @staticmethod
+    def _validate_known_sources(known_source_ids, source_groups) -> None:
+        for label, source_ids in source_groups:
+            unknown = sorted(set(source_ids) - known_source_ids)
+            if unknown:
+                raise StockAnalysisValidationError(
+                    f"{label}: " + ", ".join(unknown)
+                )
 
     @classmethod
     def _apply_confidence_cap(cls, result, candidate, document_source_ids):
@@ -430,6 +473,8 @@ class AgentExecutionBoundary:
             ),
             endpoints=tuple(result.forward_scenario_assumptions),
             ranking_model=candidate.ranking_model,
+            price_currency=cls._field(reverse_dcf, "price_currency"),
+            financial_currency=cls._field(reverse_dcf, "financial_currency"),
         )
 
     @classmethod
@@ -514,6 +559,37 @@ class AgentExecutionBoundary:
         if isinstance(value, dict):
             return value.get(name)
         return getattr(value, name, None)
+
+    @classmethod
+    def _net_debt_bridges(cls, result, candidate):
+        reverse_dcf = candidate.full_results.get("reverse_dcf")
+        current_net_debt = cls._field(reverse_dcf, "current_net_debt")
+        current_sources = cls._field(reverse_dcf, "assumption_sources") or {}
+        current_net_debt_source = current_sources.get("current_net_debt") or current_sources.get(
+            "net_debt"
+        )
+        if current_net_debt_source is None:
+            current_net_debt_source_ids = []
+        elif isinstance(current_net_debt_source, (list, tuple)):
+            current_net_debt_source_ids = list(current_net_debt_source)
+        else:
+            current_net_debt_source_ids = [current_net_debt_source]
+        return [
+            {
+                "endpoint": endpoint.key,
+                "current_net_debt": current_net_debt,
+                "net_debt_change": endpoint.net_debt_change.value,
+                "projected_net_debt": endpoint.net_debt.value,
+                "current_net_debt_source_ids": current_net_debt_source_ids,
+                "change_source_ids": list(endpoint.net_debt_change.source_ids),
+                "provenance_type": endpoint.net_debt_change.provenance_type,
+                "mechanism": endpoint.net_debt_change.mechanism,
+                "reconciles": current_net_debt is not None
+                and endpoint.net_debt.value
+                == current_net_debt + endpoint.net_debt_change.value,
+            }
+            for endpoint in result.forward_scenario_assumptions
+        ]
 
     @classmethod
     def _valuation_provenance(cls, candidate):
@@ -811,24 +887,30 @@ class AgentExecutionBoundary:
             return
 
         expected_profile = cls._field(consensus, "risk_profile")
-        expected_confidence = (
-            "high"
-            if cls._field(consensus, "consensus_strength") == "unanimous"
-            else "medium"
-        )
         evidence = cls._field(consensus, "evidence") or ()
         expected_evidence = {
             cls._field(item, "source_id")
             for item in evidence
             if cls._field(item, "source_id")
         }
+        expected_confidence = cls._field(consensus, "evidence_confidence")
+        if expected_confidence is None:
+            expected_confidence = "medium" if expected_evidence else "low"
+        if expected_confidence not in {"low", "medium", "high"}:
+            raise StockAnalysisValidationError(
+                "classifier consensus has invalid evidence confidence"
+            )
+        if expected_confidence in {"medium", "high"} and not expected_evidence:
+            raise StockAnalysisValidationError(
+                "medium/high risk profile confidence requires documentary evidence"
+            )
         if result.risk_profile != expected_profile:
             raise StockAnalysisValidationError(
                 "risk profile must match the completed classifier consensus"
             )
         if result.risk_profile_confidence != expected_confidence:
             raise StockAnalysisValidationError(
-                "risk profile confidence must match classifier consensus strength"
+                "risk profile confidence must match classifier evidence confidence"
             )
         if set(result.risk_profile_evidence) != expected_evidence:
             raise StockAnalysisValidationError(
@@ -900,16 +982,175 @@ class AgentExecutionBoundary:
     @staticmethod
     def _validate_management_sources(result, document_source_ids):
         for claim in result.management_credibility_ledger:
-            if not claim.source_ids:
+            if not claim.claim_source_ids:
                 raise StockAnalysisValidationError(
-                    "management credibility claims require document source_ids"
+                    "management credibility claims require claim_source_ids"
                 )
-            unknown_source_ids = sorted(set(claim.source_ids) - document_source_ids)
+            unknown_source_ids = sorted(
+                (set(claim.claim_source_ids) | set(claim.outcome_source_ids))
+                - document_source_ids
+            )
             if unknown_source_ids:
                 raise StockAnalysisValidationError(
                     "management credibility claim cites unknown document source(s): "
                     + ", ".join(unknown_source_ids)
                 )
+
+    @staticmethod
+    def _validate_management_ledger(result):
+        assessed_results = {"kept", "delayed", "missed", "changed"}
+        ledger = result.management_credibility_ledger
+        for index, claim in enumerate(ledger):
+            claim.claim = claim.claim.strip()
+            if not claim.claim:
+                raise StockAnalysisValidationError(
+                    f"management credibility claim cannot be empty: {index}"
+                )
+
+            legacy_source_ids = set(claim.source_ids)
+            if not claim.claim_source_ids and claim.source_ids:
+                claim.claim_source_ids = list(claim.source_ids)
+            claim.claim_source_ids = list(dict.fromkeys(claim.claim_source_ids))
+            claim.outcome_source_ids = list(dict.fromkeys(claim.outcome_source_ids))
+            normalized_source_ids = list(
+                dict.fromkeys([*claim.claim_source_ids, *claim.outcome_source_ids])
+            )
+            if legacy_source_ids - set(normalized_source_ids):
+                raise StockAnalysisValidationError(
+                    "management credibility source_ids must match claim and outcome source IDs"
+                )
+            claim.source_ids = normalized_source_ids
+
+            observed_outcome = (
+                claim.observed_outcome.strip()
+                if claim.observed_outcome is not None
+                else None
+            )
+            claim.observed_outcome = observed_outcome or None
+            if claim.result in assessed_results:
+                if not claim.observed_outcome:
+                    raise StockAnalysisValidationError(
+                        "assessed management credibility claims require observed_outcome"
+                    )
+                if not claim.outcome_source_ids:
+                    raise StockAnalysisValidationError(
+                        "assessed management credibility claims require outcome_source_ids"
+                    )
+            elif claim.observed_outcome or claim.outcome_source_ids:
+                raise StockAnalysisValidationError(
+                    "unverifiable management credibility claims cannot assert an outcome"
+                )
+
+        coverage = result.management_credibility_coverage
+        counts = (
+            coverage.eligible_claim_count,
+            coverage.assessed_claim_count,
+            coverage.pending_claim_count,
+            coverage.omitted_claim_count,
+        )
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in counts
+        ):
+            raise StockAnalysisValidationError(
+                "management credibility coverage counts must be non-negative integers"
+            )
+
+        assessed_count = sum(claim.result in assessed_results for claim in ledger)
+        pending_count = sum(claim.result == "unverifiable" for claim in ledger)
+        if coverage.assessed_claim_count != assessed_count:
+            raise StockAnalysisValidationError(
+                "management credibility assessed_claim_count does not match ledger"
+            )
+        if coverage.pending_claim_count != pending_count:
+            raise StockAnalysisValidationError(
+                "management credibility pending_claim_count does not match ledger"
+            )
+        if coverage.eligible_claim_count != (
+            assessed_count + pending_count + coverage.omitted_claim_count
+        ):
+            raise StockAnalysisValidationError(
+                "management credibility coverage counts do not reconcile"
+            )
+        if coverage.omitted_claim_count and not coverage.omission_reasons:
+            raise StockAnalysisValidationError(
+                "omitted management credibility claims require omission_reasons"
+            )
+        if not coverage.omitted_claim_count and coverage.omission_reasons:
+            raise StockAnalysisValidationError(
+                "omission_reasons require omitted management credibility claims"
+            )
+        coverage.omission_reasons = [
+            reason.strip() for reason in coverage.omission_reasons
+        ]
+        if any(not reason for reason in coverage.omission_reasons):
+            raise StockAnalysisValidationError(
+                "management credibility omission reasons cannot be empty"
+            )
+        return {
+            "eligible_claim_count": coverage.eligible_claim_count,
+            "assessed_claim_count": coverage.assessed_claim_count,
+            "pending_claim_count": coverage.pending_claim_count,
+            "omitted_claim_count": coverage.omitted_claim_count,
+            "omission_reasons": list(coverage.omission_reasons),
+        }
+
+    @staticmethod
+    def _normalize_assessment_claims(claims, source_aliases):
+        for claim in claims:
+            claim.statement = claim.statement.strip()
+            if not claim.statement:
+                raise StockAnalysisValidationError(
+                    "assessment claim statement cannot be empty"
+                )
+            if not claim.source_ids:
+                raise StockAnalysisValidationError(
+                    "assessment claims require source_ids"
+                )
+            claim.source_ids = [
+                source_aliases.get(source_id, source_id)
+                for source_id in claim.source_ids
+            ]
+            if len(claim.source_ids) != len(set(claim.source_ids)):
+                raise StockAnalysisValidationError(
+                    "assessment claim contains duplicate source IDs"
+                )
+
+    @staticmethod
+    def _validate_assessment_sections(
+        result, *, document_source_ids, insider_source_ids
+    ):
+        if result.management_assessment.strip() and not result.management_claims:
+            raise StockAnalysisValidationError(
+                "management assessment requires structured management claims"
+            )
+        management_sources = {
+            source_id
+            for claim in result.management_claims
+            for source_id in claim.source_ids
+        }
+        unknown_management_sources = sorted(
+            management_sources - document_source_ids
+        )
+        if unknown_management_sources:
+            raise StockAnalysisValidationError(
+                "management claims must cite supplied documents: "
+                + ", ".join(unknown_management_sources)
+            )
+
+        if insider_source_ids and result.insider_assessment.strip() and not result.insider_claims:
+            raise StockAnalysisValidationError(
+                "insider assessment requires structured insider claims"
+            )
+        insider_sources = {
+            source_id
+            for claim in result.insider_claims
+            for source_id in claim.source_ids
+        }
+        if insider_sources and not insider_sources.intersection(insider_source_ids):
+            raise StockAnalysisValidationError(
+                "insider claims must cite at least one supplied insider transaction"
+            )
 
     @staticmethod
     def _validate_portfolio_eligibility(result):

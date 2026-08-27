@@ -4,7 +4,7 @@ from datetime import date
 from psycopg2.extras import RealDictCursor
 
 from kncompanyscraper.borsdata.dividend import CashDividend
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class DividendEventReview:
     evidence_url: str | None
 
 
-class DividendRepository:
+class DividendRepository(BaseRepository):
     REVIEW_STATUSES = {"pending", "approved", "excluded"}
 
     def replace_calendar(
@@ -36,7 +36,7 @@ class DividendRepository:
         if covered_from > covered_through:
             raise ValueError("covered_from must not be after covered_through")
 
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "DELETE FROM company_dividends WHERE company_id = %s AND source = %s",
@@ -79,7 +79,7 @@ class DividendRepository:
                 )
 
     def get_coverage(self, company_id: int) -> DividendCoverage | None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -99,7 +99,7 @@ class DividendRepository:
         after_date: date,
         through_date: date,
     ) -> list[CashDividend]:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -133,7 +133,7 @@ class DividendRepository:
         through_date: date,
         source: str,
     ) -> dict[tuple, DividendEventReview]:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -175,7 +175,7 @@ class DividendRepository:
             raise ValueError("unsupported dividend review status")
         if not reason.strip():
             raise ValueError("dividend review reason is required")
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """

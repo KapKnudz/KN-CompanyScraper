@@ -12,6 +12,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
     MarginExpansionCase,
     TimingAssessment,
 )
+from kncompanyscraper.constants import RAW_RESPONSE_TRANSIENT_METADATA_KEYS
 
 
 @dataclass(frozen=True)
@@ -236,7 +237,7 @@ class ThesisUpdateService:
                 outcomes.append(ThesisUpdateOutcome(candidate.company_id, "no_current_thesis"))
                 continue
             metadata = dict(raw.get("metadata") or {})
-            for key in ("analysis_mode", "validation_status", "validation_error"):
+            for key in RAW_RESPONSE_TRANSIENT_METADATA_KEYS:
                 metadata.pop(key, None)
             metadata["raw_analysis_id"] = raw["id"]
             try:

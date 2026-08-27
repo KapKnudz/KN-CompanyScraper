@@ -2,19 +2,19 @@ from datetime import date
 
 from psycopg2.extras import Json, RealDictCursor
 
-from kncompanyscraper.database import get_connection
 from kncompanyscraper.models.research_document import ResearchDocument
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class ResearchDocumentRepository:
+class ResearchDocumentRepository(BaseRepository):
     def exists(self, url: str) -> bool:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1 FROM research_documents WHERE url = %s", (url,))
                 return cur.fetchone() is not None
 
     def save(self, document: ResearchDocument) -> bool:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -59,7 +59,7 @@ class ResearchDocumentRepository:
             query += " LIMIT %s"
             params.append(limit)
 
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, tuple(params))
                 rows = cur.fetchall()

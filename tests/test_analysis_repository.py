@@ -16,7 +16,7 @@ def test_save_stock_analysis_persists_canonical_json_and_returns_id():
     result = valid_result()
 
     with patch(
-        "kncompanyscraper.repositories.analysis_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         analysis_id = AnalysisRepository().save_stock_analysis(
@@ -55,7 +55,7 @@ def test_save_stock_analysis_persists_structured_facts_on_next_revision():
     ]
 
     with patch(
-        "kncompanyscraper.repositories.analysis_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         analysis_id = AnalysisRepository().save_stock_analysis(
@@ -89,7 +89,7 @@ def test_save_stock_analysis_marks_incremental_revision():
     connection.cursor.return_value.__enter__.return_value = cursor
 
     with patch(
-        "kncompanyscraper.repositories.analysis_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         AnalysisRepository().save_stock_analysis(
@@ -110,7 +110,7 @@ def test_save_and_update_raw_stock_analysis():
     connection.cursor.return_value.__enter__.return_value = cursor
 
     with patch(
-        "kncompanyscraper.repositories.analysis_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         repository = AnalysisRepository()
@@ -154,7 +154,7 @@ def test_get_latest_validated_stock_analyses_parses_content():
     connection.cursor.return_value.__enter__.return_value = cursor
 
     with patch(
-        "kncompanyscraper.repositories.analysis_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         analyses = AnalysisRepository().get_latest_validated_stock_analyses()
@@ -181,7 +181,7 @@ def test_get_latest_rejected_incremental_updates_filters_candidates():
     connection.cursor.return_value.__enter__.return_value = cursor
 
     with patch(
-        "kncompanyscraper.repositories.analysis_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         rows = AnalysisRepository().get_latest_rejected_incremental_updates([42, 7])
@@ -206,7 +206,7 @@ def test_get_latest_rejected_initial_analyses_filters_candidates():
     connection.cursor.return_value.__enter__.return_value = cursor
 
     with patch(
-        "kncompanyscraper.repositories.analysis_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         rows = AnalysisRepository().get_latest_rejected_initial_analyses([42, 7])

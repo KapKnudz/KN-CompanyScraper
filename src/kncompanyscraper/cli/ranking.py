@@ -33,12 +33,12 @@ def register(subparsers):
 
 def _cmd_rank_watchlist(args):
     from kncompanyscraper.analysis.ranking.ranking_engine import RankingEngine
-    from kncompanyscraper.main import (
-        _build_watchlist_analysis_service,
-        _refresh_agent_cohort_snapshot,
+    from kncompanyscraper.composition import (
+        build_watchlist_analysis_service,
+        refresh_agent_cohort_snapshot,
     )
 
-    ranking = _build_watchlist_analysis_service().rank_watchlist()
+    ranking = build_watchlist_analysis_service().rank_watchlist()
 
     if not ranking.scores:
         print("No active companies found in watchlist.")
@@ -71,7 +71,7 @@ def _cmd_rank_watchlist(args):
                 print(f"     - {n}")
         print()
 
-    cohort_id, cohort, created = _refresh_agent_cohort_snapshot()
+    cohort_id, cohort, created = refresh_agent_cohort_snapshot()
     print(f"---")
     print(f"Total companies ranked: {len(ranking.scores)}")
     print(f"Agent cohort size:      {len(cohort.members)}")
@@ -106,51 +106,56 @@ def _cmd_snapshot_ranking_challenger(args):
 
 
 def _cmd_refresh_agent_cohort(args):
-    from kncompanyscraper.main import _refresh_agent_cohort_snapshot
+    from kncompanyscraper.composition import refresh_agent_cohort_snapshot
 
-    cohort_id, cohort, created = _refresh_agent_cohort_snapshot()
+    cohort_id, cohort, created = refresh_agent_cohort_snapshot()
     status = "Created" if created else "Updated existing"
     print(f"{status} agent cohort snapshot {cohort_id} with {len(cohort.members)} members.")
 
 
 def _cmd_rank_analyzed_candidates(args):
     import json
-    from kncompanyscraper.analysis.comparative_ranking import ComparativeRankingService
-    from kncompanyscraper.repositories.comparative_review_repository import (
-        ComparativeReviewRepository,
+    from kncompanyscraper.jobs.comparative_ranking_job import ComparativeRankingJob
+    from kncompanyscraper.repositories.agent_cohort_repository import (
+        AgentCohortRepository,
     )
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
     from kncompanyscraper.repositories.ranking_repository import RankingRepository
-    from kncompanyscraper.repositories.thesis_repository import ThesisRepository
+    from kncompanyscraper.repositories.thesis_challenge_repository import (
+        ThesisChallengeRepository,
+    )
 
-    thesis_repo = ThesisRepository()
     ranking_repo = RankingRepository()
-    review_repo = ComparativeReviewRepository()
-
-    latest_theses = thesis_repo.get_latest_accepted_theses()
-    if not latest_theses:
+    result = ComparativeRankingJob(
+        AnalysisRepository(),
+        ThesisChallengeRepository(),
+        ranking_repo,
+        AgentCohortRepository(),
+    ).run()
+    if result.status == "no_analyses":
         print("No accepted individual theses found. Run analyze-shortlist first.")
         return
 
-    ranking_run = ranking_repo.get_latest_deterministic_run()
-    if not ranking_run:
-        print("No deterministic ranking run found. Run rank-watchlist first.")
-        return
-
-    result = ComparativeRankingService(review_repo).rank(latest_theses, ranking_run)
-
-    print(f"# Comparative ranking (Run {result.ranking_run_id})\n")
-    for tier in sorted(result.tiers.keys()):
-        print(f"## Tier {tier}")
-        for case in result.tiers[tier]:
-            print(
-                f"- {case.ticker:<6} {case.name:<25} "
-                f"return={case.base_return:>5.1%} "
-                f"downside={case.bear_downside:>5.1%} "
-                f"confidence={case.confidence:<8}"
-            )
-        print()
+    ranking_run = ranking_repo.get_run(result.run_id)
+    print(f"# Comparative ranking (Run {result.run_id})\n")
+    for case in ranking_run["scores"]:
+        base_band = case.get("base_band")
+        base_return = (
+            f"{base_band[0]:.1%}–{base_band[1]:.1%}"
+            if base_band is not None
+            else "n/a"
+        )
+        downside = case.get("worst_bear_lower_bound")
+        downside_text = f"{downside:.1%}" if downside is not None else "n/a"
+        print(
+            f"{case['rank']:>3}. {case['ticker']:<8} "
+            f"tier={case['tier']:<8} "
+            f"base={base_return:<13} "
+            f"downside={downside_text:<7} "
+            f"confidence={case['evidence_confidence']}"
+        )
 
     if args.output:
         with args.output.open("w", encoding="utf-8") as f:
-            json.dump(result.to_dict(), f, indent=2, ensure_ascii=False)
+            json.dump(ranking_run, f, indent=2, ensure_ascii=False)
         print(f"Exported results to {args.output}")

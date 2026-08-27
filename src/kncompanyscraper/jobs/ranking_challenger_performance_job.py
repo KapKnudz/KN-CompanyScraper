@@ -2,6 +2,10 @@ from dataclasses import dataclass
 from datetime import date
 
 from kncompanyscraper.analysis.ranking_performance import RankingPerformanceEvaluator
+from kncompanyscraper.jobs.job import run_isolated
+from kncompanyscraper.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -14,11 +18,25 @@ class RankingChallengerPerformanceJobResult:
 class RankingChallengerPerformanceJob:
     EVALUATION_HORIZONS = (1, 3, 6, 12, 24, 36, 48)
 
-    def __init__(self, repository, evaluator):
+    def __init__(self, repository, evaluator, job_repository=None):
         self.repository = repository
         self.evaluator = evaluator
+        self.job_repository = job_repository
 
     def run(
+        self,
+        *,
+        as_of: date | None = None,
+        max_horizon_months: int = 48,
+    ) -> RankingChallengerPerformanceJobResult:
+        return run_isolated(
+            lambda: self._run(as_of=as_of, max_horizon_months=max_horizon_months),
+            logger=logger,
+            job_repository=self.job_repository,
+            job_type="ranking_challenger_performance",
+        )
+
+    def _run(
         self,
         *,
         as_of: date | None = None,

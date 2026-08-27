@@ -2,12 +2,12 @@ from datetime import date
 
 from psycopg2.extras import execute_values
 
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class BenchmarkRepository:
+class BenchmarkRepository(BaseRepository):
     def get_latest_date(self, series_code: str) -> date | None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -32,7 +32,7 @@ class BenchmarkRepository:
             raise ValueError("unsupported benchmark return basis")
         if not values:
             return 0
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 execute_values(
                     cur,
@@ -54,7 +54,7 @@ class BenchmarkRepository:
         return len(values)
 
     def get_return_basis(self, series_code: str) -> str | None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -85,11 +85,10 @@ class BenchmarkRepository:
     ) -> tuple[date, float] | None:
         return self._get_value(series_code, target_date, False, max_age_days)
 
-    @staticmethod
-    def _get_value(series_code, target_date, after, max_age_days):
+    def _get_value(self, series_code, target_date, after, max_age_days):
         comparator = ">=" if after else "<="
         ordering = "ASC" if after else "DESC"
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     f"""

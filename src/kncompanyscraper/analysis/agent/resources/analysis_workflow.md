@@ -43,7 +43,7 @@ second qualitative downside estimate here.
 
 Do not use unsupported precision. Give ranges when the evidence only supports ranges.
 
-For a `general` ranking model, populate `forward_scenario_assumptions` only when the supplied deterministic context includes positive current price, revenue, and shares, current net debt, and both EV/EBIT guardrails. Supply exactly eight complete endpoints at one shared 24-, 36-, or 48-month horizon: low/high endpoints for base, bull, multiple-compression bear, and fundamental-impairment bear. Every numeric assumption requires source IDs and a rationale. Express `share_count_growth` as a decimal fraction over the full horizon, for example `-0.0074` for a 0.74% reduction. The deterministic engine derives diluted shares from the supplied current share count; do not supply a second absolute share-count assumption. Net debt must likewise reconcile through `net_debt_change`. A multiple-compression endpoint copies its corresponding base operating and financing assumptions and changes only the terminal multiple. A fundamental-impairment endpoint improves no driver versus base and worsens at least one. Do not combine independent range extremes. Leave the list empty when evidence is insufficient or the ranking model is bank/property; the deterministic boundary will preserve a visible insufficiency or unsupported-method result.
+For a `general` ranking model, populate `forward_scenario_assumptions` only when the supplied deterministic context includes positive current price, revenue, and shares, current net debt, and both EV/EBIT guardrails. Supply exactly eight endpoints at one shared 24-, 36-, or 48-month horizon: low/high endpoints for base, bull, multiple-compression bear, and fundamental-impairment bear. Prefer the compact endpoint form: base endpoints provide `base_assumptions`; derived endpoints provide `base_endpoint` and only the changed assumptions in `overrides`. The deterministic boundary expands references before calculation and persists the expanded assumptions. Every numeric assumption requires source IDs and a rationale. Express `share_count_growth` as a decimal fraction over the full horizon, for example `-0.0074` for a 0.74% reduction. The deterministic engine derives diluted shares from the supplied current share count; do not supply a second absolute share-count assumption. Net debt must likewise reconcile through `net_debt_change`. Every non-zero `net_debt_change` must include a concrete `mechanism` and classify `provenance_type` as `source_backed` or `analyst_sensitivity`; use `not_applicable` and an explicit no-change mechanism when the change is zero. A multiple-compression endpoint must inherit its corresponding base endpoint and override only `terminal_ev_ebit`. A fundamental-impairment endpoint improves no driver versus base and worsens at least one. Do not combine independent range extremes. Leave the list empty when evidence is insufficient or the ranking model is bank/property; the deterministic boundary will preserve a visible insufficiency or unsupported-method result.
 
 `forward_scenario_analysis` must be `null` in the model response. The execution boundary owns its calculation. Never state a point estimate or probability weight in prose.
 
@@ -57,7 +57,7 @@ returns, but do not call a move speculative when supplied fundamentals explain i
 
 Use `full_results.reverse_dcf.expectation_curve` as the primary explanation of what the current price requires. Each point sets year-one revenue growth, which fades linearly to mature terminal growth by year five, and solves the year-five EBIT margin reached linearly from the current reported margin. Present the curve as alternative fading growth–margin paths rather than one unique market forecast. Never describe either endpoint as a constant five-year assumption. Use the one-variable results under `full_results.reverse_dcf.implied_expectations` only as cross-checks; when a solve is outside bounds, report its `required_value_hint` instead of treating the bound as the answer. Terminal growth is diagnostic only and must not drive the verdict or ranking interpretation. Check `full_results.reverse_dcf.normalization` before relying on any solve; when confidence is low, show both supplied three- and five-year windows and explain the exact reliability flags.
 
-Do not independently classify cyclicality. When `full_results.cyclicality_consensus.status` is `complete`, copy its `risk_profile` exactly, set `risk_profile_confidence` to high for unanimous consensus or medium for majority consensus, and copy the consensus evidence source IDs into `risk_profile_evidence`. When consensus is absent or incomplete, output `unclassified`, low confidence, and no profile evidence. A completed consensus may select only a supplied deterministic profile; never alter its decision from your own reading of the evidence.
+Do not independently classify cyclicality. When `full_results.cyclicality_consensus.status` is `complete`, copy its `risk_profile` and `evidence_confidence` exactly, and copy the consensus evidence source IDs into `risk_profile_evidence`. `consensus_strength` describes classifier vote agreement and is not evidence confidence. When consensus is absent or incomplete, output `unclassified`, low confidence, and no profile evidence. A completed consensus may select only a supplied deterministic profile; never alter its decision from your own reading of the evidence.
 
 Use the consensus profile's curve under `full_results.reverse_dcf.discount_rate_sensitivities` when consensus is complete. Otherwise retain the baseline slightly-cyclical curve and explicitly state that the discount-rate profile is unverified. The deterministic policy owns the risk-free rate, equity-risk premium, size adjustment, profile adjustments, and all sensitivity arithmetic. Classification selects a supplied lens for discussion; it must not modify inputs or create a new valuation calculation.
 
@@ -68,6 +68,17 @@ Deterministic implied expectations carry `source_id` values beginning with `valu
 Set `reverse_dcf_expectation_assessment` to `plausible`, `demanding`, `unsupported`, or `unassessable` and explain the conclusion in `reverse_dcf_expectation_rationale`. Reverse DCF produces no scalar score. These are qualitative evidence labels, never scores, probabilities, or generic valuation grades. Do not assign points or map the labels to numeric thresholds.
 
 Ground the assessment in the company's own record under `full_results.reverse_dcf.operating_history` and cited prospective evidence. Compare required margins with its supplied three- and five-year averages, historical peak, and demonstrated operating leverage. Compare required revenue growth with its annual history, exact three- and five-year CAGRs when available, and cited addressable-market or industry growth evidence. Use `plausible` only when at least one relevant growth–margin combination fits defensible company-specific ranges; use `demanding` when the combinations require performance near historical peaks or materially ahead of supported market growth; and use `unsupported` only when the relevant combinations lack company or industry precedent and the proposed mechanism is speculative. Use `unassessable`, not `unsupported`, when the history, market-growth evidence, or normalization quality is insufficient. Never apply a universal growth or margin cutoff. Identify the exact comparison and missing evidence that drives the label.
+When `full_results.financial_history.half_year_comparison` is available, use
+its deterministic latest-H1 versus prior-year-H1 comparison as recent context.
+It is built only from complete Q1/Q2 pairs; if its limitations say that a
+comparable H1 is unavailable, do not infer one from a single quarter.
+
+When `full_results.peer_comparison.status` is `available`, use its dated
+metric ranges as a separate sector sanity check. Compare the target's current
+metrics and company-history terminal EV/EBIT guardrails with the peer ranges,
+but never replace the company-history guardrails or calculate a new valuation
+from peer multiples. Peer coverage is additive; missing peers do not block the
+core analysis.
 
 Reported FCF is diagnostic only because Börsdata includes aggregate investing cash flow. A 0% net-reinvestment input means positive ROIC was unavailable or baseline growth was non-positive; it does not mean the company requires no reinvestment.
 
@@ -77,7 +88,19 @@ Discuss revenue growth, margin change, balance-sheet change, and dilution qualit
 
 ## 6. Assess management
 
+The ledger must separate `claim_source_ids` from `outcome_source_ids`. Report
+coverage as eligible, assessed, pending, and omitted material claims, with a
+reason for every omission. A sparse ledger is acceptable when the supplied
+history contains few eligible claims or insufficient elapsed time.
+
 Evaluate founder or owner-operator alignment, ownership, capital allocation, cost consciousness, customer orientation, and execution. When historical statements are supplied, compare concrete claims with observed outcomes in a credibility ledger.
+
+Keep the narrative assessment readable, but repeat each material conclusion in
+`management_claims` as an atomic, section-owned claim. Use `fact` or
+`management_claim` for sourced statements and `analyst_inference` for an
+interpretation grounded in the cited premises. Every structured claim must cite
+the supplied document IDs directly; the global `citations` list is not a
+substitute.
 
 ## 7. Assess ownership and timing
 
@@ -93,6 +116,11 @@ or state the observable direction relative to a cited current or historical base
 An assumption horizon alone is not a timing catalyst.
 
 Insider transactions are deliberately supplied as raw events with subsequent unadjusted price returns. Do not convert them into a mechanical score. Compare like-for-like transaction types, roles, sizes, repeated behavior, and the outcomes visible at the evidence cutoff. Do not treat missing future horizons as failed outcomes.
+
+Repeat each material insider conclusion in `insider_claims` with an atomic
+statement, an evidence kind, and the exact insider event source IDs supporting
+it. Analyst inferences must cite the underlying events. If there are no insider
+events, leave the claims empty and use the deterministic no-data wording.
 
 If `insider_event_count` is zero, make no inference from the absence of stored transactions. A company buyback is capital allocation, not an insider transaction, and cannot substitute for insider buying. A synthetic buyback must not be assumed to reduce share count or increase per-share value unless that effect is supplied by deterministic evidence.
 

@@ -3,9 +3,9 @@ from datetime import date, datetime
 
 from psycopg2.extras import RealDictCursor
 
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 from kncompanyscraper.logger import get_logger
-from kncompanyscraper.scraper.mfn_scraper import ScrapedArticle
+from kncompanyscraper.models.scraped_article import ScrapedArticle
 
 logger = get_logger(__name__)
 
@@ -20,10 +20,10 @@ class NewsRelease:
     body: str
     published_at: datetime | None
 
-class NewsRepository:
+class NewsRepository(BaseRepository):
     def exists(self, url: str) -> bool:
         """Check if an article with the given URL already exists."""
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT 1 FROM news_releases WHERE url = %s",
@@ -33,7 +33,7 @@ class NewsRepository:
 
     def save(self, article: ScrapedArticle, company_id: int) -> None:
         """Save a new article to the database."""
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -73,7 +73,7 @@ class NewsRepository:
             query += " LIMIT %s"
             params.append(limit)
 
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, tuple(params))
                 return [NewsRelease(**row) for row in cur.fetchall()]

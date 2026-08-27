@@ -54,6 +54,8 @@ def test_mapping_service_persists_only_resolved_companies():
 
     result = BorsdataInstrumentMappingService(client, repository).map_companies(companies)
 
-    repository.set_borsdata_identity.assert_called_once_with(1, 101, "SEK", 1, 75)
+    repository.set_borsdata_identity.assert_called_once_with(
+        1, 101, "SEK", 1, 75, report_currency="SEK"
+    )
     assert result.mapped == 1
     assert result.unresolved == ["Test Company"]

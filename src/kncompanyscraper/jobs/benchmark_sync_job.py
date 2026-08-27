@@ -2,6 +2,10 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from kncompanyscraper.benchmark_client import NASDAQ_OMXS30GI_SOURCE
+from kncompanyscraper.jobs.job import run_isolated
+from kncompanyscraper.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -20,11 +24,28 @@ class BenchmarkSyncJob:
     INCEPTION_DATE = date(2006, 5, 23)
     OVERLAP_DAYS = 7
 
-    def __init__(self, client, benchmark_repository):
+    def __init__(self, client, benchmark_repository, job_repository=None):
         self.client = client
         self.benchmark_repository = benchmark_repository
+        self.job_repository = job_repository
 
     def run(
+        self,
+        *,
+        as_of: date | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> BenchmarkSyncJobResult:
+        return run_isolated(
+            lambda: self._run(
+                as_of=as_of, start_date=start_date, end_date=end_date
+            ),
+            logger=logger,
+            job_repository=self.job_repository,
+            job_type="benchmark_sync",
+        )
+
+    def _run(
         self,
         *,
         as_of: date | None = None,

@@ -1,14 +1,12 @@
 from psycopg2.extras import Json, RealDictCursor
 
-from kncompanyscraper.database import get_connection
+from kncompanyscraper.repositories.base_repository import BaseRepository
 
 
-class RankingChallengerRepository:
+class RankingChallengerRepository(BaseRepository):
     def save(self, snapshot) -> tuple[int, bool]:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        return self._insert_or_get(
+            """
                     INSERT INTO ranking_challenger_snapshots (
                         snapshot_month, source_ranking_run_id, source_as_of,
                         policy_version, status, company_count, eligible_count,
@@ -32,21 +30,15 @@ class RankingChallengerRepository:
                         Json(snapshot.production_top_company_ids),
                         Json(snapshot.challenger_top_company_ids),
                     ),
-                )
-                row = cur.fetchone()
-                if row:
-                    return row[0], True
-                cur.execute(
-                    """
+            """
                     SELECT id FROM ranking_challenger_snapshots
                     WHERE snapshot_month = %s AND policy_version = %s
                     """,
-                    (snapshot.snapshot_month, snapshot.policy_version),
-                )
-                return cur.fetchone()[0], False
+            (snapshot.snapshot_month, snapshot.policy_version),
+        )
 
     def list_snapshots(self) -> list[dict]:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -63,7 +55,7 @@ class RankingChallengerRepository:
         return [self._snapshot_dict(row) for row in rows]
 
     def get_for_month(self, snapshot_month, policy_version: str) -> dict | None:
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
@@ -84,7 +76,7 @@ class RankingChallengerRepository:
         self, evaluation, policy_version: str
     ) -> tuple[int, bool]:
         payload = evaluation.to_dict()
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -159,7 +151,7 @@ class RankingChallengerRepository:
             LIMIT %s
         """
         params.append(limit)
-        with get_connection() as conn:
+        with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, tuple(params))
                 rows = cur.fetchall()

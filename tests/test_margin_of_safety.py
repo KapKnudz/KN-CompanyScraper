@@ -118,6 +118,19 @@ def _cheap_valuation(**overrides) -> ValuationResult:
 
 
 class TestWeightedValuationScoring:
+    def test_dividend_yield_uses_percentage_scale(self):
+        valuation = _cheap_valuation(
+            earnings_yield=None,
+            free_cash_flow_yield=None,
+            pe_percentile=None,
+            ev_ebit_percentile=None,
+            dividend_yield=4.0,
+        )
+
+        result = score_valuation(valuation)
+
+        assert result["score"] == pytest.approx(50.0)
+
     def test_cheap_valuation_scores_high(self):
         result = score_valuation(_cheap_valuation())
         assert result["score"] > 70

@@ -39,7 +39,7 @@ def test_save_reports_maps_typed_columns_and_raw_payload():
     connection = _mock_connection(cursor)
 
     with patch(
-        "kncompanyscraper.repositories.financial_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         FinancialRepository().save_reports(7, "year", [make_report()])
@@ -80,7 +80,7 @@ def test_latest_report_is_loaded_by_local_company_id():
     connection = _mock_connection(cursor)
 
     with patch(
-        "kncompanyscraper.repositories.financial_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         report = FinancialRepository().get_latest_report(7)

@@ -18,7 +18,7 @@ def test_benchmark_lookup_enforces_max_distance():
     cursor.fetchone.return_value = [date(2026, 2, 10), 500.0]
 
     with patch(
-        "kncompanyscraper.repositories.benchmark_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection_with_cursor(cursor),
     ):
         result = BenchmarkRepository().get_value_on_or_after(
@@ -33,7 +33,7 @@ def test_benchmark_return_basis_is_read_from_series():
     cursor.fetchone.return_value = ["gross_total_return"]
 
     with patch(
-        "kncompanyscraper.repositories.benchmark_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection_with_cursor(cursor),
     ):
         result = BenchmarkRepository().get_return_basis("OMXS30GI")
@@ -46,7 +46,7 @@ def test_benchmark_latest_date_is_read_from_series():
     cursor.fetchone.return_value = [date(2026, 8, 17)]
 
     with patch(
-        "kncompanyscraper.repositories.benchmark_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection_with_cursor(cursor),
     ):
         result = BenchmarkRepository().get_latest_date("OMXS30GI")

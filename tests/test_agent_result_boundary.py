@@ -6,10 +6,12 @@ import pytest
 from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
 from kncompanyscraper.analysis.agent.execution_boundary import AgentExecutionBoundary
 from kncompanyscraper.analysis.agent.output_schema import (
+    AssessmentClaim,
     BusinessModelProfile,
     CompanyFact,
     EvidenceCitation,
     ManagementClaimAssessment,
+    ManagementCredibilityCoverage,
     StockAnalysisResult,
     ThesisCatalyst,
     TimingAssessment,
@@ -19,6 +21,7 @@ from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
     parse_stock_analysis_result,
 )
+from kncompanyscraper.analysis.valuation.forward_scenario import ForwardScenarioEngine
 from tests.test_forward_scenario import valid_inputs
 
 
@@ -50,6 +53,10 @@ def valid_result() -> StockAnalysisResult:
                 source_ids=["news:21"],
             )
         ],
+        management_credibility_coverage=ManagementCredibilityCoverage(
+            eligible_claim_count=1,
+            pending_claim_count=1,
+        ),
         citations=[],
     )
 
@@ -64,6 +71,19 @@ def test_parser_builds_nested_result_dataclasses():
     assert result.verdict == "watch"
     assert result.valuation_scenarios == []
     assert result.management_credibility_ledger[0].result == "unverifiable"
+
+
+def test_parser_migrates_legacy_pending_management_ledger_entries():
+    payload = valid_result().to_dict()
+    payload.pop("management_credibility_coverage")
+    payload["management_credibility_ledger"][0].pop("claim_source_ids")
+    payload["management_credibility_ledger"][0].pop("outcome_source_ids")
+
+    result = parse_stock_analysis_result(json.dumps(payload))
+
+    assert result.management_credibility_ledger[0].claim_source_ids == ["news:21"]
+    assert result.management_credibility_ledger[0].outcome_source_ids == []
+    assert result.management_credibility_coverage.pending_claim_count == 1
 
 
 def test_parser_rejects_missing_and_unexpected_fields():
@@ -124,11 +144,18 @@ def test_execution_boundary_persists_valid_response():
     assert saved.args == (persisted.result,)
     assert saved.kwargs["created_by"] == "test-model"
     assert saved.kwargs["metadata"]["validation_version"] == (
-        "agent-boundary-v15-readiness-status"
+        "agent-boundary-v19-management-ledger"
     )
     assert saved.kwargs["metadata"]["forward_scenario"]["status"] == (
         "insufficient_evidence"
     )
+    assert saved.kwargs["metadata"]["management_credibility"] == {
+        "eligible_claim_count": 1,
+        "assessed_claim_count": 0,
+        "pending_claim_count": 1,
+        "omitted_claim_count": 0,
+        "omission_reasons": [],
+    }
     assert persisted.result.insider_assessment == (
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
@@ -203,6 +230,7 @@ def test_execution_boundary_caps_confidence_when_textual_evidence_is_absent():
     payload = valid_result()
     payload.confidence = "high"
     payload.management_credibility_ledger = []
+    payload.management_credibility_coverage = ManagementCredibilityCoverage()
 
     persisted = AgentExecutionBoundary(repository).persist_response(
         json.dumps(payload.to_dict()), candidate, created_by="test-model"
@@ -588,6 +616,11 @@ def test_execution_boundary_calculates_forward_scenarios_from_sourced_bundles():
                 "current_revenue": 100.0,
                 "current_shares": 10.0,
                 "current_net_debt": 0.0,
+                "price_currency": "SEK",
+                "financial_currency": "SEK",
+                "assumption_sources": {
+                    "current_net_debt": "deterministic:financial:net_debt"
+                },
                 "required_return": {
                     "baseline_profile": "slightly_cyclical",
                     "profiles": {
@@ -619,6 +652,47 @@ def test_execution_boundary_calculates_forward_scenarios_from_sourced_bundles():
     metadata = repository.save_stock_analysis.call_args.kwargs["metadata"]
     assert metadata["forward_scenario"]["required_return"] == 0.12
     assert metadata["forward_scenario"]["status"] == "available"
+    bridge = metadata["forward_scenario"]["net_debt_bridges"][0]
+    assert bridge["current_net_debt_source_ids"] == [
+        "deterministic:financial:net_debt"
+    ]
+    assert bridge["change_source_ids"] == ["report:2026-q2"]
+    assert bridge["provenance_type"] == "not_applicable"
+    assert bridge["reconciles"] is True
+    assert metadata["artifact_type"] == "validated_analysis"
+
+
+def test_execution_boundary_passes_currency_mismatch_to_forward_engine():
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={
+            "reverse_dcf": {
+                "current_price": 10.0,
+                "current_revenue": 100.0,
+                "current_shares": 10.0,
+                "current_net_debt": 0.0,
+                "price_currency": "SEK",
+                "financial_currency": "EUR",
+            },
+            "valuation": {
+                "ev_ebit_guardrail_low": 5.0,
+                "ev_ebit_guardrail_high": 15.0,
+            },
+        },
+    )
+    payload = valid_result()
+    payload.forward_scenario_assumptions = list(valid_inputs().endpoints)
+
+    result = ForwardScenarioEngine().analyze(
+        AgentExecutionBoundary._forward_scenario_inputs(payload, candidate)
+    )
+
+    assert result.status == "insufficient_evidence"
+    assert any("currency mismatch" in flag for flag in result.methodology_flags)
+    assert result.results == ()
 
 
 def test_execution_boundary_requires_unassessable_when_reverse_dcf_is_unavailable():
@@ -789,6 +863,7 @@ def test_execution_boundary_accepts_completed_classifier_consensus():
                 "status": "complete",
                 "risk_profile": "cyclical_or_other_risk",
                 "consensus_strength": "majority",
+                "evidence_confidence": "medium",
                 "evidence": [{"source_id": "news:21"}],
             },
             "reverse_dcf": {
@@ -811,6 +886,78 @@ def test_execution_boundary_accepts_completed_classifier_consensus():
     )
 
     assert persisted.result.risk_profile == "cyclical_or_other_risk"
+    metadata = repository.save_stock_analysis.call_args.kwargs["metadata"]
+    assert metadata["risk_profile"] == {
+        "consensus_strength": "majority",
+        "evidence_confidence": "medium",
+    }
+
+
+def test_execution_boundary_keeps_unanimous_baseline_agreement_separate_from_evidence():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 108
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={
+            "cyclicality_consensus": {
+                "status": "complete",
+                "risk_profile": "slightly_cyclical",
+                "consensus_strength": "unanimous",
+                "evidence_confidence": "low",
+                "evidence": [],
+            }
+        },
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.risk_profile = "slightly_cyclical"
+    payload.risk_profile_confidence = "low"
+    payload.risk_profile_evidence = []
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.risk_profile_confidence == "low"
+    metadata = repository.save_stock_analysis.call_args.kwargs["metadata"]
+    assert metadata["risk_profile"]["consensus_strength"] == "unanimous"
+
+
+def test_execution_boundary_rejects_high_risk_confidence_without_evidence():
+    repository = MagicMock()
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={
+            "cyclicality_consensus": {
+                "status": "complete",
+                "risk_profile": "slightly_cyclical",
+                "consensus_strength": "unanimous",
+                "evidence_confidence": "high",
+                "evidence": [],
+            }
+        },
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.risk_profile = "slightly_cyclical"
+    payload.risk_profile_confidence = "high"
+    payload.risk_profile_evidence = []
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="medium/high risk profile confidence requires documentary evidence",
+    ):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+    repository.save_stock_analysis.assert_not_called()
 
 
 def test_completed_classifier_consensus_does_not_require_unavailable_dcf_sensitivity():
@@ -953,10 +1100,211 @@ def test_execution_boundary_requires_sources_for_management_ledger():
     payload = valid_result()
     payload.management_credibility_ledger[0].source_ids = []
 
-    with pytest.raises(StockAnalysisValidationError, match="require document source_ids"):
+    with pytest.raises(StockAnalysisValidationError, match="require claim_source_ids"):
         AgentExecutionBoundary(repository).persist_response(
             json.dumps(payload.to_dict()), candidate, created_by="test-model"
         )
+
+
+def test_execution_boundary_accepts_assessed_management_claim_with_outcome_provenance():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 108
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={
+            "documents": [
+                {"source_id": "news:21"},
+                {"source_id": "news:22"},
+            ]
+        },
+    )
+    payload = valid_result()
+    payload.management_credibility_ledger = [
+        ManagementClaimAssessment(
+            date="2025-Q2",
+            claim="Margins will improve.",
+            expected_timing="2026-H1",
+            observed_outcome="Margins improved in the first half of 2026.",
+            result="kept",
+            source_ids=["news:21", "news:22"],
+            claim_source_ids=["news:21"],
+            outcome_source_ids=["news:22"],
+        )
+    ]
+    payload.management_credibility_coverage = ManagementCredibilityCoverage(
+        eligible_claim_count=1,
+        assessed_claim_count=1,
+    )
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assessment = persisted.result.management_credibility_ledger[0]
+    assert assessment.claim_source_ids == ["news:21"]
+    assert assessment.outcome_source_ids == ["news:22"]
+    assert repository.save_stock_analysis.call_args.kwargs["metadata"][
+        "management_credibility"
+    ]["assessed_claim_count"] == 1
+
+
+def test_execution_boundary_rejects_assessed_management_claim_without_outcome_source():
+    repository = MagicMock()
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.management_credibility_ledger = [
+        ManagementClaimAssessment(
+            date="2025-Q2",
+            claim="Margins will improve.",
+            expected_timing="2026-H1",
+            observed_outcome="Margins improved.",
+            result="kept",
+            claim_source_ids=["news:21"],
+        )
+    ]
+    payload.management_credibility_coverage = ManagementCredibilityCoverage(
+        eligible_claim_count=1,
+        assessed_claim_count=1,
+    )
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="require outcome_source_ids",
+    ):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+
+def test_execution_boundary_requires_reasons_for_omitted_management_claims():
+    repository = MagicMock()
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.management_credibility_coverage = ManagementCredibilityCoverage(
+        eligible_claim_count=2,
+        pending_claim_count=1,
+        omitted_claim_count=1,
+    )
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="require omission_reasons",
+    ):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+
+def test_execution_boundary_requires_structured_claims_for_management_assessment():
+    repository = MagicMock()
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.management_assessment = "Management has improved cost discipline."
+
+    with pytest.raises(StockAnalysisValidationError, match="structured management claims"):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+
+def test_execution_boundary_accepts_section_owned_management_claim():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 105
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+    payload = valid_result()
+    payload.management_assessment = "Management has improved cost discipline."
+    payload.management_claims = [
+        AssessmentClaim(
+            statement="Management reduced operating costs in the latest report.",
+            evidence_kind="fact",
+            source_ids=["news:21"],
+        )
+    ]
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.management_claims[0].source_ids == ["news:21"]
+
+
+def test_execution_boundary_requires_section_owned_insider_claim():
+    repository = MagicMock()
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={
+            "documents": [{"source_id": "news:21"}],
+            "insider_transactions": [{"source_id": "insider:1"}],
+        },
+    )
+    payload = valid_result()
+    payload.insider_assessment = "Insider buying is a positive signal."
+    payload.citations = [EvidenceCitation("insider:1", "An insider purchased shares.")]
+
+    with pytest.raises(StockAnalysisValidationError, match="structured insider claims"):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
+
+
+def test_execution_boundary_accepts_section_owned_insider_claim():
+    repository = MagicMock()
+    repository.save_stock_analysis.return_value = 106
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={
+            "documents": [{"source_id": "news:21"}],
+            "insider_transactions": [{"source_id": "insider:1"}],
+        },
+    )
+    payload = valid_result()
+    payload.insider_assessment = "Insider buying is a positive signal."
+    payload.insider_claims = [
+        AssessmentClaim(
+            statement="An insider purchased shares during the lookback period.",
+            evidence_kind="fact",
+            source_ids=["insider:1"],
+        )
+    ]
+
+    persisted = AgentExecutionBoundary(repository).persist_response(
+        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+    )
+
+    assert persisted.result.insider_claims[0].source_ids == ["insider:1"]
 
 
 def test_execution_boundary_rejects_activated_case_without_deterministic_valuation():
@@ -1032,7 +1380,9 @@ def test_execution_boundary_accepts_activated_case_with_available_reverse_dcf():
 
     assert persisted.analysis_id == 102
     saved_metadata = repository.save_stock_analysis.call_args.kwargs["metadata"]
-    assert saved_metadata["validation_version"] == "agent-boundary-v15-readiness-status"
+    assert saved_metadata["validation_version"] == (
+        "agent-boundary-v19-management-ledger"
+    )
     assert saved_metadata["valuation_provenance"] == {
         "status": "available",
         "reverse_dcf_policy_version": "reverse-dcf-v2",

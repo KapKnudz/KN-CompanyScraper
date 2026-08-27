@@ -43,7 +43,7 @@ class InsiderMapper:
             value = t.total_value or 0
             if t.transaction_type == "buy":
                 monthly[key]["buy_value"] += value
-            else:
+            elif t.transaction_type == "sell":
                 monthly[key]["sell_value"] += value
 
         sorted_months = sorted(monthly.keys())

@@ -1,6 +1,4 @@
 from kncompanyscraper.models.company import Company
-from kncompanyscraper.models.company_profile import CompanyProfile
-from psycopg2.extras import Json
 from kncompanyscraper.repositories.base_repository import BaseRepository
 
 from kncompanyscraper.watchlist_import import WatchlistCompany
@@ -20,6 +18,8 @@ class CompanyRepository(BaseRepository):
                 borsdata_id,
                 isin,
                 currency,
+                stock_price_currency,
+                report_currency,
                 sector_id,
                 branch_id,
                 last_updated
@@ -44,6 +44,8 @@ class CompanyRepository(BaseRepository):
                 borsdata_id,
                 isin,
                 currency,
+                stock_price_currency,
+                report_currency,
                 sector_id,
                 branch_id,
                 last_updated
@@ -62,11 +64,12 @@ class CompanyRepository(BaseRepository):
                 """
                 INSERT INTO companies (
                     name, ticker, mfn_slug, borsdata_id, isin, currency,
-                    sector_id, branch_id
+                    stock_price_currency, report_currency, sector_id, branch_id
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, name, ticker, mfn_slug, borsdata_id, last_updated,
-                          isin, currency, sector_id, branch_id
+                          isin, currency, stock_price_currency, report_currency,
+                          sector_id, branch_id
                 """,
                 (
                     company.name,
@@ -75,6 +78,8 @@ class CompanyRepository(BaseRepository):
                     company.borsdata_id,
                     company.isin,
                     company.currency,
+                    company.listing_currency,
+                    company.report_currency,
                     company.sector_id,
                     company.branch_id,
                 ),
@@ -93,6 +98,8 @@ class CompanyRepository(BaseRepository):
                     mfn_slug     = %s,
                     isin         = %s,
                     currency     = %s,
+                    stock_price_currency = %s,
+                    report_currency = %s,
                     sector_id    = %s,
                     branch_id    = %s,
                     last_updated = NOW()
@@ -105,54 +112,14 @@ class CompanyRepository(BaseRepository):
                     company.mfn_slug,
                     company.isin,
                     company.currency,
+                    company.listing_currency,
+                    company.report_currency,
                     company.sector_id,
                     company.branch_id,
                     company.id,
                 ),
             )
 
-    def get_profile(self, company_id: int) -> CompanyProfile | None:
-        with self._get_dict_cursor() as cur:
-            cur.execute(
-                """
-                SELECT *
-                FROM company_profiles
-                WHERE company_id = %s
-                """,
-                (company_id,),
-            )
-
-            row = cur.fetchone()
-            return CompanyProfile(**row) if row else None
-
-    def save_profile(self, profile: CompanyProfile) -> None:
-        with self._get_cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO company_profiles (
-                    company_id,
-                    description,
-                    business_model,
-                    competitive_advantages,
-                    management
-                )
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (company_id)
-                DO UPDATE SET
-                    description = EXCLUDED.description,
-                    business_model = EXCLUDED.business_model,
-                    competitive_advantages = EXCLUDED.competitive_advantages,
-                    management = EXCLUDED.management,
-                    updated_at = NOW()
-                """,
-                (
-                    profile.company_id,
-                    profile.description,
-                    profile.business_model,
-                    profile.competitive_advantages,
-                    Json(profile.management),
-                ),
-            )
 
     def get_active_companies(self) -> list[Company]:
         with self._get_dict_cursor() as cur:
@@ -165,6 +132,8 @@ class CompanyRepository(BaseRepository):
                        c.mfn_slug,
                        c.isin,
                        c.currency,
+                       c.stock_price_currency,
+                       c.report_currency,
                        c.sector_id,
                        c.branch_id,
                        c.last_updated
@@ -190,6 +159,8 @@ class CompanyRepository(BaseRepository):
                        c.mfn_slug,
                        c.isin,
                        c.currency,
+                       c.stock_price_currency,
+                       c.report_currency,
                        c.sector_id,
                        c.branch_id,
                        c.last_updated
@@ -208,9 +179,10 @@ class CompanyRepository(BaseRepository):
         self,
         company_id: int,
         borsdata_id: int,
-        currency: str | None,
+        stock_price_currency: str | None,
         sector_id: int | None,
         branch_id: int | None,
+        report_currency: str | None = None,
     ) -> None:
         with self._get_cursor() as cur:
             cur.execute(
@@ -218,12 +190,22 @@ class CompanyRepository(BaseRepository):
                 UPDATE companies
                 SET borsdata_id = %s,
                     currency = COALESCE(%s, currency),
+                    stock_price_currency = COALESCE(%s, stock_price_currency, currency),
+                    report_currency = COALESCE(%s, report_currency),
                     sector_id = %s,
                     branch_id = %s,
                     last_updated = NOW()
                 WHERE id = %s
                 """,
-                (borsdata_id, currency, sector_id, branch_id, company_id),
+                (
+                    borsdata_id,
+                    stock_price_currency,
+                    stock_price_currency,
+                    report_currency,
+                    sector_id,
+                    branch_id,
+                    company_id,
+                ),
             )
 
     def upsert_watchlist_companies(
@@ -279,14 +261,14 @@ class CompanyRepository(BaseRepository):
                     )
                     updated += 1
 
-                    cur.execute(
-                        """
-                        INSERT INTO watchlist (company_id, active)
-                        VALUES (%s, TRUE)
-                        ON CONFLICT (company_id)
-                        DO UPDATE SET active = TRUE
-                        """,
-                        (company_id,),
-                    )
+                cur.execute(
+                    """
+                    INSERT INTO watchlist (company_id, active)
+                    VALUES (%s, TRUE)
+                    ON CONFLICT (company_id)
+                    DO UPDATE SET active = TRUE
+                    """,
+                    (company_id,),
+                )
 
         return created, updated

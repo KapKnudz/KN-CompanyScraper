@@ -1,10 +1,11 @@
 from __future__ import annotations
 from datetime import date
 from statistics import mean
+from kncompanyscraper.analysis.date_utils import MAX_PRICE_AGE_DAYS, add_months
 from kncompanyscraper.analysis.realized_total_return import RealizedTotalReturnCalculator
 
 class BasePerformanceEvaluator:
-    MAX_PRICE_AGE_DAYS = 7
+    MAX_PRICE_AGE_DAYS = MAX_PRICE_AGE_DAYS
 
     def __init__(self, valuation_repository, benchmark_repository, dividend_repository):
         self.valuation_repository = valuation_repository
@@ -43,8 +44,4 @@ class BasePerformanceEvaluator:
 
     @staticmethod
     def _add_months(value: date, months: int) -> date:
-        from calendar import monthrange
-        year = value.year + (value.month + months - 1) // 12
-        month = (value.month + months - 1) % 12 + 1
-        day = min(value.day, monthrange(year, month)[1])
-        return date(year, month, day)
+        return add_months(value, months)

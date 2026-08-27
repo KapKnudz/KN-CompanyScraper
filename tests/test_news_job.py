@@ -35,6 +35,14 @@ def make_article(title: str = "Test Article") -> ScrapedArticle:
 
 
 class TestNewsJob:
+    def test_scraper_failure_isolated_to_company(self):
+        with patch("kncompanyscraper.jobs.news_job.MfnScraper") as scraper:
+            scraper.return_value.get_matched_articles.side_effect = RuntimeError(
+                "feed unavailable"
+            )
+
+            assert NewsJob(MagicMock(), MagicMock()).run(make_company()) == 0
+
     def test_no_articles_returns_zero(self):
         """When scraper finds no articles, inserted count is 0."""
         repo = MagicMock()
@@ -110,6 +118,29 @@ class TestNewsJob:
         assert result == 1
         repo.save.assert_called_once_with(new, company.id)
         notifier.notify_new_release.assert_called_once_with(new)
+
+    def test_article_failure_does_not_abort_later_articles(self):
+        repo = MagicMock()
+        repo.exists.return_value = False
+        repo.save.side_effect = [RuntimeError("database unavailable"), None]
+        notifier = MagicMock()
+        company = make_company()
+        first = make_article("First Release")
+        second = ScrapedArticle(
+            company="TestCo",
+            slug="testco",
+            url="https://example.com/news/2",
+            title="Second Release",
+            body="Body text.",
+        )
+
+        with patch("kncompanyscraper.jobs.news_job.MfnScraper") as MockScraper:
+            MockScraper.return_value.get_matched_articles.return_value = [first, second]
+            result = NewsJob(repo, notifier).run(company)
+
+        assert result == 1
+        assert repo.save.call_count == 2
+        notifier.notify_new_release.assert_called_once_with(second)
 
     def test_multiple_companies_independent_runs(self):
         """Running the same job for different companies yields independent results."""

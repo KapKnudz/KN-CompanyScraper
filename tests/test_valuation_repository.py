@@ -19,7 +19,7 @@ def test_save_snapshot_preserves_daily_observation():
     connection = _mock_connection(cursor)
 
     with patch(
-        "kncompanyscraper.repositories.valuation_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         ValuationRepository().save_snapshot(7, 279, 54.6)
@@ -36,7 +36,7 @@ def test_save_stock_prices_upserts_company_date_and_currency():
     price = StockPrice(date(2026, 8, 1), 125.5)
 
     with patch(
-        "kncompanyscraper.repositories.valuation_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         ValuationRepository().save_stock_prices(7, [price], "SEK")
@@ -56,7 +56,7 @@ def test_get_latest_stock_price_maps_database_row():
     connection = _mock_connection(cursor)
 
     with patch(
-        "kncompanyscraper.repositories.valuation_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         result = ValuationRepository().get_latest_stock_price(7)
@@ -70,7 +70,7 @@ def test_save_history_persists_report_period():
     history = KpiHistory(2, [KpiHistoryPoint(2026, 18.5, period=2)])
 
     with patch(
-        "kncompanyscraper.repositories.valuation_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         ValuationRepository().save_history(7, history)
@@ -90,7 +90,7 @@ def test_stock_price_on_date_rejects_stale_price():
     connection = _mock_connection(cursor)
 
     with patch(
-        "kncompanyscraper.repositories.valuation_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         result = ValuationRepository().get_stock_price_on_date(
@@ -108,7 +108,7 @@ def test_month_end_dates_select_one_final_trading_day_per_month():
     connection = _mock_connection(cursor)
 
     with patch(
-        "kncompanyscraper.repositories.valuation_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         result = ValuationRepository().get_backtest_month_end_dates(
@@ -129,7 +129,7 @@ def test_historical_kpis_are_restricted_to_prior_years():
     connection = _mock_connection(cursor)
 
     with patch(
-        "kncompanyscraper.repositories.valuation_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         ValuationRepository().get_historical_as_of(7, date(2025, 8, 1))
@@ -150,7 +150,7 @@ def test_get_kpi_values_for_public_report_year():
     connection = _mock_connection(cursor)
 
     with patch(
-        "kncompanyscraper.repositories.valuation_repository.get_connection",
+        "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
         result = ValuationRepository().get_kpi_values_for_year(
