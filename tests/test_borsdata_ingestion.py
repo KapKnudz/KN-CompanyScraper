@@ -10,6 +10,7 @@ from datetime import date
 from kncompanyscraper.models.company import Company
 from kncompanyscraper.repositories.valuation_repository import ValuationRepository
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
+from kncompanyscraper.borsdata.report import InstrumentReportBundle
 
 
 def make_company(company_id=7, borsdata_id=700, branch_id=None):
@@ -28,7 +29,9 @@ def test_sync_company_persists_reports_and_valuation_inputs():
     company = make_company()
     reports = [MagicMock()]
     client = MagicMock()
-    client.get_reports.side_effect = [reports, [], []]
+    client.get_report_bundles.return_value = {
+        700: InstrumentReportBundle(700, tuple(reports), (), ())
+    }
     stock_prices = [StockPrice(date(2026, 8, 1), 100.0)]
     client.get_stock_price.return_value = stock_prices
     client.get_dividends.return_value = {700: []}
@@ -47,17 +50,11 @@ def test_sync_company_persists_reports_and_valuation_inputs():
     )
     service.sync_company(company)
 
-    assert client.get_reports.call_args_list == [
-        call(700, report_type="year"),
-        call(700, report_type="r12"),
-        call(700, report_type="quarter"),
-    ]
+    client.get_report_bundles.assert_called_once_with([700])
     client.get_stock_price.assert_called_once_with(700)
-    assert financial_repository.save_reports.call_args_list == [
-        call(7, "year", reports),
-        call(7, "r12", []),
-        call(7, "quarter", []),
-    ]
+    financial_repository.save_report_bundle.assert_called_once_with(
+        7, InstrumentReportBundle(700, tuple(reports), (), ())
+    )
     valuation_repository.save_stock_prices.assert_called_once_with(7, stock_prices, None)
     client.get_dividends.assert_called_once_with([700])
     dividend_repository.replace_calendar.assert_called_once()
@@ -91,7 +88,9 @@ def test_sync_company_persists_reports_and_valuation_inputs():
 def test_sync_company_persists_sector_kpis(branch_id, expected_kpis):
     company = make_company(branch_id=branch_id)
     client = MagicMock()
-    client.get_reports.return_value = []
+    client.get_report_bundles.return_value = {
+        700: InstrumentReportBundle(700, (), (), ())
+    }
     client.get_stock_price.return_value = []
     client.get_dividends.return_value = {700: []}
     client.get_kpis.side_effect = lambda instrument_id, kpi_id: Kpi(kpi_id, str(kpi_id), 12.5)
@@ -110,7 +109,9 @@ def test_sync_company_persists_sector_kpis(branch_id, expected_kpis):
 def test_sync_company_does_not_overwrite_snapshot_when_api_value_is_missing():
     company = make_company()
     client = MagicMock()
-    client.get_reports.return_value = []
+    client.get_report_bundles.return_value = {
+        700: InstrumentReportBundle(700, (), (), ())
+    }
     client.get_stock_price.return_value = []
     client.get_dividends.return_value = {700: []}
     client.get_kpis.return_value = None
@@ -131,7 +132,8 @@ def test_sync_company_labels_converted_reports_with_listing_currency():
     company.currency = "SEK"
     report = MagicMock(currency="USD")
     client = MagicMock()
-    client.get_reports.side_effect = [[report], [], []]
+    bundle = InstrumentReportBundle(700, (report,), (), ())
+    client.get_report_bundles.return_value = {700: bundle}
     client.get_stock_price.return_value = []
     client.get_dividends.return_value = {700: []}
     client.get_kpis.return_value = None
@@ -148,7 +150,7 @@ def test_sync_company_labels_converted_reports_with_listing_currency():
     ).sync_company(company)
 
     assert report.currency == "USD"
-    assert financial_repository.save_reports.call_args_list[0].args == (7, "year", [report])
+    financial_repository.save_report_bundle.assert_called_once_with(7, bundle)
 
 
 @pytest.mark.parametrize(
@@ -164,18 +166,12 @@ def test_sync_company_requires_both_identifiers(company):
         service.sync_company(company)
 
 
-def test_sync_companies_continues_after_one_company_failure():
+def test_sync_reports_rejects_per_instrument_error():
     service = BorsdataIngestionService(
         MagicMock(), MagicMock(), MagicMock(), MagicMock()
     )
-    failing = make_company(company_id=1)
-    succeeding = make_company(company_id=2)
-    service.sync_company = MagicMock(
-        side_effect=[RuntimeError("temporary failure"), None]
-    )
-
-    assert service.sync_companies([failing, succeeding]) == 1
-    assert service.sync_company.call_args_list == [
-        call(failing),
-        call(succeeding),
-    ]
+    with pytest.raises(ValueError, match="NOT_ACTIVE"):
+        service.sync_reports(
+            make_company(),
+            InstrumentReportBundle(700, (), (), (), error="NOT_ACTIVE"),
+        )

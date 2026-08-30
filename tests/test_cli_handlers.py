@@ -23,6 +23,7 @@ def test_every_restored_command_has_a_callable_dispatch_handler():
         "review-dividends",
         "select-portfolio",
         "export-thesis-summaries",
+        "sync-borsdata-reports",
     }
 
     for command in commands:

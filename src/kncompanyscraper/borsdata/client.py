@@ -5,7 +5,7 @@ from datetime import date, datetime
 from kncompanyscraper import config
 from kncompanyscraper.logger import get_logger
 from kncompanyscraper.http_transport import request_with_retry
-from kncompanyscraper.borsdata.report import Report
+from kncompanyscraper.borsdata.report import InstrumentReportBundle, Report
 from kncompanyscraper.borsdata.kpi import Kpi
 from kncompanyscraper.borsdata.kpi_history import KpiHistory, KpiHistoryPoint
 from kncompanyscraper.borsdata.instrument import Instrument
@@ -74,13 +74,72 @@ class BorsdataClient:
 
         return KpiHistory(kpi_id=kpi_id, values=points)
 
-    def get_reports(self, instrument_id, report_type="year", max_count=20):
+    def get_report_bundles(
+        self,
+        instrument_ids,
+        max_year_count=20,
+        max_r12q_count=40,
+        original=False,
+    ) -> dict[int, InstrumentReportBundle]:
+        instrument_ids = list(instrument_ids)
+        if not instrument_ids:
+            raise ValueError("Börsdata report endpoint requires at least one instrument")
+        if len(set(instrument_ids)) != len(instrument_ids):
+            raise ValueError("Börsdata report endpoint does not accept duplicate instruments")
+        if len(instrument_ids) > 50:
+            raise ValueError("Börsdata report endpoint accepts at most 50 instruments")
+
         data = self._get(
-            f"/v1/instruments/{instrument_id}/reports/{report_type}",
-            {"maxCount": max_count},
+            "/v1/instruments/reports",
+            {
+                "instList": ",".join(str(value) for value in instrument_ids),
+                "maxYearCount": max_year_count,
+                "maxR12QCount": max_r12q_count,
+                "original": int(bool(original)),
+            },
         )
 
-        return [self._report_from_json(r) for r in data.get("reports") or []]
+        requested = set(instrument_ids)
+        bundles = {}
+        for item in data.get("reportList") or []:
+            instrument_id = item.get("instrument")
+            if instrument_id not in requested:
+                raise ValueError(
+                    "Börsdata report response included unexpected instrument "
+                    f"{instrument_id}"
+                )
+            if instrument_id in bundles:
+                raise ValueError(
+                    "Börsdata report response included duplicate instrument "
+                    f"{instrument_id}"
+                )
+            bundles[instrument_id] = InstrumentReportBundle(
+                instrument_id=instrument_id,
+                annual=tuple(
+                    self._report_from_json(report)
+                    for report in item.get("reportsYear") or []
+                ),
+                r12=tuple(
+                    self._report_from_json(report)
+                    for report in item.get("reportsR12") or []
+                ),
+                quarterly=tuple(
+                    self._report_from_json(report)
+                    for report in item.get("reportsQuarter") or []
+                ),
+                error=item.get("error"),
+            )
+
+        for instrument_id in instrument_ids:
+            if instrument_id not in bundles:
+                bundles[instrument_id] = InstrumentReportBundle(
+                    instrument_id=instrument_id,
+                    annual=(),
+                    r12=(),
+                    quarterly=(),
+                    error="Börsdata report response omitted instrument",
+                )
+        return bundles
 
     def get_stock_price(self, instrument_id, max_count=None):
         params = {"maxCount": max_count} if max_count is not None else None
@@ -210,16 +269,24 @@ class BorsdataClient:
             gross_income=r.get("gross_Income"),
             operating_cash_flow=r.get("cash_Flow_From_Operating_Activities"),
             investing_cash_flow=r.get("cash_Flow_From_Investing_Activities"),
+            financing_cash_flow=r.get("cash_Flow_From_Financing_Activities"),
+            cash=r.get("cash_And_Equivalents"),
+            eps=r.get("earnings_Per_Share"),
+            dividend_per_share=r.get("dividend"),
             year=r.get("year"),
             period=r.get("period"),
             period_end=(
-                date.fromisoformat(r["report_End_Date"][:10])
-                if r.get("report_End_Date")
-                else None
+                self._parse_report_date(r.get("report_End_Date"))
             ),
+            report_date=self._parse_report_date(r.get("report_Date")),
+            broken_fiscal_year=r.get("broken_Fiscal_Year"),
             currency=r.get("currency"),
             raw_payload=r,
         )
+
+    @staticmethod
+    def _parse_report_date(value):
+        return date.fromisoformat(value[:10]) if value else None
 
     def _get(self, path, params=None):
         params = dict(params or {})

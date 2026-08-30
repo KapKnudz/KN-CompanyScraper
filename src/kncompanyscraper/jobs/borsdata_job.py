@@ -19,6 +19,7 @@ class BorsdataJobResult:
 class BorsdataJob:
 
     JOB_TYPE = "borsdata_sync"
+    BATCH_SIZE = 50
 
     def __init__(self, ingestion_service, job_repository):
         self.ingestion_service = ingestion_service
@@ -28,21 +29,56 @@ class BorsdataJob:
         synced = 0
         failures = []
 
-        for company in companies:
-            job_id = self.job_repository.start(self.JOB_TYPE, company.id)
-            try:
-                self.ingestion_service.sync_company(company)
-            except Exception as exc:
-                error = f"{company.name}: {exc}"
-                failures.append(error)
-                self.job_repository.fail(job_id, str(exc))
-                logger.exception("Börsdata sync failed for %s", company.name)
+        jobs = [
+            (company, self.job_repository.start(self.JOB_TYPE, company.id))
+            for company in companies
+        ]
+
+        eligible = []
+        for company, job_id in jobs:
+            if company.id is None or company.borsdata_id is None:
+                error = "Company must have both id and borsdata_id before Börsdata sync"
+                failures.append(f"{company.name}: {error}")
+                self.job_repository.fail(job_id, error)
             else:
-                synced += 1
-                self.job_repository.complete(
-                    job_id,
-                    {"borsdata_id": company.borsdata_id},
+                eligible.append((company, job_id))
+
+        for offset in range(0, len(eligible), self.BATCH_SIZE):
+            batch = eligible[offset : offset + self.BATCH_SIZE]
+            instrument_ids = [company.borsdata_id for company, _ in batch]
+            try:
+                bundles = self.ingestion_service.get_report_bundles(instrument_ids)
+            except Exception as exc:
+                for company, job_id in batch:
+                    error = f"{company.name}: {exc}"
+                    failures.append(error)
+                    self.job_repository.fail(job_id, str(exc))
+                logger.exception(
+                    "Börsdata report batch failed for instruments %s",
+                    instrument_ids,
                 )
+                continue
+
+            for company, job_id in batch:
+                try:
+                    bundle = bundles.get(company.borsdata_id)
+                    if bundle is None:
+                        raise ValueError(
+                            "Börsdata report response omitted instrument "
+                            f"{company.borsdata_id}"
+                        )
+                    self.ingestion_service.sync_company(company, report_bundle=bundle)
+                except Exception as exc:
+                    error = f"{company.name}: {exc}"
+                    failures.append(error)
+                    self.job_repository.fail(job_id, str(exc))
+                    logger.exception("Börsdata sync failed for %s", company.name)
+                else:
+                    synced += 1
+                    self.job_repository.complete(
+                        job_id,
+                        {"borsdata_id": company.borsdata_id},
+                    )
 
         result = BorsdataJobResult(synced, len(failures), tuple(failures))
         logger.info(

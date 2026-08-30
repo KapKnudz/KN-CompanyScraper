@@ -500,7 +500,11 @@ CREATE TABLE public.financials (
     raw_payload jsonb,
     fetched_at timestamp with time zone DEFAULT now(),
     gross_income numeric(15,2),
-    operating_cash_flow numeric(15,2)
+    operating_cash_flow numeric(15,2),
+    investing_cash_flow numeric(15,2),
+    financing_cash_flow numeric(15,2),
+    report_date date,
+    broken_fiscal_year boolean
 );
 
 
@@ -2164,4 +2168,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260818160000'),
     ('20260818170000'),
     ('20260824120000'),
-    ('20260829135000');
+    ('20260829135000'),
+    ('20260830100000');

@@ -10,6 +10,7 @@ from kncompanyscraper.borsdata.kpi import Kpi
 from kncompanyscraper.borsdata.kpi_history import KpiHistory
 from kncompanyscraper.borsdata.stock_price import StockPrice
 from kncompanyscraper.borsdata.report import Report
+from kncompanyscraper.borsdata.report import InstrumentReportBundle
 from kncompanyscraper.borsdata.instrument import Instrument
 from kncompanyscraper.borsdata.dividend import CashDividend
 
@@ -95,19 +96,86 @@ class TestBorsdataClient:
         assert [p.value for p in result.values] == [12.50, 14.20, 16.80, 15.90, 18.50]
         assert [p.period for p in result.values] == [1, 1, 1, 1, 1]
 
-    def test_get_reports_maps_reports(self, monkeypatch):
-        payload = load_mock("reports_mock.json")
+    def test_get_report_bundles_maps_all_report_types_and_sends_batch_params(self, monkeypatch):
+        reports = load_mock("reports_mock.json")["reports"]
+        payload = {
+            "reportList": [
+                {
+                    "instrument": 3,
+                    "reportsYear": reports,
+                    "reportsQuarter": reports[:1],
+                    "reportsR12": reports[:2],
+                }
+            ]
+        }
+        requests_seen = []
+
+        def fake_get(url, params, timeout):
+            requests_seen.append((url, params, timeout))
+            return FakeResponse(payload)
+
         monkeypatch.setattr(
             "kncompanyscraper.borsdata.client.requests.get",
-            lambda url, params, timeout: FakeResponse(payload),
+            fake_get,
         )
 
         client = BorsdataClient(api_key="test")
-        result = client.get_reports(3)
+        result = client.get_report_bundles(
+            [3], max_year_count=20, max_r12q_count=40, original=False
+        )
 
-        assert len(result) == 5
-        assert all(isinstance(r, Report) for r in result)
-        assert result[-1].revenue == 550_000_000
+        assert isinstance(result[3], InstrumentReportBundle)
+        assert len(result[3].annual) == 5
+        assert len(result[3].quarterly) == 1
+        assert len(result[3].r12) == 2
+        assert all(isinstance(r, Report) for r in result[3].annual)
+        assert result[3].annual[-1].revenue == 550_000_000
+        assert requests_seen[0][0].endswith("/v1/instruments/reports")
+        assert requests_seen[0][1] == {
+            "instList": "3",
+            "maxYearCount": 20,
+            "maxR12QCount": 40,
+            "original": 0,
+            "authKey": "test",
+        }
+
+    @pytest.mark.parametrize(
+        "instrument_ids",
+        [([], "at least one"), ([3, 3], "duplicate"), (list(range(51)), "at most 50")],
+    )
+    def test_get_report_bundles_rejects_invalid_batches(self, instrument_ids):
+        with pytest.raises(ValueError, match=instrument_ids[1]):
+            BorsdataClient(api_key="test").get_report_bundles(instrument_ids[0])
+
+    def test_get_report_bundles_marks_omitted_and_preserves_per_instrument_errors(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: FakeResponse(
+                {
+                    "reportList": [
+                        {"instrument": 3, "error": "NOT_ACTIVE"},
+                    ]
+                }
+            ),
+        )
+
+        result = BorsdataClient(api_key="test").get_report_bundles([3, 4])
+
+        assert result[3].error == "NOT_ACTIVE"
+        assert result[4].error == "Börsdata report response omitted instrument"
+
+    def test_get_report_bundles_rejects_unexpected_response_instrument(self, monkeypatch):
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: FakeResponse(
+                {"reportList": [{"instrument": 99}]}
+            ),
+        )
+
+        with pytest.raises(ValueError, match="unexpected instrument 99"):
+            BorsdataClient(api_key="test").get_report_bundles([3])
 
     def test_report_mapping_preserves_missing_values_without_fabricating_ebitda(self):
         report = BorsdataClient(api_key="test")._report_from_json(
@@ -115,7 +183,13 @@ class TestBorsdataClient:
                 "year": 2025,
                 "period": 1,
                 "operating_Income": 12.0,
+                "cash_And_Equivalents": 20.0,
+                "earnings_Per_Share": 2.5,
+                "dividend": 1.0,
                 "cash_Flow_From_Investing_Activities": -7.0,
+                "cash_Flow_From_Financing_Activities": -3.0,
+                "report_Date": "2026-02-20T00:00:00Z",
+                "broken_Fiscal_Year": True,
                 "intangible_Assets": 500.0,
             }
         )
@@ -126,6 +200,12 @@ class TestBorsdataClient:
         assert report.net_income is None
         assert report.total_debt is None
         assert report.investing_cash_flow == -7.0
+        assert report.financing_cash_flow == -3.0
+        assert report.cash == 20.0
+        assert report.eps == 2.5
+        assert report.dividend_per_share == 1.0
+        assert report.report_date == date(2026, 2, 20)
+        assert report.broken_fiscal_year is True
 
     def test_get_stock_price_maps_prices(self, monkeypatch):
         payload = load_mock("stock_prices_mock.json")
