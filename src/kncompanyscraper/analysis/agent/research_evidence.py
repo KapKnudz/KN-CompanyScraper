@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
+from math import isfinite
 
 
 @dataclass(frozen=True)
@@ -10,6 +11,7 @@ class EvidenceDocument:
     url: str
     published_at: str | None
     text: str
+    structured_financial_values: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,13 @@ class ResearchEvidenceBuilder:
             missing.append("No textual company reports or releases are stored")
         if not insiders:
             missing.append("No insider transactions are stored for the five-year lookback")
+        missing.extend(
+            [
+                "Free-float percentage is unavailable",
+                "Named large-holder coverage is unavailable",
+                "Ownership-change history is unavailable",
+            ]
+        )
 
         return ResearchEvidence(
             as_of=as_of.isoformat(),
@@ -120,6 +129,9 @@ class ResearchEvidenceBuilder:
                     url=document.url,
                     published_at=_isoformat(document.published_at),
                     text=document.text[: self.MAX_DOCUMENT_CHARS],
+                    structured_financial_values=_structured_financial_values(
+                        document.metadata
+                    ),
                 )
             )
             if not unbounded and len(result) >= self.REPORT_LIMIT:
@@ -211,3 +223,37 @@ def _document_priority(document) -> tuple[int, int]:
     normalized = document.title.casefold()
     penalties = ("key figures", "nyckeltal", "press release", "presentation", "prm")
     return (-sum(term in normalized for term in penalties), len(document.text))
+
+
+def _structured_financial_values(metadata: dict | None) -> list[dict]:
+    """Return explicitly stored report values without interpreting report prose."""
+    values = (metadata or {}).get("structured_financial_values", [])
+    if not isinstance(values, list):
+        return []
+
+    result = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        metric = value.get("metric")
+        amount = value.get("value")
+        period = value.get("period")
+        period_end = value.get("period_end")
+        if (
+            not isinstance(metric, str)
+            or not metric.strip()
+            or not isinstance(amount, (int, float))
+            or isinstance(amount, bool)
+            or not isfinite(amount)
+            or not isinstance(period, str) and not isinstance(period_end, str)
+        ):
+            continue
+        result.append(
+            {
+                "metric": metric.strip(),
+                "value": amount,
+                "period": period,
+                "period_end": period_end,
+            }
+        )
+    return result

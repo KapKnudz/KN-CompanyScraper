@@ -18,7 +18,7 @@ visible in ranking output as insufficient forward-method evidence.
 
 ## Holding-period bridge
 
-For each endpoint:
+For each scenario bundle:
 
 ```text
 Revenue_horizon = Revenue_current × (1 + revenue_CAGR) ^ years
@@ -35,28 +35,43 @@ Future net debt must reconcile to current net debt plus the stated net-debt
 change. Future diluted shares are derived from current shares and the stated
 full-horizon decimal-fraction `share_count_growth`.
 
+The persisted analysis also includes a compact capital-allocation bridge for
+each case: current and resulting net debt, net-debt change, current and
+resulting diluted shares, share-count change, and cumulative distributions per
+share. A zero caused by missing data is labelled as an analyst sensitivity; it
+is not presented as an evidence-backed forecast.
+
 ## Scenario bundles
 
-Every company supplies eight complete endpoints at one shared horizon:
+Every company supplies exactly three complete bundles at one shared horizon:
 
-- multiple-compression bear, low and high;
-- fundamental-impairment bear, low and high;
-- base, low and high; and
-- bull, low and high.
+- bear;
+- base; and
+- bull.
 
-Endpoints are coherent bundles. The engine never creates Cartesian extremes by
-mixing assumptions from different endpoints.
+Each bundle owns one operating state and a low/high terminal EV/EBIT multiple
+range. The engine varies only that multiple within the bundle; it never creates
+Cartesian extremes by mixing assumptions across cases.
 
-Multiple-compression endpoints copy the corresponding base operating,
-financing, dilution, and distribution values; only the terminal multiple is
-lower. Fundamental-impairment endpoints worsen at least one fundamental driver,
-improve none, and may also use a lower terminal multiple. Bull endpoints improve
-none of the base drivers in the unfavorable direction.
+The bear bundle replaces the former public multiple-compression and
+fundamental-impairment cases. Its mechanism may identify compression,
+fundamental impairment, or both. Bear drivers may not improve on base, and bull
+drivers may not worsen from base.
 
 Every assumption must be finite, sourced, and accompanied by a rationale.
 Terminal multiples must remain within deterministic historical guardrails.
-An out-of-range value requires a visible, sourced exception and remains a
-methodology warning.
+An out-of-range value makes the analysis `insufficient_evidence`; it cannot be
+rescued by a model-authored exception.
+
+The base terminal multiple may not exceed the greater of the current raw
+EV/EBIT and the company's historical 25th percentile. The bull terminal
+multiple may not exceed the greater of the current raw EV/EBIT and the
+historical 75th percentile. Base bundles may not exceed demonstrated revenue
+growth or EBIT-margin ceilings. A bull bundle may exceed at most one of its
+demonstrated growth, margin, or terminal-multiple ceilings; stacking two or
+more makes the scenario insufficient evidence. Growth and margin comparisons
+use the versioned absolute tolerance of 0.005; the tolerance applies only to
+validation and does not alter valuation inputs.
 
 Management guidance remains a management claim. It may anchor a base endpoint
 only when the credibility ledger and current operating evidence support it.
@@ -68,12 +83,11 @@ The critic reviews both inputs and method:
 
 - common as-of date, currency, current price, and horizon;
 - allowed 24-, 36-, or 48-month horizon;
-- complete sourced endpoints;
+- complete sourced bundles;
 - revenue compounding and EBIT-margin units;
 - terminal-multiple guardrails and declared exceptions;
 - net-debt reconciliation and deterministic diluted-share derivation;
 - distribution treatment and absence of double counting;
-- separation of compression and impairment mechanisms;
 - bear/base/bull ordering;
 - positive, finite equity and holding values; and
 - annualization consistency.
@@ -81,6 +95,8 @@ The critic reviews both inputs and method:
 Any unresolved high-severity finding moves the company out of the actionable
 ranking and into research. Other methodology failures produce a visible
 `insufficient_evidence` result; they never silently become null or zero.
+An individual thesis cannot be marked `investable` unless its deterministic
+forward scenario is `available`.
 
 ## Ranking aggregation
 
@@ -110,7 +126,7 @@ eligible-universe company has both boundary prices.
 Low evidence confidence lowers A to B or B to C. IE remains visible and cannot
 enter A. Within a tier the order is:
 
-1. better worst-bear lower bound;
+1. better bear lower bound;
 2. better base lower bound;
 3. higher evidence confidence;
 4. narrower base band; and

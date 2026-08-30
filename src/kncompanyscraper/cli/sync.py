@@ -17,6 +17,13 @@ def register(subparsers):
     subparsers.add_parser(
         "sync-borsdata", help="Fetch and persist Börsdata inputs"
     ).set_defaults(func=_cmd_sync_borsdata)
+    report_sync_parser = subparsers.add_parser(
+        "sync-borsdata-reports", help="Backfill Börsdata financial reports only"
+    )
+    report_sync_parser.add_argument(
+        "--company-id", dest="company_ids", type=int, action="append"
+    )
+    report_sync_parser.set_defaults(func=_cmd_sync_borsdata_reports)
     subparsers.add_parser(
         "sync-fundamental-history", help="Backfill historical ROIC and net debt/EBITDA"
     ).set_defaults(func=_cmd_sync_fundamental_history)
@@ -97,6 +104,56 @@ def _cmd_sync_borsdata(args):
         f"{result.failed} failed."
     )
     for failure in result.failures:
+        print(f"  - {failure}")
+
+
+def _cmd_sync_borsdata_reports(args):
+    from kncompanyscraper.repositories.company_repository import CompanyRepository
+    from kncompanyscraper.composition import build_borsdata_ingestion_service
+
+    company_repository = CompanyRepository()
+    if args.company_ids:
+        companies = []
+        for company_id in args.company_ids:
+            company = company_repository.get_by_id(company_id)
+            if company is None:
+                raise SystemExit(f"Company {company_id} was not found.")
+            companies.append(company)
+    else:
+        companies = company_repository.get_active_companies()
+
+    service = build_borsdata_ingestion_service()
+    synced = 0
+    failures = []
+    for offset in range(0, len(companies), 50):
+        batch = companies[offset : offset + 50]
+        instrument_ids = [company.borsdata_id for company in batch if company.borsdata_id]
+        if len(instrument_ids) != len(batch):
+            for company in batch:
+                if company.borsdata_id is None:
+                    failures.append(f"{company.name}: missing borsdata_id")
+            batch = [company for company in batch if company.borsdata_id]
+            instrument_ids = [company.borsdata_id for company in batch]
+        if not batch:
+            continue
+        try:
+            bundles = service.get_report_bundles(instrument_ids)
+        except Exception as exc:
+            failures.extend(f"{company.name}: {exc}" for company in batch)
+            continue
+        for company in batch:
+            try:
+                service.sync_reports(company, bundles[company.borsdata_id])
+            except Exception as exc:
+                failures.append(f"{company.name}: {exc}")
+            else:
+                synced += 1
+
+    print(
+        f"Börsdata report sync complete: {synced} synced, "
+        f"{len(failures)} failed."
+    )
+    for failure in failures:
         print(f"  - {failure}")
 
 

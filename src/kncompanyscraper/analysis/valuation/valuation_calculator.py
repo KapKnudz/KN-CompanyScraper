@@ -35,6 +35,12 @@ class ValuationCalculator:
             ev_ebit_guardrail_high=self.calculate_history_bound(
                 historical.ev_ebit_history, 0.90
             ),
+            ev_ebit_base_ceiling=self.calculate_history_bound(
+                historical.ev_ebit_history, 0.25
+            ),
+            ev_ebit_bull_ceiling=self.calculate_history_bound(
+                historical.ev_ebit_history, 0.75
+            ),
             ev_ebit_history_count=len(
                 [value for value in historical.ev_ebit_history if value > 0]
             ),

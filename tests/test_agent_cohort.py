@@ -2,6 +2,7 @@ from datetime import date
 from unittest.mock import MagicMock
 
 from kncompanyscraper.analysis.agent_cohort import AgentCohortService
+from kncompanyscraper.repositories.agent_cohort_repository import AgentCohortRepository
 
 
 def deterministic_run(company_ids, run_id=10):
@@ -101,3 +102,15 @@ def test_cohort_same_month_is_immutable():
     assert created is False
     assert snapshot.top_company_ids == (1,)
     repository.save.assert_not_called()
+
+
+def test_agent_cohort_repository_reads_a_stored_snapshot():
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {"id": 5, "snapshot_month": date(2026, 8, 1)}
+    connection = MagicMock()
+    connection.cursor.return_value.__enter__.return_value = cursor
+
+    result = AgentCohortRepository(connection).get_for_month(date(2026, 8, 1))
+
+    assert result == {"id": 5, "snapshot_month": date(2026, 8, 1)}
+    cursor.execute.assert_called_once()

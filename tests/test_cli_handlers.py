@@ -1,9 +1,10 @@
 from datetime import date
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from kncompanyscraper import main
-from kncompanyscraper.cli import backtest, dividend, portfolio
+from kncompanyscraper.cli import agent, backtest, dividend, portfolio
 from kncompanyscraper.constants import BORSDATA_DIVIDEND_SOURCE
 from kncompanyscraper.models.enums import RankingModel
 
@@ -21,6 +22,8 @@ def test_every_restored_command_has_a_callable_dispatch_handler():
         "audit-dividends",
         "review-dividends",
         "select-portfolio",
+        "export-thesis-summaries",
+        "sync-borsdata-reports",
     }
 
     for command in commands:
@@ -37,6 +40,8 @@ def test_every_restored_command_has_a_callable_dispatch_handler():
                 "--company-id", "1", "--after", "2025-01-01", "--through", "2025-12-31",
                 "--status", "approved", "--reason", "verified",
             ]
+        elif command == "export-thesis-summaries":
+            args += ["--output", "thesis-summaries.json"]
         assert callable(getattr(parser.parse_args(args), "func", None)), command
 
 
@@ -180,3 +185,92 @@ def test_select_portfolio_persists_and_optionally_exports_selection(tmp_path):
 
     portfolio_repository.save_run.assert_called_once_with({"status": "not_ready", "selected": []})
     assert '"status": "not_ready"' in output.read_text(encoding="utf-8")
+
+
+def test_export_thesis_summaries_exports_only_current_v2_analyses(tmp_path, capsys):
+    from kncompanyscraper.analysis.policy_versions import FORWARD_SCENARIO_POLICY_VERSION
+    from kncompanyscraper.models.stored_analysis import StoredAnalysisDocument
+
+    current = StoredAnalysisDocument(
+        {
+            "analysis_id": 7,
+            "content": {
+                "thesis_card_version": "individual-thesis-card-v2",
+                "verdict": "watch",
+                "confidence": "medium",
+                "one_sentence_thesis": "The evidence remains incomplete.",
+                "reverse_dcf_expectation_assessment": "unassessable",
+                "thesis_break_conditions": [],
+                "missing_information": [],
+                "scenario_bundles": [],
+                "forward_scenario_analysis": {
+                    "status": "available",
+                    "policy_version": FORWARD_SCENARIO_POLICY_VERSION,
+                    "bands": [],
+                },
+            },
+            "metadata": {},
+        }
+    )
+    legacy = StoredAnalysisDocument(
+        {
+            "analysis_id": 8,
+            "content": {"thesis_card_version": "individual-thesis-card-v1"},
+            "metadata": {},
+        }
+    )
+    output = tmp_path / "thesis-summaries.json"
+
+    with patch(
+        "kncompanyscraper.repositories.analysis_repository.AnalysisRepository"
+    ) as repository:
+        repository.return_value.get_latest_validated_stock_analyses.return_value = {
+            42: current,
+            43: legacy,
+        }
+        agent._cmd_export_thesis_summaries(SimpleNamespace(output=output))
+
+    exported = json.loads(output.read_text(encoding="utf-8"))
+    assert list(exported) == ["42"]
+    assert exported["42"]["one_sentence_thesis"] == current.thesis_summary[
+        "one_sentence_thesis"
+    ]
+    assert "validated v2 thesis summaries" in capsys.readouterr().out
+
+
+def test_sync_agent_evidence_handles_companies_without_explicit_mfn_slug(capsys):
+    shortlist = SimpleNamespace(company_id=153)
+    service = MagicMock()
+    run = MagicMock()
+    service.analyze_watchlist.return_value = run
+    run.shortlist_for_agent.return_value = [shortlist]
+    company = SimpleNamespace(id=153, name="Avtech", mfn_slug=None)
+    ingestion = MagicMock()
+    ingestion.sync_company.return_value = SimpleNamespace(
+        releases_added=1, documents_added=2
+    )
+
+    with (
+        patch(
+            "kncompanyscraper.repositories.company_repository.CompanyRepository"
+        ) as company_repository,
+        patch(
+            "kncompanyscraper.repositories.news_repository.NewsRepository"
+        ),
+        patch(
+            "kncompanyscraper.repositories.research_document_repository.ResearchDocumentRepository"
+        ),
+        patch(
+            "kncompanyscraper.analysis.agent.research_document_ingestion.ResearchDocumentIngestionService",
+            return_value=ingestion,
+        ),
+        patch(
+            "kncompanyscraper.composition.build_watchlist_analysis_service",
+            return_value=service,
+        ),
+    ):
+        company_repository.return_value.get_by_id.return_value = company
+        agent._cmd_sync_agent_evidence(SimpleNamespace(max_candidates=1))
+
+    ingestion.sync_company.assert_called_once_with(company)
+    assert "1 releases, 2 report PDFs added" in capsys.readouterr().out

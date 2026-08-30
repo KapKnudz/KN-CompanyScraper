@@ -336,6 +336,8 @@ class TestValuationCalculator:
         assert result.ev_ebit_percentile == pytest.approx(100.0)
         assert result.ev_ebit_guardrail_low == pytest.approx(9.72)
         assert result.ev_ebit_guardrail_high == pytest.approx(12.76)
+        assert result.ev_ebit_base_ceiling == pytest.approx(10.5)
+        assert result.ev_ebit_bull_ceiling == pytest.approx(12.1)
         assert result.ev_ebit_history_count == 5
 
     def test_percentile_with_middle_value(self):

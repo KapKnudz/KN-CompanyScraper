@@ -129,7 +129,7 @@ def test_challenge_response_persists_revision_before_resolving_challenge():
     adapter.generate.return_value = OpenAIModelResponse(
         response_id="resp_2",
         model="test-model",
-        output_text=update_response("thesis_weakened", ["revenue_growth_case"]),
+        output_text=update_response("thesis_weakened", ["scenario_bundles"]),
         usage={"total_tokens": 80},
     )
     boundary = MagicMock()

@@ -76,7 +76,6 @@ def build_agent_context_builder():
     )
     from kncompanyscraper.analysis.agent.peer_benchmarking import PeerComparisonBuilder
     from kncompanyscraper.analysis.agent.research_evidence import ResearchEvidenceBuilder
-    from kncompanyscraper.repositories.cyclicality_repository import CyclicalityRepository
     from kncompanyscraper.repositories.company_repository import CompanyRepository
     from kncompanyscraper.repositories.financial_repository import FinancialRepository
     from kncompanyscraper.repositories.insider_repository import InsiderRepository
@@ -95,7 +94,6 @@ def build_agent_context_builder():
             InsiderRepository(),
             valuation_repository,
         ),
-        cyclicality_repository=CyclicalityRepository(),
         financial_evidence_builder=StructuredFinancialEvidenceBuilder(financial_repository),
         peer_comparison_builder=PeerComparisonBuilder(
             CompanyRepository(), financial_repository, valuation_repository

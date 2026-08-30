@@ -6,18 +6,17 @@ import pytest
 from kncompanyscraper.analysis.portfolio_selection import PortfolioSelectionService
 
 
-def _score(company_id, *, risk_profile="slightly_cyclical"):
+def _score(company_id):
     return SimpleNamespace(
         company_id=company_id,
         ticker=f"T{company_id}",
         name=f"Company {company_id}",
         rank_eligible=True,
         eligibility_reasons=[],
-        risk_profile=risk_profile,
     )
 
 
-def _analysis(company_id, *, risk_profile="slightly_cyclical", evidence_as_of="2026-08-12"):
+def _analysis(company_id, *, evidence_as_of="2026-08-12"):
     return {
         "analysis_id": 100 + company_id,
         "company_id": company_id,
@@ -30,7 +29,7 @@ def _analysis(company_id, *, risk_profile="slightly_cyclical", evidence_as_of="2
             "portfolio_reason_code": "investable",
             "reconsideration_trigger": None,
             "reverse_dcf_expectation_assessment": "plausible",
-            "risk_profile": risk_profile,
+            "revenue_resilience": {"assessment": "unassessable"},
             "thesis_break_conditions": ["Growth stalls."],
         },
         "metadata": {
@@ -79,12 +78,9 @@ def test_does_not_force_weights_when_fewer_than_five_cases_qualify():
     ]
 
 
-def test_limits_high_risk_holdings_to_two():
+def test_does_not_apply_unsupported_risk_concentration_limit():
     ranking = SimpleNamespace(scores=[_score(company_id) for company_id in range(1, 7)])
-    analyses = {
-        company_id: _analysis(company_id, risk_profile="cyclical_or_other_risk")
-        for company_id in range(1, 7)
-    }
+    analyses = {company_id: _analysis(company_id) for company_id in range(1, 7)}
 
     result = PortfolioSelectionService().select(
         ranking,
@@ -92,12 +88,8 @@ def test_limits_high_risk_holdings_to_two():
         as_of=date(2026, 8, 12),
     )
 
-    assert len(result.selected) == 2
-    assert all(holding.target_weight is None for holding in result.selected)
-    assert all(
-        item.reason_code == "risk_concentration"
-        for item in result.excluded_finalists
-    )
+    assert len(result.selected) == 5
+    assert result.portfolio_checks.get("high_risk_concentration") is None
 
 
 def test_excludes_accepted_analysis_from_old_contract():
@@ -129,9 +121,9 @@ def test_excludes_blocked_analysis_without_treating_watch_as_verdict():
     assert result.excluded_finalists[0].reason_code == "analysis_incomplete"
 
 
-def test_excludes_investable_case_without_classified_business_risk():
+def test_allows_investable_case_without_resilience_assessment():
     ranking = SimpleNamespace(scores=[_score(1)])
-    analysis = _analysis(1, risk_profile="unclassified")
+    analysis = _analysis(1)
 
     result = PortfolioSelectionService().select(
         ranking,
@@ -139,5 +131,4 @@ def test_excludes_investable_case_without_classified_business_risk():
         as_of=date(2026, 8, 12),
     )
 
-    assert result.selected == ()
-    assert result.excluded_finalists[0].reason_code == "risk_unclassified"
+    assert [holding.company_id for holding in result.selected] == [1]

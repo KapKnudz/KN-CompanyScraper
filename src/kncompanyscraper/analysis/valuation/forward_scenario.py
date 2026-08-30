@@ -1,23 +1,18 @@
-"""Reproducible holding-period sensitivity analysis for operating companies."""
+"""Reproducible three-case holding-period sensitivity analysis."""
 
 from dataclasses import dataclass
 from math import floor, isfinite
 from typing import Literal
-from kncompanyscraper.models.enums import RankingModel
+
 from kncompanyscraper.analysis.policy_versions import (
     FORWARD_RANKING_POLICY_VERSION,
     FORWARD_SCENARIO_POLICY_VERSION,
 )
 from kncompanyscraper.analysis.statistics import cagr
+from kncompanyscraper.models.enums import RankingModel
 
 
-ScenarioKind = Literal[
-    "bear_multiple_compression",
-    "bear_fundamental_impairment",
-    "base",
-    "bull",
-]
-EndpointSide = Literal["low", "high"]
+ScenarioCase = Literal["bear", "base", "bull"]
 EvidenceConfidence = Literal["low", "medium", "high"]
 NetDebtChangeProvenance = Literal[
     "source_backed",
@@ -37,6 +32,7 @@ class SourcedAssumption:
     value: float
     source_ids: tuple[str, ...]
     rationale: str
+    mechanism: str | None = None
     guardrail_exception: str | None = None
 
 
@@ -51,21 +47,17 @@ class NetDebtChangeAssumption:
 
 
 @dataclass(frozen=True)
-class ScenarioEndpoint:
-    kind: ScenarioKind
-    side: EndpointSide
+class ScenarioBundle:
+    case: ScenarioCase
     horizon_months: int
     revenue_cagr: SourcedAssumption
     ebit_margin: SourcedAssumption
-    terminal_ev_ebit: SourcedAssumption
-    net_debt: SourcedAssumption
+    terminal_ev_ebit_low: SourcedAssumption
+    terminal_ev_ebit_high: SourcedAssumption
     net_debt_change: NetDebtChangeAssumption
     share_count_growth: SourcedAssumption
     distributions_per_share: SourcedAssumption
-
-    @property
-    def key(self) -> str:
-        return f"{self.kind}_{self.side}"
+    mechanism: str
 
 
 @dataclass(frozen=True)
@@ -75,49 +67,72 @@ class ForwardScenarioInputs:
     current_shares: float | None
     current_net_debt: float | None
     terminal_multiple_guardrail: tuple[float | None, float | None]
-    endpoints: tuple[ScenarioEndpoint, ...]
+    bundles: tuple[ScenarioBundle, ...]
     ranking_model: RankingModel = RankingModel.GENERAL
     price_currency: str | None = None
     financial_currency: str | None = None
+    base_terminal_multiple_ceiling: float | None = None
+    bull_terminal_multiple_ceiling: float | None = None
+    demonstrated_revenue_cagr: float | None = None
+    demonstrated_ebit_margin: float | None = None
+    case_horizon_months: int | None = None
 
 
 @dataclass(frozen=True)
-class EndpointResult:
-    key: str
+class ScenarioBandResult:
+    case: ScenarioCase
     horizon_months: int
-    revenue_at_horizon: float
-    ebit_at_horizon: float
-    enterprise_value_at_horizon: float
-    equity_value_at_horizon: float
-    value_per_share_at_horizon: float
-    holding_value_per_share: float
-    annualized_return: float
+    low_price: float
+    high_price: float
+    low_holding_value: float
+    high_holding_value: float
+    low_annualized_return: float
+    high_annualized_return: float
+
+    @property
+    def price_range(self) -> tuple[float, float]:
+        return self.low_price, self.high_price
+
+    @property
+    def annualized_return_range(self) -> tuple[float, float]:
+        return self.low_annualized_return, self.high_annualized_return
 
 
 @dataclass(frozen=True)
 class ForwardScenarioAnalysis:
     status: ForwardScenarioStatus
     policy_version: str
-    results: tuple[EndpointResult, ...] = ()
+    bands: tuple[ScenarioBandResult, ...] = ()
     methodology_flags: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
 
-    def result(self, key: str) -> EndpointResult | None:
-        return next((item for item in self.results if item.key == key), None)
+    @property
+    def results(self) -> tuple[ScenarioBandResult, ...]:
+        """Compatibility-free plural accessor for the v2 bands."""
+        return self.bands
+
+    def band(self, case: ScenarioCase) -> ScenarioBandResult | None:
+        return next((item for item in self.bands if item.case == case), None)
+
+    def result(self, case: ScenarioCase) -> ScenarioBandResult | None:
+        """Named accessor used by ranking and export consumers."""
+        return self.band(case)
+
+
+@dataclass(frozen=True)
+class _CalculatedBandEndpoint:
+    price: float
+    holding_value: float
+    annualized_return: float
 
 
 class ForwardScenarioEngine:
-    """Validate coherent bundles and calculate holding-period return bands."""
+    """Validate three coherent bundles and calculate their price/return bands."""
 
     POLICY_VERSION = FORWARD_SCENARIO_POLICY_VERSION
     HORIZONS = (24, 36, 48)
-    KINDS: tuple[ScenarioKind, ...] = (
-        "bear_multiple_compression",
-        "bear_fundamental_impairment",
-        "base",
-        "bull",
-    )
-    SIDES: tuple[EndpointSide, ...] = ("low", "high")
+    CASES: tuple[ScenarioCase, ...] = ("bear", "base", "bull")
+    PLAUSIBILITY_TOLERANCE = 0.005
 
     def analyze(self, inputs: ForwardScenarioInputs) -> ForwardScenarioAnalysis:
         if inputs.ranking_model != RankingModel.GENERAL:
@@ -138,20 +153,20 @@ class ForwardScenarioEngine:
                 warnings=tuple(warnings),
             )
 
-        results = tuple(self._calculate(inputs, endpoint) for endpoint in inputs.endpoints)
-        ordering_flags = self._validate_outputs(results)
-        if ordering_flags:
+        bands = tuple(self._calculate_band(inputs, bundle) for bundle in inputs.bundles)
+        output_flags = self._validate_outputs(bands)
+        if output_flags:
             return ForwardScenarioAnalysis(
                 status="insufficient_evidence",
                 policy_version=self.POLICY_VERSION,
-                results=results,
-                methodology_flags=tuple(ordering_flags),
+                bands=bands,
+                methodology_flags=tuple(output_flags),
                 warnings=tuple(warnings),
             )
         return ForwardScenarioAnalysis(
             status="available",
             policy_version=self.POLICY_VERSION,
-            results=results,
+            bands=bands,
             warnings=tuple(warnings),
         )
 
@@ -161,14 +176,13 @@ class ForwardScenarioEngine:
         price_currency = self._currency(inputs.price_currency)
         financial_currency = self._currency(inputs.financial_currency)
         if price_currency is None or financial_currency is None:
-            flags.append(
-                "price and financial currencies are required for forward valuation"
-            )
+            flags.append("price and financial currencies are required for forward valuation")
         elif price_currency != financial_currency:
             flags.append(
                 "forward valuation currency mismatch: "
                 f"price is {price_currency}, financial inputs are {financial_currency}"
             )
+
         for name, value in (
             ("current_price", inputs.current_price),
             ("current_revenue", inputs.current_revenue),
@@ -176,54 +190,51 @@ class ForwardScenarioEngine:
         ):
             if not self._positive(value):
                 flags.append(f"{name} must be a finite positive number")
+        if not self._finite(inputs.current_net_debt):
+            flags.append("current_net_debt must be finite")
 
         guardrail_low, guardrail_high = inputs.terminal_multiple_guardrail
         if not (
             self._positive(guardrail_low)
             and self._positive(guardrail_high)
-            and guardrail_low is not None
-            and guardrail_high is not None
             and guardrail_low <= guardrail_high
         ):
             flags.append("terminal multiple guardrail must be finite, positive, and ordered")
 
-        expected_keys = {
-            f"{kind}_{side}" for kind in self.KINDS for side in self.SIDES
-        }
-        endpoints = {endpoint.key: endpoint for endpoint in inputs.endpoints}
-        if len(endpoints) != len(inputs.endpoints):
-            flags.append("scenario endpoint keys must be unique")
-        missing = sorted(expected_keys - set(endpoints))
-        unexpected = sorted(set(endpoints) - expected_keys)
+        by_case = {bundle.case: bundle for bundle in inputs.bundles}
+        if len(by_case) != len(inputs.bundles):
+            flags.append("scenario bundles must contain exactly one bundle for each case")
+        missing = sorted(set(self.CASES) - set(by_case))
+        unexpected = sorted(set(by_case) - set(self.CASES))
         if missing:
-            flags.append("missing scenario endpoints: " + ", ".join(missing))
+            flags.append("missing scenario bundles: " + ", ".join(missing))
         if unexpected:
-            flags.append("unexpected scenario endpoints: " + ", ".join(unexpected))
+            flags.append("unsupported scenario bundles: " + ", ".join(unexpected))
 
-        horizons = {endpoint.horizon_months for endpoint in inputs.endpoints}
+        horizons = {bundle.horizon_months for bundle in inputs.bundles}
         if len(horizons) != 1 or not horizons.issubset(self.HORIZONS):
-            flags.append("all endpoints must use the same 24, 36, or 48 month horizon")
+            flags.append("all scenario bundles must use the same 24, 36, or 48 month horizon")
+        if (
+            inputs.case_horizon_months is not None
+            and len(horizons) == 1
+            and inputs.case_horizon_months not in horizons
+        ):
+            flags.append("scenario bundle horizon must match case_horizon_months")
 
-        for endpoint in inputs.endpoints:
-            self._validate_endpoint(
+        for bundle in inputs.bundles:
+            self._validate_bundle(
                 inputs,
-                endpoint,
+                bundle,
                 guardrail_low,
                 guardrail_high,
                 flags,
                 warnings,
             )
 
-        if expected_keys.issubset(endpoints):
-            for side in self.SIDES:
-                base = endpoints[f"base_{side}"]
-                compression = endpoints[f"bear_multiple_compression_{side}"]
-                impairment = endpoints[f"bear_fundamental_impairment_{side}"]
-                bull = endpoints[f"bull_{side}"]
-                self._validate_compression(base, compression, flags)
-                self._validate_impairment(base, impairment, flags)
-                self._validate_bull(base, bull, flags)
-
+        if set(self.CASES).issubset(by_case):
+            self._validate_case_order(by_case, flags)
+            self._validate_plausibility(inputs, by_case["base"], flags)
+            self._validate_plausibility(inputs, by_case["bull"], flags)
         return flags, warnings
 
     @staticmethod
@@ -232,238 +243,260 @@ class ForwardScenarioEngine:
         return normalized or None
 
     @classmethod
-    def _validate_endpoint(
+    def _validate_bundle(
         cls,
         inputs: ForwardScenarioInputs,
-        endpoint: ScenarioEndpoint,
+        bundle: ScenarioBundle,
         guardrail_low: float | None,
         guardrail_high: float | None,
         flags: list[str],
         warnings: list[str],
     ) -> None:
         assumptions = {
-            "revenue_cagr": endpoint.revenue_cagr,
-            "ebit_margin": endpoint.ebit_margin,
-            "terminal_ev_ebit": endpoint.terminal_ev_ebit,
-            "net_debt": endpoint.net_debt,
-            "net_debt_change": endpoint.net_debt_change,
-            "share_count_growth": endpoint.share_count_growth,
-            "distributions_per_share": endpoint.distributions_per_share,
+            "revenue_cagr": bundle.revenue_cagr,
+            "ebit_margin": bundle.ebit_margin,
+            "terminal_ev_ebit_low": bundle.terminal_ev_ebit_low,
+            "terminal_ev_ebit_high": bundle.terminal_ev_ebit_high,
+            "net_debt_change": bundle.net_debt_change,
+            "share_count_growth": bundle.share_count_growth,
+            "distributions_per_share": bundle.distributions_per_share,
         }
+        prefix = bundle.case
         for name, assumption in assumptions.items():
-            if not isfinite(assumption.value):
-                flags.append(f"{endpoint.key}.{name} must be finite")
-            if not assumption.source_ids:
-                flags.append(f"{endpoint.key}.{name} requires at least one source ID")
-            if not assumption.rationale.strip():
-                flags.append(f"{endpoint.key}.{name} requires a rationale")
+            if not cls._finite(getattr(assumption, "value", None)):
+                flags.append(f"{prefix}.{name} must be finite")
+            if not getattr(assumption, "source_ids", ()):
+                flags.append(f"{prefix}.{name} requires at least one source ID")
+            if not getattr(assumption, "rationale", "").strip():
+                flags.append(f"{prefix}.{name} requires a rationale")
 
-        change = endpoint.net_debt_change
+        if not isinstance(bundle.mechanism, str) or not bundle.mechanism.strip():
+            flags.append(f"{prefix}.mechanism requires a rationale")
+
+        change = bundle.net_debt_change
         provenance_type = getattr(change, "provenance_type", None)
-        mechanism = getattr(change, "mechanism", "")
         if provenance_type not in (
             "source_backed",
             "analyst_sensitivity",
             "not_applicable",
         ):
-            flags.append(
-                f"{endpoint.key}.net_debt_change has an invalid provenance type"
-            )
+            flags.append(f"{prefix}.net_debt_change has an invalid provenance type")
+        if not isinstance(change.mechanism, str) or not change.mechanism.strip():
+            flags.append(f"{prefix}.net_debt_change requires a mechanism")
         if change.value == 0 and provenance_type != "not_applicable":
-            flags.append(
-                f"{endpoint.key}.zero net_debt_change must use not_applicable provenance"
-            )
+            flags.append(f"{prefix}.zero net_debt_change must use not_applicable provenance")
         if change.value != 0:
             if provenance_type == "not_applicable":
-                flags.append(
-                    f"{endpoint.key}.non-zero net_debt_change requires provenance"
-                )
-            if not mechanism.strip():
-                flags.append(
-                    f"{endpoint.key}.net_debt_change requires a mechanism"
-                )
+                flags.append(f"{prefix}.non-zero net_debt_change requires provenance")
             if provenance_type == "analyst_sensitivity":
                 warnings.append(
-                    f"{endpoint.key}.net_debt_change is an analyst sensitivity; "
+                    f"{prefix}.net_debt_change is an analyst sensitivity; "
                     "its mechanism is not source-backed"
                 )
 
-        if endpoint.revenue_cagr.value <= -1.0:
-            flags.append(f"{endpoint.key}.revenue_cagr must be greater than -100%")
-        if endpoint.ebit_margin.value <= 0:
-            flags.append(f"{endpoint.key}.ebit_margin must be positive for EV/EBIT")
-        if endpoint.terminal_ev_ebit.value <= 0:
-            flags.append(f"{endpoint.key}.terminal_ev_ebit must be positive")
-        if endpoint.share_count_growth.value <= -1.0:
-            flags.append(f"{endpoint.key}.share_count_growth must be greater than -100%")
-        if endpoint.distributions_per_share.value < 0:
-            flags.append(f"{endpoint.key}.distributions_per_share cannot be negative")
-        if not cls._finite(inputs.current_net_debt):
-            flags.append("current_net_debt must be finite")
-        elif not cls._same_value(
-            endpoint.net_debt.value,
-            inputs.current_net_debt + endpoint.net_debt_change.value,
+        for name, assumption in (
+            ("share_count_growth", bundle.share_count_growth),
+            ("distributions_per_share", bundle.distributions_per_share),
         ):
-            flags.append(
-                f"{endpoint.key}.net_debt must reconcile to current net debt plus net_debt_change"
-            )
-        multiple = endpoint.terminal_ev_ebit
-        if (
-            guardrail_low is not None
-            and guardrail_high is not None
-            and not guardrail_low <= multiple.value <= guardrail_high
-        ):
-            if multiple.guardrail_exception and multiple.guardrail_exception.strip():
+            if assumption.value != 0 and not (assumption.mechanism or "").strip():
+                flags.append(f"{prefix}.{name} requires a mechanism")
+            rationale = assumption.rationale.lower()
+            if assumption.value == 0 and any(
+                phrase in rationale
+                for phrase in ("missing", "unavailable", "not provided", "unknown")
+            ):
                 warnings.append(
-                    f"{endpoint.key}.terminal_ev_ebit uses sourced guardrail exception: "
-                    f"{multiple.guardrail_exception.strip()}"
-                )
-            else:
-                flags.append(
-                    f"{endpoint.key}.terminal_ev_ebit is outside historical guardrails"
+                    f"{prefix}.{name} is zero because supporting data is missing; "
+                    "treat it as an analyst sensitivity"
                 )
 
-    @staticmethod
-    def _values(endpoint: ScenarioEndpoint) -> tuple[float, ...]:
-        return (
-            endpoint.revenue_cagr.value,
-            endpoint.ebit_margin.value,
-            endpoint.net_debt.value,
-            endpoint.share_count_growth.value,
-            endpoint.distributions_per_share.value,
-        )
+        if bundle.revenue_cagr.value <= -1.0:
+            flags.append(f"{prefix}.revenue_cagr must be greater than -100%")
+        if bundle.ebit_margin.value <= 0:
+            flags.append(f"{prefix}.ebit_margin must be positive for EV/EBIT")
+        if bundle.share_count_growth.value <= -1.0:
+            flags.append(f"{prefix}.share_count_growth must be greater than -100%")
+        if bundle.distributions_per_share.value < 0:
+            flags.append(f"{prefix}.distributions_per_share cannot be negative")
+
+        low = bundle.terminal_ev_ebit_low
+        high = bundle.terminal_ev_ebit_high
+        if low.value <= 0 or high.value <= 0:
+            flags.append(f"{prefix}.terminal multiple range must be positive")
+        if low.value > high.value:
+            flags.append(f"{prefix}.terminal multiple range must be ordered")
+        if guardrail_low is not None and guardrail_high is not None:
+            for name, multiple in (("low", low), ("high", high)):
+                if not guardrail_low <= multiple.value <= guardrail_high:
+                    flags.append(
+                        f"{prefix}.terminal_ev_ebit_{name} is outside historical guardrails"
+                    )
+        if not cls._finite(inputs.current_net_debt):
+            return
+        if not cls._finite(inputs.current_net_debt + change.value):
+            flags.append(f"{prefix}.future net debt must be finite")
 
     @classmethod
-    def _validate_compression(
+    def _validate_case_order(
         cls,
-        base: ScenarioEndpoint,
-        compression: ScenarioEndpoint,
+        by_case: dict[str, ScenarioBundle],
         flags: list[str],
     ) -> None:
-        if cls._values(base) != cls._values(compression):
-            flags.append(
-                f"{compression.key} must copy base operating, financing, dilution, and distribution values"
-            )
-        if compression.terminal_ev_ebit.value >= base.terminal_ev_ebit.value:
-            flags.append(f"{compression.key} terminal multiple must be below base")
-
-    @staticmethod
-    def _validate_impairment(
-        base: ScenarioEndpoint,
-        impairment: ScenarioEndpoint,
-        flags: list[str],
-    ) -> None:
-        comparisons = (
-            impairment.revenue_cagr.value <= base.revenue_cagr.value,
-            impairment.ebit_margin.value <= base.ebit_margin.value,
-            impairment.net_debt.value >= base.net_debt.value,
-            impairment.share_count_growth.value >= base.share_count_growth.value,
-            impairment.distributions_per_share.value <= base.distributions_per_share.value,
-            impairment.terminal_ev_ebit.value <= base.terminal_ev_ebit.value,
+        bear = by_case["bear"]
+        base = by_case["base"]
+        bull = by_case["bull"]
+        bear_comparisons = (
+            bear.revenue_cagr.value <= base.revenue_cagr.value,
+            bear.ebit_margin.value <= base.ebit_margin.value,
+            bear.net_debt_change.value >= base.net_debt_change.value,
+            bear.share_count_growth.value >= base.share_count_growth.value,
+            bear.distributions_per_share.value <= base.distributions_per_share.value,
+            bear.terminal_ev_ebit_low.value <= base.terminal_ev_ebit_low.value,
+            bear.terminal_ev_ebit_high.value <= base.terminal_ev_ebit_high.value,
         )
-        strict = (
-            impairment.revenue_cagr.value < base.revenue_cagr.value,
-            impairment.ebit_margin.value < base.ebit_margin.value,
-            impairment.net_debt.value > base.net_debt.value,
-            impairment.share_count_growth.value > base.share_count_growth.value,
-            impairment.distributions_per_share.value < base.distributions_per_share.value,
-        )
-        if not all(comparisons):
-            flags.append(f"{impairment.key} cannot improve a driver versus base")
-        if not any(strict):
-            flags.append(f"{impairment.key} must impair at least one fundamental driver")
-
-    @staticmethod
-    def _validate_bull(
-        base: ScenarioEndpoint,
-        bull: ScenarioEndpoint,
-        flags: list[str],
-    ) -> None:
-        comparisons = (
+        bull_comparisons = (
             bull.revenue_cagr.value >= base.revenue_cagr.value,
             bull.ebit_margin.value >= base.ebit_margin.value,
-            bull.net_debt.value <= base.net_debt.value,
+            bull.net_debt_change.value <= base.net_debt_change.value,
             bull.share_count_growth.value <= base.share_count_growth.value,
             bull.distributions_per_share.value >= base.distributions_per_share.value,
-            bull.terminal_ev_ebit.value >= base.terminal_ev_ebit.value,
+            bull.terminal_ev_ebit_low.value >= base.terminal_ev_ebit_low.value,
+            bull.terminal_ev_ebit_high.value >= base.terminal_ev_ebit_high.value,
         )
-        if not all(comparisons):
-            flags.append(f"{bull.key} cannot use a less favorable driver than base")
+        if not all(bear_comparisons):
+            flags.append("bear cannot improve a driver versus base")
+        if not all(bull_comparisons):
+            flags.append("bull cannot worsen a driver versus base")
+
+    @classmethod
+    def _validate_plausibility(
+        cls,
+        inputs: ForwardScenarioInputs,
+        bundle: ScenarioBundle,
+        flags: list[str],
+    ) -> None:
+        multiple_ceiling = (
+            inputs.base_terminal_multiple_ceiling
+            if bundle.case == "base"
+            else inputs.bull_terminal_multiple_ceiling
+        )
+        beyond: list[str] = []
+        if cls._finite(inputs.demonstrated_revenue_cagr) and (
+            bundle.revenue_cagr.value
+            > inputs.demonstrated_revenue_cagr + cls.PLAUSIBILITY_TOLERANCE
+        ):
+            beyond.append("growth")
+        if cls._finite(inputs.demonstrated_ebit_margin) and (
+            bundle.ebit_margin.value
+            > inputs.demonstrated_ebit_margin + cls.PLAUSIBILITY_TOLERANCE
+        ):
+            beyond.append("margin")
+        if cls._positive(multiple_ceiling) and (
+            bundle.terminal_ev_ebit_high.value > multiple_ceiling
+        ):
+            beyond.append("multiple")
+
+        if bundle.case == "base" and beyond:
+            flags.append(
+                "base uses assumptions beyond demonstrated bounds: "
+                + ", ".join(beyond)
+            )
+        elif bundle.case == "bull" and len(beyond) > 1:
+            flags.append(
+                "bull combines "
+                f"{len(beyond)} unprecedented operating levers"
+            )
+
+    @classmethod
+    def _calculate_band(
+        cls,
+        inputs: ForwardScenarioInputs,
+        bundle: ScenarioBundle,
+    ) -> ScenarioBandResult:
+        low = cls._calculate_endpoint(inputs, bundle, bundle.terminal_ev_ebit_low.value)
+        high = cls._calculate_endpoint(inputs, bundle, bundle.terminal_ev_ebit_high.value)
+        return ScenarioBandResult(
+            case=bundle.case,
+            horizon_months=bundle.horizon_months,
+            low_price=low.price,
+            high_price=high.price,
+            low_holding_value=low.holding_value,
+            high_holding_value=high.holding_value,
+            low_annualized_return=low.annualized_return,
+            high_annualized_return=high.annualized_return,
+        )
 
     @staticmethod
-    def _calculate(
+    def _calculate_endpoint(
         inputs: ForwardScenarioInputs,
-        endpoint: ScenarioEndpoint,
-    ) -> EndpointResult:
+        bundle: ScenarioBundle,
+        terminal_multiple: float,
+    ) -> _CalculatedBandEndpoint:
         if (
             inputs.current_price is None
             or inputs.current_revenue is None
             or inputs.current_shares is None
+            or inputs.current_net_debt is None
         ):
             raise ValueError("validated forward inputs unexpectedly contain missing values")
-        years = endpoint.horizon_months / 12.0
-        revenue = inputs.current_revenue * (1.0 + endpoint.revenue_cagr.value) ** years
-        ebit = revenue * endpoint.ebit_margin.value
-        enterprise_value = ebit * endpoint.terminal_ev_ebit.value
-        equity_value = enterprise_value - endpoint.net_debt.value
-        diluted_shares = inputs.current_shares * (1.0 + endpoint.share_count_growth.value)
-        value_per_share = equity_value / diluted_shares
-        holding_value = value_per_share + endpoint.distributions_per_share.value
+        years = bundle.horizon_months / 12.0
+        revenue = inputs.current_revenue * (1.0 + bundle.revenue_cagr.value) ** years
+        ebit = revenue * bundle.ebit_margin.value
+        enterprise_value = ebit * terminal_multiple
+        equity_value = enterprise_value - (
+            inputs.current_net_debt + bundle.net_debt_change.value
+        )
+        diluted_shares = inputs.current_shares * (
+            1.0 + bundle.share_count_growth.value
+        )
+        price = equity_value / diluted_shares
+        holding_value = price + bundle.distributions_per_share.value
         annualized_return = cagr(inputs.current_price, holding_value, years)
         if annualized_return is None:
             annualized_return = float("nan")
-        return EndpointResult(
-            key=endpoint.key,
-            horizon_months=endpoint.horizon_months,
-            revenue_at_horizon=revenue,
-            ebit_at_horizon=ebit,
-            enterprise_value_at_horizon=enterprise_value,
-            equity_value_at_horizon=equity_value,
-            value_per_share_at_horizon=value_per_share,
-            holding_value_per_share=holding_value,
-            annualized_return=annualized_return,
-        )
+        return _CalculatedBandEndpoint(price, holding_value, annualized_return)
 
-    @staticmethod
-    def _validate_outputs(results: tuple[EndpointResult, ...]) -> list[str]:
+    @classmethod
+    def _validate_outputs(cls, bands: tuple[ScenarioBandResult, ...]) -> list[str]:
         flags: list[str] = []
-        by_key = {result.key: result for result in results}
-        for result in results:
-            if not all(
-                isfinite(value)
-                for value in (
-                    result.revenue_at_horizon,
-                    result.ebit_at_horizon,
-                    result.enterprise_value_at_horizon,
-                    result.equity_value_at_horizon,
-                    result.value_per_share_at_horizon,
-                    result.holding_value_per_share,
-                    result.annualized_return,
-                )
-            ) or result.holding_value_per_share <= 0:
-                flags.append(f"{result.key} produces a non-positive or non-finite holding value")
+        by_case = {band.case: band for band in bands}
+        for band in bands:
+            values = (
+                band.low_price,
+                band.high_price,
+                band.low_holding_value,
+                band.high_holding_value,
+                band.low_annualized_return,
+                band.high_annualized_return,
+            )
+            if not all(cls._finite(value) for value in values):
+                flags.append(f"{band.case} produces a non-finite output")
+            if band.low_price <= 0 or band.high_price <= 0:
+                flags.append(f"{band.case} produces a non-positive price")
+            if band.low_holding_value <= 0 or band.high_holding_value <= 0:
+                flags.append(f"{band.case} produces a non-positive holding value")
+            if band.low_price > band.high_price:
+                flags.append(f"{band.case} low price must not exceed high price")
 
-        for side in ForwardScenarioEngine.SIDES:
-            base = by_key[f"base_{side}"].holding_value_per_share
-            for kind in (
-                "bear_multiple_compression",
-                "bear_fundamental_impairment",
-            ):
-                if by_key[f"{kind}_{side}"].holding_value_per_share >= base:
-                    flags.append(f"{kind}_{side} must produce less value than base_{side}")
+        if set(cls.CASES).issubset(by_case):
+            bear = by_case["bear"]
+            base = by_case["base"]
+            bull = by_case["bull"]
+            if bear.high_price > base.low_price:
+                flags.append("bear_high must be less than or equal to base_low")
+            if base.high_price > bull.low_price:
+                flags.append("base_high must be less than or equal to bull_low")
+            if base.high_annualized_return - base.low_annualized_return > 0.15:
+                flags.append("base annualized-return range exceeds 15 percentage points")
         return flags
 
     @staticmethod
     def _positive(value: float | None) -> bool:
-        return value is not None and isfinite(value) and value > 0
+        return ForwardScenarioEngine._finite(value) and value > 0
 
     @staticmethod
     def _finite(value: float | None) -> bool:
-        return value is not None and isfinite(value)
-
-    @staticmethod
-    def _same_value(left: float, right: float) -> bool:
-        return abs(left - right) <= 1e-9 * max(1.0, abs(left), abs(right))
+        return isinstance(value, (int, float)) and isfinite(value)
 
 
 @dataclass(frozen=True)
@@ -485,7 +518,7 @@ class ForwardRank:
     rank: int
     tied: bool
     actionable: bool
-    worst_bear_lower_bound: float | None
+    bear_lower_bound: float | None
     base_band: tuple[float, float] | None
     bull_lower_bound: float | None
     evidence_confidence: EvidenceConfidence
@@ -517,13 +550,7 @@ class ForwardScenarioRanker:
         for position, (draft, tie_key) in enumerate(prepared, 1):
             if tie_key != previous_key:
                 current_rank = position
-            output.append(
-                ForwardRank(
-                    **draft,
-                    rank=current_rank,
-                    tied=False,
-                )
-            )
+            output.append(ForwardRank(**draft, rank=current_rank, tied=False))
             previous_key = tie_key
 
         counts: dict[int, int] = {}
@@ -531,10 +558,7 @@ class ForwardScenarioRanker:
             counts[item.rank] = counts.get(item.rank, 0) + 1
         return tuple(
             ForwardRank(
-                **{
-                    **item.__dict__,
-                    "tied": counts[item.rank] > 1,
-                }
+                **{**item.__dict__, "tied": counts[item.rank] > 1}
             )
             for item in output
         )
@@ -548,8 +572,8 @@ class ForwardScenarioRanker:
         if case.analysis.status != "available":
             economic_tier: RankingTier = "IE"
         else:
-            base_low = self._return(case.analysis, "base_low")
-            base_high = self._return(case.analysis, "base_high")
+            base_low = self._return(case.analysis, "base", "low")
+            base_high = self._return(case.analysis, "base", "high")
             if base_low >= case.required_return:
                 economic_tier = "A"
             elif base_high >= case.required_return:
@@ -576,30 +600,27 @@ class ForwardScenarioRanker:
             actionable = tier in ("A", "B")
 
         if case.analysis.status == "available":
+            bear_lower = self._return(case.analysis, "bear", "low")
             base_band = (
-                self._return(case.analysis, "base_low"),
-                self._return(case.analysis, "base_high"),
+                self._return(case.analysis, "base", "low"),
+                self._return(case.analysis, "base", "high"),
             )
-            worst_bear = min(
-                self._return(case.analysis, "bear_multiple_compression_low"),
-                self._return(case.analysis, "bear_fundamental_impairment_low"),
-            )
-            bull_low = self._return(case.analysis, "bull_low")
+            bull_lower = self._return(case.analysis, "bull", "low")
             width = base_band[1] - base_band[0]
         else:
+            bear_lower = None
             base_band = None
-            worst_bear = None
-            bull_low = None
+            bull_lower = None
             width = None
 
         q = self._quantize
         tie_key = (
             self._TIER_ORDER[tier],
-            -q(worst_bear),
+            -q(bear_lower),
             -q(base_band[0] if base_band else None),
             -self._CONFIDENCE[case.evidence_confidence],
             q(width),
-            -q(bull_low),
+            -q(bull_lower),
         )
         draft = {
             "company_id": case.company_id,
@@ -607,9 +628,9 @@ class ForwardScenarioRanker:
             "economic_tier": economic_tier,
             "tier": tier,
             "actionable": actionable,
-            "worst_bear_lower_bound": worst_bear,
+            "bear_lower_bound": bear_lower,
             "base_band": base_band,
-            "bull_lower_bound": bull_low,
+            "bull_lower_bound": bull_lower,
             "evidence_confidence": case.evidence_confidence,
             "flags": tuple(flags),
         }
@@ -622,19 +643,27 @@ class ForwardScenarioRanker:
         return floor(value / cls.COMPARISON_TOLERANCE + 0.5)
 
     @staticmethod
-    def _return(analysis: ForwardScenarioAnalysis, key: str) -> float:
-        result = analysis.result(key)
-        if result is None:
-            raise ValueError(f"available analysis is missing {key}")
-        return result.annualized_return
+    def _return(
+        analysis: ForwardScenarioAnalysis,
+        case: ScenarioCase,
+        side: Literal["low", "high"],
+    ) -> float:
+        band = analysis.band(case)
+        if band is None:
+            raise ValueError(f"available analysis is missing {case} band")
+        return (
+            band.low_annualized_return
+            if side == "low"
+            else band.high_annualized_return
+        )
 
 
 def forward_analysis_from_dict(payload: dict) -> ForwardScenarioAnalysis:
-    """Rebuild a persisted deterministic result for comparative ranking."""
+    """Rebuild a persisted v2 deterministic result for comparative ranking."""
     return ForwardScenarioAnalysis(
         status=payload["status"],
         policy_version=payload["policy_version"],
-        results=tuple(EndpointResult(**item) for item in payload.get("results", [])),
+        bands=tuple(ScenarioBandResult(**item) for item in payload.get("bands", [])),
         methodology_flags=tuple(payload.get("methodology_flags", [])),
         warnings=tuple(payload.get("warnings", [])),
     )

@@ -104,21 +104,26 @@ class TestLiveKpiHistory:
 # ---------------------------------------------------------------------------
 
 class TestLiveReports:
-    def test_get_reports_returns_list(self, client):
-        result = client.get_reports(TEST_INSTRUMENT_ID, max_count=5)
-        assert isinstance(result, list)
-        if result:
-            assert all(isinstance(r, Report) for r in result)
+    def test_get_report_bundles_returns_all_report_types(self, client):
+        result = client.get_report_bundles(
+            [TEST_INSTRUMENT_ID], max_year_count=5, max_r12q_count=5
+        )
+        assert TEST_INSTRUMENT_ID in result
+        bundle = result[TEST_INSTRUMENT_ID]
+        assert bundle.error is None
+        reports = bundle.annual
+        assert all(isinstance(r, Report) for r in reports)
+        if reports:
             # Latest report should have sensible values
-            latest = result[0]
+            latest = reports[0]
             assert latest.revenue > 0
             assert latest.shares_outstanding > 0
 
-    def test_get_reports_quarterly(self, client):
-        result = client.get_reports(TEST_INSTRUMENT_ID, report_type="quarter", max_count=4)
-        assert isinstance(result, list)
-        if result:
-            assert all(isinstance(r, Report) for r in result)
+    def test_get_report_bundles_includes_quarterly_reports(self, client):
+        bundle = client.get_report_bundles(
+            [TEST_INSTRUMENT_ID], max_year_count=5, max_r12q_count=4
+        )[TEST_INSTRUMENT_ID]
+        assert all(isinstance(r, Report) for r in bundle.quarterly)
 
 
 # ---------------------------------------------------------------------------

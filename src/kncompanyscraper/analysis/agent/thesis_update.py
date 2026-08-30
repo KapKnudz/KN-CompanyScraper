@@ -97,12 +97,17 @@ class ThesisUpdateContextBuilder:
             for citation in content.get("citations", [])
             if citation.get("source_id")
         )
-        source_ids.update(content.get("risk_profile_evidence") or [])
+        resilience = content.get("revenue_resilience") or {}
+        source_ids.update(resilience.get("source_ids") or [])
         for claim in content.get("management_credibility_ledger", []):
             source_ids.update(claim.get("source_ids") or [])
         for entries in (content.get("company_fact_ledger") or {}).values():
             for fact in entries:
                 source_ids.update(fact.get("source_ids") or [])
+        for bundle in content.get("scenario_bundles", []):
+            for assumption in bundle.values():
+                if isinstance(assumption, dict):
+                    source_ids.update(assumption.get("source_ids") or [])
         profile = content.get("business_model_profile") or {}
         source_ids.update(profile.get("source_ids") or [])
         margin = content.get("margin_expansion_case") or {}

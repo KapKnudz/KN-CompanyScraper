@@ -25,6 +25,7 @@ class AgentReadinessAssessment:
     ticker: str
     status: ReadinessStatus
     blockers: tuple[ReadinessBlocker, ...] = ()
+    limitations: tuple[ReadinessBlocker, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -51,6 +52,7 @@ class AgentReadinessGate:
 
     def assess(self, candidate) -> AgentReadinessAssessment:
         blockers: list[ReadinessBlocker] = []
+        limitations: list[ReadinessBlocker] = []
         if candidate.ranking_model not in self.SUPPORTED_RANKING_MODELS:
             blockers.append(
                 ReadinessBlocker(
@@ -74,7 +76,7 @@ class AgentReadinessGate:
 
         reverse_dcf = candidate.full_results.get("reverse_dcf") or {}
         if _field(reverse_dcf, "status") != "available":
-            blockers.extend(_reverse_dcf_blockers(reverse_dcf))
+            limitations.extend(_reverse_dcf_blockers(reverse_dcf))
 
         valuation = candidate.full_results.get("valuation") or {}
         guardrail_low = _field(valuation, "ev_ebit_guardrail_low")
@@ -84,21 +86,11 @@ class AgentReadinessGate:
             or not _positive(guardrail_high)
             or guardrail_low > guardrail_high
         ):
-            blockers.append(
+            limitations.append(
                 ReadinessBlocker(
                     code="terminal_multiple_guardrail_unavailable",
                     category="valuation",
                     message="positive ordered EV/EBIT guardrails are unavailable",
-                )
-            )
-
-        cyclicality = candidate.full_results.get("cyclicality_consensus") or {}
-        if _field(cyclicality, "status") != "complete":
-            blockers.append(
-                ReadinessBlocker(
-                    code="risk_profile_incomplete",
-                    category="evidence",
-                    message="completed cyclicality consensus is unavailable",
                 )
             )
 
@@ -107,6 +99,7 @@ class AgentReadinessGate:
             ticker=candidate.ticker,
             status=_status(blockers),
             blockers=tuple(blockers),
+            limitations=tuple(limitations),
         )
 
     def require_ready(self, candidates: list) -> tuple[AgentReadinessAssessment, ...]:

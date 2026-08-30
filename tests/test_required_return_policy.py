@@ -2,73 +2,51 @@ from datetime import date
 
 import pytest
 
-from kncompanyscraper.analysis.valuation.required_return_policy import RequiredReturnPolicy
+from kncompanyscraper.analysis.valuation.required_return_policy import (
+    RequiredReturnPolicy,
+)
 
 
-def test_builds_dated_large_cap_discount_rate_profiles():
+@pytest.mark.parametrize(
+    ("market_cap", "bucket", "required_return"),
+    [
+        (499_999_999.0, "below_sek_1bn", 0.15),
+        (1_000_000_000.0, "sek_1bn_to_below_5bn", 0.135),
+        (4_999_999_999.0, "sek_1bn_to_below_5bn", 0.135),
+        (5_000_000_000.0, "sek_5bn_to_below_30bn", 0.115),
+        (29_999_999_999.0, "sek_5bn_to_below_30bn", 0.115),
+        (30_000_000_000.0, "sek_30bn_and_above", 0.10),
+    ],
+)
+def test_market_cap_bucket_selects_one_deterministic_hurdle(
+    market_cap, bucket, required_return
+):
     decision = RequiredReturnPolicy().build(
-        as_of=date(2026, 8, 11),
-        currency="SEK",
-        market_cap=150_000_000_000.0,
+        as_of=date(2026, 8, 11), currency="SEK", market_cap=market_cap
     )
 
     assert decision.available
-    assert decision.risk_free_rate == pytest.approx(0.028)
-    assert decision.risk_free_rate_date == "2026-07-24"
-    assert decision.equity_risk_premium == pytest.approx(0.05)
-    assert decision.size_bucket == "large"
-    assert decision.size_adjustment == 0.0
-    assert decision.profiles["noncyclical_recurring"].discount_rate == pytest.approx(0.098)
-    assert decision.profiles["slightly_cyclical"].discount_rate == pytest.approx(0.118)
-    assert decision.profiles["cyclical_or_other_risk"].discount_rate == pytest.approx(0.148)
+    assert decision.size_bucket == bucket
+    assert decision.required_return == pytest.approx(required_return)
+    assert decision.source_date == "2026-08-11"
 
 
-def test_adds_transparent_micro_cap_adjustment_to_every_profile():
+@pytest.mark.parametrize("market_cap", [None, 0.0, -1.0, float("nan")])
+def test_missing_or_invalid_market_cap_blocks_hurdle(market_cap):
     decision = RequiredReturnPolicy().build(
-        as_of=date(2026, 8, 11),
-        currency="SEK",
-        market_cap=900_000_000.0,
-    )
-
-    assert decision.size_bucket == "micro"
-    assert decision.size_adjustment == pytest.approx(0.02)
-    assert decision.profiles["noncyclical_recurring"].discount_rate == pytest.approx(0.118)
-    assert decision.profiles["slightly_cyclical"].discount_rate == pytest.approx(0.138)
-    assert decision.profiles["cyclical_or_other_risk"].discount_rate == pytest.approx(0.168)
-
-
-def test_historical_analysis_uses_only_rate_snapshots_available_as_of_date():
-    decision = RequiredReturnPolicy().build(
-        as_of=date(2025, 12, 31),
-        currency="SEK",
-        market_cap=150_000_000_000.0,
-    )
-
-    assert decision.risk_free_rate == pytest.approx(0.03)
-    assert decision.risk_free_rate_date == "1900-01-01"
-    assert decision.profiles["slightly_cyclical"].discount_rate == pytest.approx(0.12)
-    assert "backtest proxy" in decision.warnings[0]
-
-
-def test_rejects_currency_without_matching_risk_free_rate():
-    decision = RequiredReturnPolicy().build(
-        as_of=date(2026, 8, 11),
-        currency="EUR",
-        market_cap=1_000_000_000.0,
+        as_of=date(2026, 8, 11), currency="SEK", market_cap=market_cap
     )
 
     assert not decision.available
-    assert "EUR" in decision.missing_information[0]
+    assert decision.required_return is None
+    assert "market capitalization" in decision.missing_information[0]
 
 
-def test_missing_market_cap_uses_zero_size_adjustment_with_warning():
+def test_unsupported_currency_blocks_hurdle():
     decision = RequiredReturnPolicy().build(
-        as_of=date(2026, 8, 11),
-        currency="SEK",
-        market_cap=None,
+        as_of=date(2026, 8, 11), currency="USD", market_cap=10_000_000_000.0
     )
 
-    assert decision.available
-    assert decision.size_bucket == "unknown"
-    assert decision.size_adjustment == 0.0
-    assert decision.warnings
+    assert not decision.available
+    assert decision.required_return is None
+    assert "defined for SEK" in decision.missing_information[0]

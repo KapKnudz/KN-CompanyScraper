@@ -1,11 +1,9 @@
 from datetime import date
 
+from kncompanyscraper.borsdata.report import InstrumentReportBundle
 from kncompanyscraper.repositories.valuation_repository import ValuationRepository
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
 from kncompanyscraper.constants import BORSDATA_DIVIDEND_SOURCE
-from kncompanyscraper.logger import get_logger
-
-logger = get_logger(__name__)
 
 
 class BorsdataIngestionService:
@@ -24,13 +22,32 @@ class BorsdataIngestionService:
         self.valuation_repository = valuation_repository
         self.dividend_repository = dividend_repository
 
-    def sync_company(self, company) -> None:
+    def get_report_bundles(self, instrument_ids):
+        return self.client.get_report_bundles(instrument_ids)
+
+    def sync_reports(self, company, bundle: InstrumentReportBundle) -> None:
+        if company.id is None or company.borsdata_id is None:
+            raise ValueError("Company must have both id and borsdata_id before Börsdata sync")
+        if bundle.instrument_id != company.borsdata_id:
+            raise ValueError(
+                "Börsdata report bundle does not match company instrument "
+                f"{company.borsdata_id}"
+            )
+        if bundle.error:
+            raise ValueError(
+                f"Börsdata report sync failed for instrument {bundle.instrument_id}: "
+                f"{bundle.error}"
+            )
+
+        self.financial_repository.save_report_bundle(company.id, bundle)
+
+    def sync_company(self, company, report_bundle: InstrumentReportBundle | None = None) -> None:
         if company.id is None or company.borsdata_id is None:
             raise ValueError("Company must have both id and borsdata_id before Börsdata sync")
 
-        for report_type in ("year", "r12", "quarter"):
-            reports = self.client.get_reports(company.borsdata_id, report_type=report_type)
-            self.financial_repository.save_reports(company.id, report_type, reports)
+        if report_bundle is None:
+            report_bundle = self.get_report_bundles([company.borsdata_id])[company.borsdata_id]
+        self.sync_reports(company, report_bundle)
 
         stock_prices = self.client.get_stock_price(company.borsdata_id)
         self.valuation_repository.save_stock_prices(
@@ -94,17 +111,3 @@ class BorsdataIngestionService:
                 price_type="mean",
             )
             self.valuation_repository.save_history(company.id, history)
-
-    def sync_companies(self, companies: list) -> int:
-        synced = 0
-        for company in companies:
-            try:
-                self.sync_company(company)
-            except Exception:
-                logger.exception(
-                    "Börsdata sync failed for %s; continuing with next company",
-                    company.name,
-                )
-                continue
-            synced += 1
-        return synced

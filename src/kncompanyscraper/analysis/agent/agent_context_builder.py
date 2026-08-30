@@ -6,12 +6,10 @@ class AgentContextBuilder:
     def __init__(
         self,
         evidence_builder=None,
-        cyclicality_repository=None,
         financial_evidence_builder=None,
         peer_comparison_builder=None,
     ):
         self.evidence_builder = evidence_builder
-        self.cyclicality_repository = cyclicality_repository
         self.financial_evidence_builder = financial_evidence_builder
         self.peer_comparison_builder = peer_comparison_builder
 
@@ -68,7 +66,8 @@ class AgentContextBuilder:
         return candidates
 
     def _create_candidate(self, rank, cs, results) -> AgentCandidate:
-        full_results = self._full_results(cs.company_id, results)
+        research_evidence = self._research_evidence(cs.company_id)
+        full_results = self._full_results(cs.company_id, results, research_evidence)
 
         return AgentCandidate(
             rank=rank,
@@ -92,7 +91,7 @@ class AgentContextBuilder:
             negatives=list(cs.negatives),
             missing_data=list(cs.missing_data),
             full_results=full_results,
-            research_evidence=self._research_evidence(cs.company_id),
+            research_evidence=research_evidence,
         )
 
     def _research_evidence(self, company_id: int) -> dict:
@@ -100,12 +99,18 @@ class AgentContextBuilder:
             return {}
         return self.evidence_builder.build(company_id).to_dict()
 
-    def _full_results(self, company_id: int, results: dict) -> dict:
+    def _full_results(self, company_id: int, results: dict, research_evidence=None) -> dict:
         enriched = dict(results)
         if self.financial_evidence_builder is not None:
-            enriched["financial_history"] = self.financial_evidence_builder.build(
+            financial_history = self.financial_evidence_builder.build(
                 company_id
             )
+            reconcile = getattr(financial_history, "with_document_reconciliations", None)
+            if reconcile is not None:
+                financial_history = reconcile(
+                    (research_evidence or {}).get("documents", [])
+                )
+            enriched["financial_history"] = financial_history
         if self.peer_comparison_builder is not None:
             valuation = enriched.get("valuation") or {}
             target_range = (
@@ -116,10 +121,6 @@ class AgentContextBuilder:
                 company_id,
                 target_terminal_ev_ebit=target_range,
             )
-        if self.cyclicality_repository is not None:
-            consensus = self.cyclicality_repository.get_consensus(company_id)
-            if consensus is not None:
-                enriched["cyclicality_consensus"] = consensus
         return enriched
 
 

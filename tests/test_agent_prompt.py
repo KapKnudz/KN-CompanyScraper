@@ -60,10 +60,11 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "company_fact_ledger" in prompt.user
     assert "half_year_comparison" in prompt.user
     assert "do not reconstruct H1" in prompt.user
-    assert "individual-thesis-card-v1" in prompt.user
+    assert "individual-thesis-card-v2" in prompt.user
     assert "business_model_profile" in prompt.user
     assert "analysis_status" in prompt.user
-    assert "never encode those states as a `watch` verdict" in prompt.user
+    assert "Deterministic valuation limitations may still be present" in prompt.user
+    assert "Do not use `watch` merely as a synonym" in prompt.user
     assert "timing_assessment" in prompt.user
     assert prompt.policy_sha256 == hashlib.sha256(
         (
@@ -82,13 +83,10 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "year-one revenue growth" in prompt.system
     assert "year-five EBIT margin" in prompt.system
     assert "Reverse DCF produces no scalar score" in prompt.system
-    assert "copy its `risk_profile` and `evidence_confidence` exactly" in prompt.system
-    assert "is not evidence confidence" in prompt.system
-    assert "consensus is absent or incomplete" in prompt.system
-    assert "Do not independently classify cyclicality" in prompt.system
-    assert "discount_rate_sensitivities" in prompt.system
-    assert "must not modify inputs" in prompt.system
-    assert "share_count_growth` as a decimal fraction" in prompt.system
+    assert "revenue_resilience" in prompt.system
+    assert "contractual or subscription stickiness" in prompt.system
+    assert "market-cap bucket" in prompt.system
+    assert "full-horizon decimal-fraction share-count growth" in prompt.system
     assert "deterministic engine derives diluted shares" in prompt.system
     assert "Do not invent a numeric confirmation threshold" in prompt.system
     assert "Do not invent a numerical return decomposition" in prompt.system
@@ -107,7 +105,7 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert '"latest stock price unavailable"' in prompt.user
     assert '"source_id": "news:21"' in prompt.user
     assert '"verdict": "reject | watch | latent_case | activated_case"' in prompt.user
-    assert '"risk_profile"' in prompt.user
+    assert '"revenue_resilience"' in prompt.user
 
 
 def test_prompt_builder_serializes_dates_in_sector_kpi_history():
@@ -140,7 +138,6 @@ def test_stock_analysis_result_serializes_nested_evidence():
         verdict="latent_case",
         confidence="medium",
         one_sentence_thesis="Growth and operating leverage may align after the next report.",
-        valuation_scenarios=[],
         management_credibility_ledger=[
             ManagementClaimAssessment(
                 date="2026-Q1",
@@ -162,6 +159,6 @@ def test_stock_analysis_result_serializes_nested_evidence():
     serialized = result.to_dict()
 
     assert serialized["verdict"] == "latent_case"
-    assert serialized["valuation_scenarios"] == []
+    assert serialized["scenario_bundles"] == []
     assert serialized["management_credibility_ledger"][0]["result"] == "unverifiable"
     assert serialized["citations"][0]["source_id"] == "news:21"

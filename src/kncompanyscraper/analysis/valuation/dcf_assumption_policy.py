@@ -82,7 +82,7 @@ class DcfPolicyDecision:
 class DcfAssumptionPolicy:
     """Build auditable FCFF assumptions only from stored company evidence."""
 
-    VERSION = "reverse-dcf-v10"
+    VERSION = "reverse-dcf-v11-market-cap-hurdle"
     PROJECTION_YEARS = 5
     TAX_RATE = 0.21
     TERMINAL_GROWTH = 0.02
@@ -206,9 +206,7 @@ class DcfAssumptionPolicy:
             revenue_growth=growth,
             ebit_margin=ebit_margin,
             tax_rate=self.TAX_RATE,
-            discount_rate=required_return.profiles[
-                required_return.baseline_profile
-            ].discount_rate,
+            discount_rate=required_return.required_return,
             terminal_growth=self.TERMINAL_GROWTH,
             net_reinvestment_rate=reinvestment,
             reinvestment_return=roic_fraction,
@@ -230,8 +228,7 @@ class DcfAssumptionPolicy:
                 "ebit_margin": economics_source,
                 "tax_rate": "fixed normalized Nordic modeling rate",
                 "discount_rate": (
-                    "risk-free rate + fixed equity risk premium + size adjustment "
-                    f"+ {required_return.baseline_profile} business-risk adjustment"
+                "deterministic required-return hurdle selected by market-cap bucket"
                 ),
                 "terminal_growth": "fixed mature nominal growth policy",
                 "net_reinvestment_rate": (

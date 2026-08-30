@@ -1,4 +1,4 @@
-# Reverse DCF assumption policy v8
+# Reverse DCF assumption policy v11
 
 This policy makes the reverse DCF reproducible and auditable. The deterministic
 engine owns every calculation. An agent may critique assumptions, but cannot
@@ -39,7 +39,7 @@ clean recurring FCFF calculation. See
 | Current EBIT margin | Unclamped | Current R12 or latest annual report |
 | Year-five EBIT margin | Unclamped | Revenue-weighted five-year annual margin, then 3y/latest annual/R12 fallback |
 | Normalized tax rate | 21% | Fixed Nordic modeling proxy |
-| Discount rate | Required-return policy | Dated currency rate + 5% ERP + size + baseline business-risk adjustment |
+| Discount rate | Required-return policy | One deterministic SEK market-cap bucket hurdle |
 | Perpetual growth | 2% | Fixed mature nominal-growth policy |
 | Net reinvestment | Growth-responsive | Normalized NOPAT × `max(growth, 0) / ROIC`, with reinvestment capped at 100% of NOPAT |
 

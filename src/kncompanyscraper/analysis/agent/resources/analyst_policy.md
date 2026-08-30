@@ -74,7 +74,7 @@ Do not select a peak margin merely because it makes the valuation attractive. Lo
 
 Use the deterministic reverse DCF to identify alternative growth–margin combinations consistent with the current price, not one unique market forecast. Treat terminal-growth output as diagnostic only. Account for the supplied normalization confidence before relying on the result.
 
-Assess cyclicality separately from the arithmetic. Use only a supplied completed classifier consensus to select a deterministic risk profile; otherwise remain unclassified and use the baseline profile. Never invent an intermediate rate or alter policy components.
+Assess revenue resilience separately from the arithmetic. Compare recurring or contractual revenue with transaction, usage, project, or order volume, and describe observed operating or cash-flow variability when available. Keep uncertainty in `revenue_resilience.limitations`; never infer it from order timing alone. The deterministic required return is selected only by market-cap bucket and cannot be changed by this assessment.
 
 Do not assert a forward return, fair value, price target, or upside percentage as a free-text model claim. A forward numeric output is permitted only when it is the reproducible result of individually stated, sourced, bounded assumptions accepted by the deterministic forward-scenario boundary. Present its bear, base, and bull ranges as sensitivity output, never as a point forecast or probability-weighted expected value. Historical valuation can anchor a terminal-multiple range but does not establish an entitlement to mean reversion.
 

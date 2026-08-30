@@ -14,7 +14,7 @@ def test_rank_analyzed_candidates_runs_canonical_job_and_exports(tmp_path, capsy
                 "ticker": "TEST",
                 "tier": "A",
                 "base_band": [0.12, 0.18],
-                "worst_bear_lower_bound": -0.20,
+                "bear_lower_bound": -0.20,
                 "evidence_confidence": "high",
             }
         ],

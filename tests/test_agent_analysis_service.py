@@ -26,7 +26,6 @@ def ready_candidate():
                 "ev_ebit_guardrail_low": 5.0,
                 "ev_ebit_guardrail_high": 15.0,
             },
-            "cyclicality_consensus": {"status": "complete"},
         },
         research_evidence={"documents": [{"source_id": "document:1"}]},
     )
@@ -188,9 +187,10 @@ def test_readiness_gate_exposes_stable_blockers_for_incomplete_packet():
     assert assessment.status == "evidence_blocked"
     assert [blocker.code for blocker in assessment.blockers] == [
         "primary_evidence_missing",
+    ]
+    assert [limitation.code for limitation in assessment.limitations] == [
         "stock_price_stale",
         "terminal_multiple_guardrail_unavailable",
-        "risk_profile_incomplete",
     ]
 
 
@@ -243,4 +243,21 @@ def test_readiness_gate_classifies_reverse_dcf_blockers(
 
     assessment = AgentReadinessGate().assess(candidate)
 
-    assert expected_code in [blocker.code for blocker in assessment.blockers]
+    assert assessment.status == "ready"
+    assert expected_code in [item.code for item in assessment.limitations]
+
+
+def test_readiness_gate_allows_analysis_without_terminal_multiple_history():
+    candidate = ready_candidate()
+    candidate.full_results["valuation"] = {
+        "ev_ebit_guardrail_low": None,
+        "ev_ebit_guardrail_high": None,
+    }
+
+    assessment = AgentReadinessGate().assess(candidate)
+
+    assert assessment.status == "ready"
+    assert not assessment.blockers
+    assert [item.code for item in assessment.limitations] == [
+        "terminal_multiple_guardrail_unavailable"
+    ]
