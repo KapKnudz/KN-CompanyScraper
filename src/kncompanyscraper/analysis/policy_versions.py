@@ -1,7 +1,7 @@
 """Canonical persisted-analysis policy-version composition."""
 
-FORWARD_SCENARIO_POLICY_VERSION = "forward-scenario-v3-net-debt-bridge"
-FORWARD_RANKING_POLICY_VERSION = "forward-ranking-v1"
+FORWARD_SCENARIO_POLICY_VERSION = "forward-scenario-v6-market-cap-hurdle"
+FORWARD_RANKING_POLICY_VERSION = "forward-ranking-v3-market-cap-hurdle"
 COMPARATIVE_CONFIDENCE_POLICY_VERSION = "comparative-confidence-v1"
 
 

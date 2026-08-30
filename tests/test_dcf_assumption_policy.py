@@ -28,6 +28,16 @@ def _report(revenue, ebit, fcf, year=2025, *, ocf=None, investing=None):
     )
 
 
+def _build(current, latest=None, history=None, **kwargs):
+    return DcfAssumptionPolicy().build(
+        current,
+        latest if latest is not None else current,
+        history or [],
+        market_cap=100_000_000.0,
+        **kwargs,
+    )
+
+
 def test_builds_explicit_assumptions_from_current_and_historical_reports():
     policy = DcfAssumptionPolicy()
     current = _report(1_200.0, 180.0, 110.0, 2026)
@@ -38,12 +48,14 @@ def test_builds_explicit_assumptions_from_current_and_historical_reports():
         _report(1_000.0, 135.0, 90.0, 2024),
     ]
 
-    decision = policy.build(current, latest_annual, history, roic=20.0)
+    decision = policy.build(
+        current, latest_annual, history, roic=20.0, market_cap=100_000_000.0
+    )
 
     assert decision.available
     assert decision.assumptions.projection_years == 5
-    assert decision.assumptions.discount_rate == pytest.approx(0.118)
-    assert decision.required_return.risk_free_rate_date == "2026-07-24"
+    assert decision.assumptions.discount_rate == pytest.approx(0.15)
+    assert decision.required_return.required_return == pytest.approx(0.15)
     assert decision.assumptions.tax_rate == 0.21
     assert decision.assumptions.terminal_growth == 0.02
     assert decision.assumptions.revenue_growth_fade_to == 0.02
@@ -77,7 +89,7 @@ def test_builds_explicit_assumptions_from_current_and_historical_reports():
 def test_uses_disclosed_zero_growth_fallback_when_history_is_insufficient():
     current = _report(1_000.0, 100.0, 60.0)
 
-    decision = DcfAssumptionPolicy().build(current, current, [])
+    decision = _build(current)
 
     assert decision.available
     assert decision.assumptions.revenue_growth == 0.0
@@ -95,7 +107,7 @@ def test_uses_five_year_revenue_weighted_ebit_margin_when_available():
         _report(1_100.0, 198.0, 90.0, 2024),
     ]
 
-    decision = DcfAssumptionPolicy().build(current, latest, history, roic=20.0)
+    decision = _build(current, latest, history, roic=20.0)
 
     assert decision.assumptions.ebit_margin == pytest.approx(
         (80.0 + 108.0 + 150.0 + 198.0 + 240.0)
@@ -115,7 +127,7 @@ def test_falls_back_to_latest_annual_margin_when_three_year_history_is_unavailab
     latest = _report(1_000.0, 150.0, 90.0, 2025)
     history = [_report(900.0, 90.0, 70.0, 2024)]
 
-    decision = DcfAssumptionPolicy().build(current, latest, history, roic=20.0)
+    decision = _build(current, latest, history, roic=20.0)
 
     assert decision.assumptions.ebit_margin == pytest.approx(0.15)
     assert decision.assumption_sources["ebit_margin"] == (
@@ -127,7 +139,9 @@ def test_falls_back_to_latest_annual_margin_when_three_year_history_is_unavailab
 def test_falls_back_to_r12_margin_when_annual_margin_is_unavailable():
     current = _report(1_200.0, 240.0, 110.0, 2026)
 
-    decision = DcfAssumptionPolicy().build(current, None, [], roic=20.0)
+    decision = DcfAssumptionPolicy().build(
+        current, None, [], roic=20.0, market_cap=100_000_000.0
+    )
 
     assert decision.available
     assert decision.assumptions.ebit_margin == pytest.approx(0.20)
@@ -145,7 +159,7 @@ def test_current_loss_does_not_block_positive_historical_margin_normalization():
         _report(1_000.0, 100.0, 70.0, 2024),
     ]
 
-    decision = DcfAssumptionPolicy().build(current, latest, history)
+    decision = _build(current, latest, history)
 
     assert decision.available
     assert decision.assumptions.ebit_margin == pytest.approx(0.10)
@@ -159,7 +173,7 @@ def test_missing_current_ebit_uses_annual_history_without_starting_margin():
         _report(1_000.0, 100.0, 70.0, 2024),
     ]
 
-    decision = DcfAssumptionPolicy().build(current, latest, history)
+    decision = _build(current, latest, history)
 
     assert decision.available
     assert decision.assumptions.ebit_margin == pytest.approx(0.10)
@@ -181,7 +195,9 @@ def test_marks_model_unavailable_when_core_operating_input_is_missing(
     report = _report(1_000.0, 100.0, 60.0)
     setattr(report, field, value)
 
-    decision = DcfAssumptionPolicy().build(report, report, [])
+    decision = DcfAssumptionPolicy().build(
+        report, report, [], market_cap=100_000_000.0
+    )
 
     assert not decision.available
     assert decision.assumptions is None
@@ -192,7 +208,7 @@ def test_clamps_growth_and_roic_derived_reinvestment_and_discloses_both_adjustme
     current = _report(1_000.0, 500.0, 500.0, 2025)
     old = _report(100.0, 50.0, 5.0, 2022)
 
-    decision = DcfAssumptionPolicy().build(current, current, [old], roic=1.0)
+    decision = _build(current, current, [old], roic=1.0)
 
     assert decision.assumptions.revenue_growth == 0.15
     assert decision.assumptions.net_reinvestment_rate == 0.15
@@ -203,7 +219,7 @@ def test_clamps_growth_and_roic_derived_reinvestment_and_discloses_both_adjustme
 def test_negative_normalized_fcf_is_preserved_as_low_confidence_diagnostic():
     current = _report(1_000.0, 100.0, -20.0, 2025)
 
-    decision = DcfAssumptionPolicy().build(current, current, [], roic=20.0)
+    decision = _build(current, current, [], roic=20.0)
 
     assert decision.available
     assert decision.normalized_fcf_margin == pytest.approx(-0.02)
@@ -215,7 +231,7 @@ def test_negative_normalized_fcf_is_preserved_as_low_confidence_diagnostic():
 def test_missing_reported_fcf_does_not_block_roic_based_reinvestment():
     current = _report(1_000.0, 100.0, None)
 
-    decision = DcfAssumptionPolicy().build(current, current, [], roic=20.0)
+    decision = _build(current, current, [], roic=20.0)
 
     assert decision.available
     assert decision.normalized_fcf_margin is None
@@ -231,9 +247,7 @@ def test_exposes_three_and_five_year_windows_and_flags_instability():
         _report(100.0, 30.0, 30.0, 2025, ocf=40.0, investing=-10.0),
     ]
 
-    decision = DcfAssumptionPolicy().build(
-        reports[-1], reports[-1], reports[:-1], roic=20.0
-    )
+    decision = _build(reports[-1], reports[-1], reports[:-1], roic=20.0)
 
     assert decision.normalization.three_year.ebit_margin == pytest.approx(0.70 / 3)
     assert decision.normalization.five_year.ebit_margin == pytest.approx(0.18)
@@ -249,7 +263,7 @@ def test_positive_roic_is_required_for_nonzero_reinvestment():
     current = _report(1_000.0, 100.0, 60.0)
     old = _report(800.0, 80.0, 50.0, 2022)
 
-    decision = DcfAssumptionPolicy().build(current, current, [old], roic=-5.0)
+    decision = _build(current, current, [old], roic=-5.0)
 
     assert decision.assumptions.net_reinvestment_rate == 0.0
     assert decision.normalization.confidence == "low"

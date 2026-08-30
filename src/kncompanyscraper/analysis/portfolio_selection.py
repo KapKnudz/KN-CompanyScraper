@@ -14,7 +14,7 @@ class PortfolioHolding:
     confidence: str
     why_now: str
     reverse_dcf_assessment: str
-    risk_profile: str
+    revenue_resilience_assessment: str
     evidence_as_of: str
     thesis_breaks: tuple[str, ...]
 
@@ -46,7 +46,6 @@ class PortfolioSelection:
 
 class PortfolioSelectionService:
     MAX_EVIDENCE_AGE_DAYS = 45
-    MAX_HIGH_RISK_HOLDINGS = 2
     FINALIST_LIMIT = 30
 
     def select(
@@ -62,8 +61,6 @@ class PortfolioSelectionService:
 
         selected = []
         excluded = []
-        high_risk_count = 0
-
         for rank, score in enumerate(ranking.scores[: self.FINALIST_LIMIT], 1):
             if len(selected) >= target_size:
                 break
@@ -74,22 +71,6 @@ class PortfolioSelectionService:
 
             analysis = analyses_by_company[score.company_id]
             analysis = as_stored_analysis(analysis)
-            if (
-                analysis.risk_profile == "cyclical_or_other_risk"
-                and high_risk_count >= self.MAX_HIGH_RISK_HOLDINGS
-            ):
-                excluded.append(
-                    self._excluded(
-                        score,
-                        rank,
-                        "risk_concentration",
-                        "At most two high-risk cyclical holdings are allowed.",
-                    )
-                )
-                continue
-
-            if analysis.risk_profile == "cyclical_or_other_risk":
-                high_risk_count += 1
             selected.append(
                 PortfolioHolding(
                     rank=rank,
@@ -101,7 +82,9 @@ class PortfolioSelectionService:
                     confidence=analysis.confidence,
                     why_now=analysis.one_sentence_thesis,
                     reverse_dcf_assessment=analysis.reverse_dcf_expectation_assessment,
-                    risk_profile=analysis.risk_profile,
+                    revenue_resilience_assessment=analysis.revenue_resilience.get(
+                        "assessment", "unassessable"
+                    ),
                     evidence_as_of=analysis.evidence_as_of,
                     thesis_breaks=analysis.thesis_break_conditions,
                 )
@@ -122,7 +105,6 @@ class PortfolioSelectionService:
             portfolio_checks={
                 "validated_analyses": "pass",
                 "evidence_freshness": "pass",
-                "high_risk_concentration": "pass",
                 "equal_weight_allocation": "pass" if status == "ready" else "blocked",
                 "liquidity": "not_available",
                 "sector_concentration": "not_available",
@@ -197,13 +179,6 @@ class PortfolioSelectionService:
                 rank,
                 "low_confidence",
                 "Low-confidence cases cannot receive a portfolio allocation.",
-            )
-        if analysis.risk_profile == "unclassified":
-            return self._excluded(
-                score,
-                rank,
-                "risk_unclassified",
-                "Portfolio allocation requires completed business-risk classification.",
             )
         return None
 

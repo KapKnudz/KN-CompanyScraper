@@ -195,16 +195,7 @@ class ComparativeReviewService:
             policy_version=comparative_ranking_policy_version(),
             ranks=tuple(
                 ForwardRank(
-                    **{
-                        **item,
-                        "economic_tier": item.get("economic_tier", item["tier"]),
-                        "base_band": (
-                            tuple(item["base_band"])
-                            if item.get("base_band") is not None
-                            else None
-                        ),
-                        "flags": tuple(item.get("flags") or []),
-                    }
+                    **_historical_rank_fields(item),
                 )
                 for item in stored["final_scores"]
             ),
@@ -324,18 +315,34 @@ def _known_source_ids(stored: dict) -> set[str]:
         for citation in content.get("citations", [])
         if citation.get("source_id")
     )
-    source_ids.update(content.get("risk_profile_evidence") or [])
+    resilience = content.get("revenue_resilience") or {}
+    source_ids.update(resilience.get("source_ids") or [])
     source_ids.update(content.get("peak_margin_evidence") or [])
     for assessment in content.get("management_credibility_ledger", []):
         source_ids.update(assessment.get("source_ids") or [])
     for entries in (content.get("company_fact_ledger") or {}).values():
         for fact in entries:
             source_ids.update(fact.get("source_ids") or [])
-    for endpoint in content.get("forward_scenario_assumptions", []):
-        for assumption in endpoint.values():
+    for bundle in content.get("scenario_bundles", []):
+        for assumption in bundle.values():
             if isinstance(assumption, dict):
                 source_ids.update(assumption.get("source_ids") or [])
     return source_ids
+
+
+def _historical_rank_fields(item: dict) -> dict:
+    """Adapt immutable pre-v2 ranking rows for display only."""
+    fields = dict(item)
+    fields.pop("worst_bear_lower_bound", None)
+    fields["bear_lower_bound"] = item.get(
+        "bear_lower_bound", item.get("worst_bear_lower_bound")
+    )
+    fields["economic_tier"] = item.get("economic_tier", item["tier"])
+    fields["base_band"] = (
+        tuple(item["base_band"]) if item.get("base_band") is not None else None
+    )
+    fields["flags"] = tuple(item.get("flags") or [])
+    return fields
 
 
 def _confidence_change(original: str, calibrated: str) -> str:

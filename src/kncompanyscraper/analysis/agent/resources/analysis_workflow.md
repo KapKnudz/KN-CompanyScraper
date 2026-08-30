@@ -43,7 +43,7 @@ second qualitative downside estimate here.
 
 Do not use unsupported precision. Give ranges when the evidence only supports ranges.
 
-For a `general` ranking model, populate `forward_scenario_assumptions` only when the supplied deterministic context includes positive current price, revenue, and shares, current net debt, and both EV/EBIT guardrails. Supply exactly eight endpoints at one shared 24-, 36-, or 48-month horizon: low/high endpoints for base, bull, multiple-compression bear, and fundamental-impairment bear. Prefer the compact endpoint form: base endpoints provide `base_assumptions`; derived endpoints provide `base_endpoint` and only the changed assumptions in `overrides`. The deterministic boundary expands references before calculation and persists the expanded assumptions. Every numeric assumption requires source IDs and a rationale. Express `share_count_growth` as a decimal fraction over the full horizon, for example `-0.0074` for a 0.74% reduction. The deterministic engine derives diluted shares from the supplied current share count; do not supply a second absolute share-count assumption. Net debt must likewise reconcile through `net_debt_change`. Every non-zero `net_debt_change` must include a concrete `mechanism` and classify `provenance_type` as `source_backed` or `analyst_sensitivity`; use `not_applicable` and an explicit no-change mechanism when the change is zero. A multiple-compression endpoint must inherit its corresponding base endpoint and override only `terminal_ev_ebit`. A fundamental-impairment endpoint improves no driver versus base and worsens at least one. Do not combine independent range extremes. Leave the list empty when evidence is insufficient or the ranking model is bank/property; the deterministic boundary will preserve a visible insufficiency or unsupported-method result.
+For a `general` ranking model, populate `scenario_bundles` only when the supplied deterministic context includes positive current price, revenue, and shares, current net debt, and EV/EBIT guardrails. Supply exactly one bear, base, and bull bundle at one shared 24-, 36-, or 48-month horizon. Each bundle must state sourced revenue CAGR, EBIT margin, low/high terminal EV/EBIT multiples, net-debt change, full-horizon decimal-fraction share-count growth, cumulative distributions per share, and a concise operating `mechanism`. Every assumption requires source IDs and a rationale. The deterministic engine derives future net debt from current net debt plus `net_debt_change`; the deterministic engine derives diluted shares from current shares. Do not supply future absolute debt or shares. Every non-zero `net_debt_change` must include a concrete `mechanism` and classify `provenance_type` as `source_backed` or `analyst_sensitivity`; use `not_applicable` and an explicit no-change mechanism when the change is zero. Bear drivers may not improve on base and bull drivers may not worsen from base. Keep the displayed bands globally ordered and do not combine independent extremes. Base bundles must stay within demonstrated growth, margin, and base-multiple limits. A bull bundle may exceed at most one demonstrated growth, margin, or bull-multiple limit; use the versioned plausibility tolerance for authored growth and margin values. Leave the list empty when evidence is insufficient or the ranking model is bank/property; the deterministic boundary will preserve a visible insufficiency or unsupported-method result.
 
 `forward_scenario_analysis` must be `null` in the model response. The execution boundary owns its calculation. Never state a point estimate or probability weight in prose.
 
@@ -57,11 +57,14 @@ returns, but do not call a move speculative when supplied fundamentals explain i
 
 Use `full_results.reverse_dcf.expectation_curve` as the primary explanation of what the current price requires. Each point sets year-one revenue growth, which fades linearly to mature terminal growth by year five, and solves the year-five EBIT margin reached linearly from the current reported margin. Present the curve as alternative fading growth–margin paths rather than one unique market forecast. Never describe either endpoint as a constant five-year assumption. Use the one-variable results under `full_results.reverse_dcf.implied_expectations` only as cross-checks; when a solve is outside bounds, report its `required_value_hint` instead of treating the bound as the answer. Terminal growth is diagnostic only and must not drive the verdict or ranking interpretation. Check `full_results.reverse_dcf.normalization` before relying on any solve; when confidence is low, show both supplied three- and five-year windows and explain the exact reliability flags.
 
-Do not independently classify cyclicality. When `full_results.cyclicality_consensus.status` is `complete`, copy its `risk_profile` and `evidence_confidence` exactly, and copy the consensus evidence source IDs into `risk_profile_evidence`. `consensus_strength` describes classifier vote agreement and is not evidence confidence. When consensus is absent or incomplete, output `unclassified`, low confidence, and no profile evidence. A completed consensus may select only a supplied deterministic profile; never alter its decision from your own reading of the evidence.
+Populate `revenue_resilience` from supplied evidence. Distinguish contractual or subscription stickiness from message, transaction, usage, project, or order volume. Discuss observed revenue, margin, or cash-flow variability when supplied; order timing alone is not economic cyclicality evidence. Use `resilient`, `mixed`, or `variable` only with at least one cited fact and explain both recurring and variable drivers. Use `unassessable` when the evidence is insufficient and record the gap in `limitations` rather than inventing a confidence score.
 
-Use the consensus profile's curve under `full_results.reverse_dcf.discount_rate_sensitivities` when consensus is complete. Otherwise retain the baseline slightly-cyclical curve and explicitly state that the discount-rate profile is unverified. The deterministic policy owns the risk-free rate, equity-risk premium, size adjustment, profile adjustments, and all sensitivity arithmetic. Classification selects a supplied lens for discussion; it must not modify inputs or create a new valuation calculation.
+The required return is a deterministic hurdle selected only by the market-cap bucket in `full_results.reverse_dcf.required_return`. The revenue-resilience assessment must not alter it. There is one hurdle, not a profile-specific sensitivity table.
 
-The legacy model-authored `valuation_scenarios` field must remain empty and every scalar in `expected_return_components` must remain `null`. Do not independently calculate or state a forward fair value, target price, expected return, upside percentage, substitute P/E, EPS, or DCF value. Forward numeric output is valid only when supplied by the deterministic forward-scenario engine from stored sourced bundles; quote its ranges exactly and preserve all methodology and insufficient-evidence flags.
+`forward_scenario_analysis` must be `null` in the model response. Do not independently calculate or state a forward fair value, target price, expected return, upside percentage, substitute P/E, EPS, or DCF value. Forward numeric output is valid only when supplied by the deterministic forward-scenario engine from stored sourced bundles; quote its ranges exactly and preserve all methodology and insufficient-evidence flags.
+
+The deterministic engine derives diluted shares from current shares and the
+full-horizon decimal-fraction `share_count_growth` assumption.
 
 Deterministic implied expectations carry `source_id` values beginning with `valuation:reverse_dcf:`. Cite material reverse-DCF claims with those exact IDs. For other scalar deterministic metrics that do not carry a `source_id`, cite the exact supplied path beginning with `full_results.`; the execution boundary will normalize a resolvable path to a canonical `deterministic:` ID. Never invent or abbreviate a path.
 
@@ -72,6 +75,13 @@ When `full_results.financial_history.half_year_comparison` is available, use
 its deterministic latest-H1 versus prior-year-H1 comparison as recent context.
 It is built only from complete Q1/Q2 pairs; if its limitations say that a
 comparable H1 is unavailable, do not infer one from a single quarter.
+Standardized financial history is the calculation source for H1 comparisons. If
+report prose and standardized values differ, describe both source IDs and the
+affected metric or period in `limitations`; do not replace the canonical value.
+Deterministic reconciliation is performed only for explicitly supplied
+structured report values. Do not parse free-form document prose to manufacture
+a mismatch; when no structured report value is available, leave the
+reconciliation unavailable.
 
 When `full_results.peer_comparison.status` is `available`, use its dated
 metric ranges as a separate sector sanity check. Compare the target's current
@@ -104,7 +114,7 @@ substitute.
 
 ## 7. Assess ownership and timing
 
-Analyze insider activity, ownership changes, average traded value, free float, listing venue, known supply overhangs, and plausible fund or index eligibility. Keep signal value separate from flow effects.
+Analyze insider activity, ownership changes, average traded value, free float, listing venue, known supply overhangs, and plausible fund or index eligibility. Keep insider activity as a directional signal separate from ownership or flow capacity. When free-float or holder coverage is unavailable, state that ownership-flow conclusions cannot be made and add the gap to `missing_information`.
 
 Use this evidence to modify confidence or timing. Do not allow it to replace the fundamental case.
 

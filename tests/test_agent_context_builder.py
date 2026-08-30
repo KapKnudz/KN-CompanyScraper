@@ -32,43 +32,6 @@ def test_context_builder_preserves_deterministic_ranking_context():
     assert candidate.flags == ["low_data_quality"]
 
 
-def test_context_builder_injects_persisted_cyclicality_consensus():
-    repository = SimpleNamespace(
-        get_consensus=lambda company_id: {
-            "status": "complete",
-            "company_id": company_id,
-            "risk_profile": "slightly_cyclical",
-        }
-    )
-    score = SimpleNamespace(
-        company_id=42,
-        ticker="TEST",
-        name="Testbolaget",
-        ranking_model="general",
-        rank_eligible=True,
-        eligibility_reasons=[],
-        total_score=50.0,
-        quality_score=60.0,
-        growth_score=55.0,
-        valuation_score=45.0,
-        balance_sheet_score=50.0,
-        data_quality="medium",
-        flags=[],
-        candidate_reason=None,
-        positives=[],
-        negatives=[],
-        missing_data=[],
-    )
-
-    candidate = AgentContextBuilder(cyclicality_repository=repository).build(
-        SimpleNamespace(scores=[score]),
-        {42: {"reverse_dcf": {}}},
-    )[0]
-
-    assert candidate.full_results["cyclicality_consensus"]["company_id"] == 42
-    assert candidate.full_results["reverse_dcf"] == {}
-
-
 def test_context_builder_injects_structured_financial_history():
     financial_evidence = SimpleNamespace(build=lambda company_id: {"company": company_id})
     score = SimpleNamespace(

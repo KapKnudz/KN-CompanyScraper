@@ -1,5 +1,6 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date
+from math import isfinite
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,51 @@ class StructuredFinancialEvidence:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+    def with_document_reconciliations(self, documents) -> "StructuredFinancialEvidence":
+        framing = self.half_year_comparison
+        if framing is None or framing.latest_year is None:
+            return self
+
+        canonical_values = {
+            "revenue": framing.latest_revenue,
+            "ebit_margin": framing.latest_ebit_margin,
+        }
+        period = f"{framing.latest_year}-H1"
+        source_ids = ", ".join(framing.latest_source_ids)
+        limitations = list(framing.limitations)
+        for document in documents or ():
+            source_id = _field(document, "source_id")
+            for value in _field(document, "structured_financial_values") or ():
+                metric = value.get("metric")
+                canonical = canonical_values.get(metric)
+                if (
+                    not source_id
+                    or canonical is None
+                    or not isfinite(canonical)
+                    or not _matches_period(value, period, framing.latest_period_end)
+                ):
+                    continue
+                reported = value.get("value")
+                if not _materially_differs(reported, canonical):
+                    continue
+                limitations.append(
+                    _reconciliation_limitation(
+                        source_id,
+                        metric,
+                        period,
+                        reported,
+                        canonical,
+                        source_ids,
+                    )
+                )
+
+        return replace(
+            self,
+            half_year_comparison=replace(
+                framing, limitations=tuple(dict.fromkeys(limitations))
+            ),
+        )
 
 
 class StructuredFinancialEvidenceBuilder:
@@ -244,3 +290,35 @@ class StructuredFinancialEvidenceBuilder:
             total_debt=report.total_debt,
             shares_outstanding=report.shares_outstanding,
         )
+
+
+def _field(value, name):
+    if isinstance(value, dict):
+        return value.get(name)
+    return getattr(value, name, None)
+
+
+def _matches_period(value, expected_period: str, expected_period_end: str | None) -> bool:
+    period = value.get("period")
+    period_end = value.get("period_end")
+    return (period is None or period == expected_period) and (
+        period_end is None or period_end == expected_period_end
+    )
+
+
+def _materially_differs(reported, canonical) -> bool:
+    if not isinstance(reported, (int, float)) or isinstance(reported, bool):
+        return False
+    if not isfinite(reported):
+        return False
+    return abs(reported - canonical) > max(abs(reported), abs(canonical), 1.0) * 0.005
+
+
+def _reconciliation_limitation(
+    report_source_id, metric, period, reported, canonical, standardized_source_ids
+) -> str:
+    return (
+        f"Report {report_source_id} states {metric}={reported:g} for {period}, "
+        f"versus standardized history {metric}={canonical:g} from "
+        f"{standardized_source_ids}; standardized history remains the calculation source."
+    )

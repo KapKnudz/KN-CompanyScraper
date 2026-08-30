@@ -86,7 +86,7 @@ def test_skill_wires_policy_and_all_three_solvers_into_analysis_result():
     ).run(_company())
 
     assert result.status == "available"
-    assert result.policy_version == "reverse-dcf-v10"
+    assert result.policy_version == "reverse-dcf-v11-market-cap-hurdle"
     assert result.analysis_date == date.today().isoformat()
     assert result.price_currency == "SEK"
     assert result.financial_currency == "SEK"
@@ -103,11 +103,6 @@ def test_skill_wires_policy_and_all_three_solvers_into_analysis_result():
         "ebit_margin",
         "terminal_growth",
     }
-    assert set(result.discount_rate_sensitivities) == {
-        "noncyclical_recurring",
-        "slightly_cyclical",
-        "cyclical_or_other_risk",
-    }
     assert [point.revenue_growth for point in result.expectation_curve] == list(
         ReverseDcfSkill.EXPECTATION_CURVE_GROWTH_RATES
     )
@@ -117,28 +112,6 @@ def test_skill_wires_policy_and_all_three_solvers_into_analysis_result():
         )
         for point in result.expectation_curve
     )
-    assert result.discount_rate_sensitivities[
-        "noncyclical_recurring"
-    ].discount_rate == pytest.approx(0.118)
-    assert result.discount_rate_sensitivities[
-        "slightly_cyclical"
-    ].discount_rate == pytest.approx(0.138)
-    assert result.discount_rate_sensitivities[
-        "cyclical_or_other_risk"
-    ].discount_rate == pytest.approx(0.168)
-    for profile, sensitivity in result.discount_rate_sensitivities.items():
-        assert set(sensitivity.implied_expectations) == set(result.implied_expectations)
-        assert len(sensitivity.expectation_curve) == len(result.expectation_curve)
-        assert all(
-            point.ebit_margin_expectation.source_id.startswith(
-                f"valuation:reverse_dcf:{profile}:curve:"
-            )
-            for point in sensitivity.expectation_curve
-        )
-        for assumption, expectation in sensitivity.implied_expectations.items():
-            assert expectation.source_id == (
-                f"valuation:reverse_dcf:{profile}:{assumption}"
-            )
     for expectation in result.implied_expectations.values():
         assert expectation.status == "solved"
         assert expectation.price_difference == pytest.approx(0.0, abs=1e-6)
@@ -278,8 +251,8 @@ def test_skill_converts_borsdata_share_millions_to_sek_market_cap():
     ).run(_company())
 
     assert result.required_return.market_cap == pytest.approx(10_000_000_000.0)
-    assert result.required_return.size_bucket == "lower_mid"
-    assert result.required_return.size_adjustment == pytest.approx(0.01)
+    assert result.required_return.size_bucket == "sek_5bn_to_below_30bn"
+    assert result.required_return.required_return == pytest.approx(0.115)
 
 
 def test_skill_rejects_stale_or_currency_mismatched_price():

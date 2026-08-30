@@ -145,7 +145,10 @@ def _cmd_rank_analyzed_candidates(args):
             if base_band is not None
             else "n/a"
         )
-        downside = case.get("worst_bear_lower_bound")
+        downside = case.get("bear_lower_bound")
+        if downside is None:
+            # Historical ranking snapshots used the two-bear display field.
+            downside = case.get("worst_bear_lower_bound")
         downside_text = f"{downside:.1%}" if downside is not None else "n/a"
         print(
             f"{case['rank']:>3}. {case['ticker']:<8} "

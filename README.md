@@ -240,10 +240,11 @@ DCF arithmetic belongs to the deterministic valuation engine. Reverse DCF is
 implemented first. Its primary output is a growth–margin expectation curve:
 at a fixed set of year-one revenue-growth rates that fade to mature growth, it
 solves the year-five EBIT margin reached from the current reported margin and
-needed to match the current price. The curve is also supplied for each
-deterministic business-risk profile so the agent can select a cited cyclicality
-lens. One-variable revenue-growth, EBIT-margin, and terminal-growth
-solves remain diagnostic cross-checks. Reverse DCF has zero ranking weight. The FCFF implementation is
+needed to match the current price. The required return is one deterministic
+hurdle selected from the company's market-cap bucket; it is not changed by a
+model-authored risk label. One-variable revenue-growth, EBIT-margin, and
+terminal-growth solves remain diagnostic cross-checks. Reverse DCF has zero
+ranking weight. The FCFF implementation is
 for ordinary operating companies. Bank branches are rejected pending a
 residual-income/dividend model, and property companies are rejected pending a
 NAV/FFO-oriented model.
@@ -275,11 +276,14 @@ python -m kncompanyscraper.main check-agent-readiness --max-candidates 5
 python -m kncompanyscraper.main export-agent-prompts --output-dir ./agent-prompts --max-candidates 5
 ```
 
-The readiness check is deterministic and makes no model call. It reports missing
-primary evidence, stale or missing prices, incomplete risk classification,
-unavailable terminal-multiple guardrails, and unsupported company methods. The
-paid analysis command runs the same gate before constructing any prompt and
-fails the full requested batch if a candidate is blocked.
+The readiness check is deterministic and makes no model call. Missing primary
+evidence, incomplete risk classification, and unsupported company methods block
+analysis. Stale or missing prices, currency mismatches, and unavailable
+terminal-multiple guardrails are reported as valuation limitations: analysis may
+continue, but the unavailable valuation output remains suppressed and the result
+cannot be portfolio-investable. The paid analysis command runs the same gate
+before constructing any prompt and fails the full requested batch if a candidate
+has a hard blocker.
 
 The evidence sync chooses the top eligible companies from the deterministic
 ranking. It stores MFN release bodies and extracts text from attached annual,
@@ -323,7 +327,7 @@ For the five-company shadow pilot, pass `--max-candidates 5` after inspecting
 the exported prompts.
 
 Each accepted stock analysis also creates a versioned company-thesis revision.
-The response is an `individual-thesis-card-v1` with one shared schema for
+The response is an `individual-thesis-card-v2` with one shared schema for
 general, property, and bank candidates. Its evidence packet includes the latest
 ten annual reports, twelve quarterly reports, and latest rolling-12-month report
 as structured financial records, in addition to calculated financial results and
@@ -338,6 +342,14 @@ margin-expansion mechanism from deterministic scenario arithmetic and defines
 timing through sourced, observable catalyst windows. See
 `docs/individual_thesis_card.md` for the field policy.
 
+Export the consumer-facing projections from accepted, current v2 analyses
+without exposing raw model responses:
+
+```
+python -m kncompanyscraper.main export-thesis-summaries \
+  --output ./analysis-results/thesis-summaries.json
+```
+
 Its structured fact ledger keeps concise observations under fixed business-model,
 revenue, margin, balance-sheet, management, ownership, valuation, and risk headings.
 Every populated fact retains its original evidence source IDs and distinguishes
@@ -345,11 +357,11 @@ reported facts, management claims, and analyst inferences. Older accepted analys
 are retained as initial thesis revisions, so later evidence updates can compare
 against the current thesis without rebuilding the case from an empty state.
 
-For ordinary operating companies, the analysis contract may also submit eight
-sourced forward-sensitivity assumption bundles at a shared 24-, 36-, or
-48-month horizon. The local execution boundary—not model prose—recalculates the
-multiple-compression bear, fundamental-impairment bear, base, and bull return
-bands. Terminal EV/EBIT assumptions are checked against the company's positive
+For ordinary operating companies, the analysis contract may also submit three
+sourced forward-sensitivity scenario bundles—bear, base, and bull—at a shared
+24-, 36-, or 48-month horizon. The local execution boundary—not model prose—
+recalculates each bundle's price and return band. Terminal EV/EBIT assumptions
+are checked against the company's positive
 historical 10th–90th percentile range when at least five observations exist.
 Missing inputs, invalid bundle coherence, and unsupported bank/property methods
 remain visible as insufficient evidence.
@@ -506,11 +518,11 @@ python -m kncompanyscraper.main select-portfolio \
 ```
 
 Only analyses that explicitly mark an activated case as investable, have at
-least medium confidence, use evidence no older than 45 days, and carry a
-completed business-risk classification can be selected.
+least medium confidence, and use evidence no older than 45 days can be
+selected.
 Five qualifying cases receive equal 20% target weights. If fewer qualify, the
 run is `not_ready`, weights remain null, and exclusions identify the missing
-analysis, stale evidence, valuation, thesis, or risk-concentration reason.
+analysis, stale evidence, valuation, or thesis reason.
 
 ## Development
 

@@ -198,7 +198,7 @@ class ThesisChallengeResponsePromptBuilder:
             "Either preserve the thesis exactly with no_material_change, revise it in "
             "direct response to the challenge, or request a full reassessment. Do not "
             "introduce later evidence. Forward numeric outputs remain calculator-derived: "
-            "provide sourced bounded assumptions and set forward_scenario_analysis to null. "
+            "provide sourced scenario bundles and set forward_scenario_analysis to null. "
             "Return only the required JSON."
         )
         packet = {

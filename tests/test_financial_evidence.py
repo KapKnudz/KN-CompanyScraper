@@ -119,3 +119,74 @@ def test_financial_evidence_discloses_missing_complete_h1_pair():
     assert framing.limitations == (
         "No complete Q1 and Q2 pair is available for H1 framing.",
     )
+
+
+def test_financial_evidence_adds_source_linked_h1_reconciliation_limitation():
+    annual = [report(2025, 4, date(2025, 12, 31))]
+    quarterly = [
+        report(2025, 1, date(2025, 3, 28)),
+        report(2025, 2, date(2025, 6, 28)),
+    ]
+    quarterly[0].revenue = 120.0
+    quarterly[1].revenue = 140.0
+
+    class Repository:
+        def get_reports_as_of(self, company_id, period_type, as_of):
+            return {
+                "year": annual,
+                "quarter": list(reversed(quarterly)),
+                "r12": [],
+            }[period_type]
+
+    evidence = StructuredFinancialEvidenceBuilder(Repository()).build(42, date(2026, 8, 18))
+    evidence = evidence.with_document_reconciliations(
+        [
+            {
+                "source_id": "document:11",
+                "structured_financial_values": [
+                    {"metric": "revenue", "period": "2025-H1", "value": 250.0}
+                ],
+            }
+        ]
+    )
+
+    limitations = evidence.half_year_comparison.limitations
+    reconciliation = next(item for item in limitations if item.startswith("Report "))
+    assert "document:11" in reconciliation
+    assert "financial:quarterly:2025-03-28" in reconciliation
+    assert "financial:quarterly:2025-06-28" in reconciliation
+    assert "revenue=250" in reconciliation
+    assert "revenue=260" in reconciliation
+
+
+def test_financial_evidence_ignores_rounding_and_non_h1_document_values():
+    annual = [report(2025, 4, date(2025, 12, 31))]
+    quarterly = [
+        report(2025, 1, date(2025, 3, 28)),
+        report(2025, 2, date(2025, 6, 28)),
+    ]
+
+    class Repository:
+        def get_reports_as_of(self, company_id, period_type, as_of):
+            return {
+                "year": annual,
+                "quarter": list(reversed(quarterly)),
+                "r12": [],
+            }[period_type]
+
+    evidence = StructuredFinancialEvidenceBuilder(Repository()).build(42, date(2026, 8, 18))
+    evidence = evidence.with_document_reconciliations(
+        [
+            {
+                "source_id": "document:11",
+                "structured_financial_values": [
+                    {"metric": "revenue", "period": "2025-H1", "value": 200.5},
+                    {"metric": "revenue", "period": "2024-H1", "value": 199.0},
+                ],
+            }
+        ]
+    )
+
+    assert evidence.half_year_comparison.limitations == (
+        "No comparable prior-year H1 is available.",
+    )

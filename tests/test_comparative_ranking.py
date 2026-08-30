@@ -11,6 +11,7 @@ def stored_analysis(company_id, analysis, *, required_return=0.10, confidence="h
         "content": {
             "ticker": f"C{company_id}",
             "confidence": confidence,
+            "thesis_card_version": "individual-thesis-card-v2",
             "forward_scenario_analysis": asdict(analysis),
         },
         "metadata": {
@@ -27,14 +28,14 @@ def test_comparative_ranking_uses_persisted_forward_results():
             1,
             analysis_with_returns(
                 base_low=0.16,
-                bear_fundamental_impairment_low=-0.45,
+                bear_low=-0.45,
             ),
         ),
         2: stored_analysis(
             2,
             analysis_with_returns(
                 base_low=0.12,
-                bear_fundamental_impairment_low=-0.15,
+                bear_low=-0.15,
             ),
         ),
     }
@@ -50,7 +51,11 @@ def test_comparative_ranking_keeps_missing_results_visible():
     analyses = {
         1: {
             "analysis_id": 101,
-            "content": {"ticker": "C1", "confidence": "medium"},
+            "content": {
+                "ticker": "C1",
+                "confidence": "medium",
+                "thesis_card_version": "individual-thesis-card-v2",
+            },
             "metadata": {},
         }
     }
@@ -69,6 +74,16 @@ def test_comparative_ranking_requires_persisted_hurdle():
 
     assert snapshot.ranks[0].tier == "IE"
     assert "required return is unavailable" in snapshot.ranks[0].flags
+
+
+def test_comparative_ranking_does_not_translate_legacy_policy_results():
+    stored = stored_analysis(1, analysis_with_returns())
+    stored["content"]["thesis_card_version"] = "individual-thesis-card-v1"
+
+    snapshot = ComparativeRankingService().build({1: stored}, as_of=date(2026, 8, 31))
+
+    assert snapshot.ranks[0].tier == "IE"
+    assert "v2 thesis card is required for new rankings" in snapshot.ranks[0].flags
 
 
 def test_comparative_ranking_blocks_open_high_severity_challenge():

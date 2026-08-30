@@ -123,8 +123,14 @@ class ComparativeRankingService:
         for company_id, stored in analyses_by_company.items():
             stored = as_stored_analysis(stored)
             payload = stored.forward_scenario
-            if payload is None:
+            if stored.thesis_card_version != "individual-thesis-card-v2":
+                analysis = self._insufficient("v2 thesis card is required for new rankings")
+            elif payload is None:
                 analysis = self._insufficient("forward scenario analysis is missing")
+            elif stored.forward_scenario_policy_version != FORWARD_SCENARIO_POLICY_VERSION:
+                analysis = self._insufficient(
+                    "current forward scenario policy is required for new rankings"
+                )
             else:
                 analysis = forward_analysis_from_dict(payload)
 

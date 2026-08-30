@@ -44,12 +44,6 @@ class AgentPromptBuilder:
             ensure_ascii=False,
             indent=2,
         )
-        output_contract += (
-            "\n\nCompact forward-scenario authoring is also accepted. For each endpoint, "
-            "use `base_endpoint`, `base_assumptions`, and `overrides` as described "
-            "in the workflow; the execution boundary expands it before persistence."
-        )
-
         return AgentPrompt(
             system=(
                 "# Policy provenance\n\n"

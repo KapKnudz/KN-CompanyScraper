@@ -18,6 +18,11 @@ class StubDocumentRepository:
                 url="https://storage.mfn.se/q2.pdf",
                 published_at=datetime(2026, 7, 15, tzinfo=timezone.utc),
                 text="CEO outlook from the attached report.",
+                metadata={
+                    "structured_financial_values": [
+                        {"metric": "revenue", "period": "2026-H1", "value": 210.0}
+                    ]
+                },
             )
         ]
 
@@ -81,6 +86,9 @@ def test_research_evidence_contains_citable_documents_and_raw_insider_outcomes()
         "news:21",
     ]
     assert evidence.documents[0].text == "CEO outlook from the attached report."
+    assert evidence.documents[0].structured_financial_values == [
+        {"metric": "revenue", "period": "2026-H1", "value": 210.0, "period_end": None}
+    ]
 
     transaction = evidence.insider_transactions[0]
     assert transaction.source_id.startswith("insider:")
@@ -91,6 +99,9 @@ def test_research_evidence_contains_citable_documents_and_raw_insider_outcomes()
         "365d": 0.5,
     }
     assert "price return" in evidence.insider_methodology.lower()
+    assert "Free-float percentage is unavailable" in evidence.missing_information
+    assert "Named large-holder coverage is unavailable" in evidence.missing_information
+    assert "Ownership-change history is unavailable" in evidence.missing_information
 
 
 def test_research_evidence_does_not_score_insider_activity():

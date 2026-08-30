@@ -25,9 +25,11 @@ class ValuationResult:
     pe_percentile: float | None
     ev_ebit_percentile: float | None
 
-    # Historical positive EV/EBIT guardrails for forward sensitivity endpoints.
+    # Historical positive EV/EBIT guardrails for forward sensitivity bundles.
     ev_ebit_guardrail_low: float | None = None
     ev_ebit_guardrail_high: float | None = None
+    ev_ebit_base_ceiling: float | None = None
+    ev_ebit_bull_ceiling: float | None = None
     ev_ebit_history_count: int = 0
 
     # Raw-derived fields (computed from latest close × report fundamentals).

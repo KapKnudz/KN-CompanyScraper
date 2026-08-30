@@ -7,8 +7,15 @@ def register(subparsers):
     export_prompts_parser.add_argument("--max-candidates", type=int, default=5)
     export_prompts_parser.set_defaults(func=_cmd_export_agent_prompts)
 
+    export_thesis_parser = subparsers.add_parser(
+        "export-thesis-summaries",
+        help="Export validated v2 thesis summaries as JSON",
+    )
+    export_thesis_parser.add_argument("--output", required=True, type=Path)
+    export_thesis_parser.set_defaults(func=_cmd_export_thesis_summaries)
+
     check_readiness_parser = subparsers.add_parser(
-        "check-agent-readiness", help="Report deterministic blockers"
+        "check-agent-readiness", help="Report deterministic blockers and limitations"
     )
     check_readiness_parser.add_argument("--max-candidates", type=int, default=5)
     check_readiness_parser.set_defaults(func=_cmd_check_agent_readiness)
@@ -91,6 +98,25 @@ def _cmd_export_agent_prompts(args):
     print(f"Exported {len(paths)} agent prompts to {args.output_dir}.")
 
 
+def _cmd_export_thesis_summaries(args):
+    import json
+
+    from kncompanyscraper.models.stored_analysis import as_stored_analysis
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
+
+    analyses = AnalysisRepository().get_latest_validated_stock_analyses()
+    summaries = {
+        str(company_id): as_stored_analysis(analysis).thesis_summary
+        for company_id, analysis in sorted(analyses.items())
+        if as_stored_analysis(analysis).is_current_forward_scenario
+    }
+    args.output.write_text(
+        json.dumps(summaries, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Exported {len(summaries)} validated v2 thesis summaries to {args.output}.")
+
+
 def _cmd_check_agent_readiness(args):
     from kncompanyscraper.analysis.agent.readiness import AgentReadinessGate
     from kncompanyscraper.composition import (
@@ -111,6 +137,8 @@ def _cmd_check_agent_readiness(args):
         print(f"{candidate.rank}. {candidate.ticker}: {assessment.status}")
         for blocker in assessment.blockers:
             print(f"  - {blocker.code}: {blocker.message}")
+        for limitation in assessment.limitations:
+            print(f"  - limitation {limitation.code}: {limitation.message}")
         blocked += int(not assessment.ready)
     print(f"Ready: {len(candidates) - blocked}; blocked: {blocked}.")
 
@@ -315,7 +343,7 @@ def _cmd_sync_agent_evidence(args):
 
     for cs in shortlist:
         company = company_repo.get_by_id(cs.company_id)
-        if company and company.mfn_id:
+        if company:
             print(f"Syncing evidence for {company.name}...")
             try:
                 result = ingestion.sync_company(company)

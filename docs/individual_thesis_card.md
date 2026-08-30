@@ -1,15 +1,18 @@
-# Individual thesis card v1
+# Individual thesis card v2
 
-`individual-thesis-card-v1` is the common company-level output contract. The
+`individual-thesis-card-v2` is the common company-level output contract. The
 individual analyst receives no peer conclusions and must analyze the supplied
 company on its own evidence. The same contract applies to general companies,
 property companies, and banks; unsupported valuation methods remain visibly
 unavailable rather than being replaced with model arithmetic.
 
 `analysis_status` is separate from the investment `verdict`. A model-backed card
-can be persisted only with `analysis_status=complete`. Evidence-blocked,
-valuation-blocked, and method-unsupported packets stop at the deterministic
-readiness gate and must not be represented as ordinary `watch` conclusions.
+can be persisted only with `analysis_status=complete`. Evidence-blocked and
+method-unsupported packets stop at the deterministic readiness gate. A packet
+with valuation limitations may still produce a complete fundamental card, but
+the affected reverse-DCF or forward-scenario output remains unavailable and the
+card must be portfolio-ineligible. A missing valuation calculation is not by
+itself an ordinary `watch` conclusion.
 
 ## Evidence packet
 
@@ -21,7 +24,7 @@ Each packet contains:
 - deterministic latest-H1 versus prior-year-H1 framing when complete Q1/Q2
   pairs are available;
 - up to four primary report documents and eight company releases;
-- available insider events and completed cyclicality consensus.
+- available insider events and evidence-backed revenue-resilience assessment.
 - deterministic peer ranges, included/excluded peer reasons, and metric
   provenance when comparable coverage is available.
 
@@ -61,6 +64,15 @@ operating mechanism, required changes, supporting sources, contrary sources, and
 limitations. It contains no separate downside estimate: numeric downside remains
 the deterministic bear-case output.
 
+## Revenue resilience
+
+The card distinguishes contractual or subscription stickiness from transaction,
+usage, project, or order volume. It records recurring and variable drivers,
+observed revenue, margin, or cash-flow variability, source IDs, and limitations.
+`resilient`, `mixed`, and `variable` assessments require positive evidence;
+`unassessable` records an evidence gap rather than a confidence score. This
+assessment does not select the required-return hurdle.
+
 ## Timing
 
 Timing is the catalyst calendar within the fixed case horizon. Each catalyst has:
@@ -72,6 +84,17 @@ Timing is the catalyst calendar within the fixed case horizon. Each catalyst has
 
 An assumption horizon is not itself a catalyst. When `timing_assessment` and the
 overall case both specify a horizon, they must match.
+
+## Forward scenarios
+
+General-company cards contain one sourced `scenario_bundles` entry for each of
+`bear`, `base`, and `bull`. Each entry has one operating state and a low/high
+terminal EV/EBIT multiple range. The execution boundary calculates the
+corresponding price and annualized-return bands and stores them in
+`forward_scenario_analysis`; the model cannot author those calculated values.
+The public bear mechanism may describe multiple compression, fundamental
+impairment, or both. Base bands wider than 15 percentage points are
+`insufficient_evidence` and cannot enter an actionable ranking.
 
 ## Validation
 

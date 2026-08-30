@@ -1,5 +1,6 @@
 from dataclasses import dataclass, fields, is_dataclass, replace
 from datetime import date
+from math import isfinite
 import re
 
 from kncompanyscraper.analysis.agent.result_parser import (
@@ -20,7 +21,7 @@ class PersistedStockAnalysis:
 
 
 class AgentExecutionBoundary:
-    VALIDATION_VERSION = "agent-boundary-v19-management-ledger"
+    VALIDATION_VERSION = "agent-boundary-v20-thesis-v2"
     NO_INSIDER_ASSESSMENT = (
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
@@ -105,10 +106,11 @@ class AgentExecutionBoundary:
         self._normalize_assessment_claims(
             result.insider_claims, valuation_source_aliases
         )
-        result.risk_profile_evidence = [
+        resilience_source_ids = [
             valuation_source_aliases.get(source_id, source_id)
-            for source_id in result.risk_profile_evidence
+            for source_id in result.revenue_resilience.source_ids
         ]
+        result.revenue_resilience.source_ids = resilience_source_ids
         fact_source_ids = set()
         seen_facts = set()
         for heading_field in fields(result.company_fact_ledger):
@@ -151,27 +153,27 @@ class AgentExecutionBoundary:
             valuation_source_aliases,
         )
         forward_source_ids = set()
-        normalized_endpoints = []
-        for endpoint in result.forward_scenario_assumptions:
+        normalized_bundles = []
+        for bundle in result.scenario_bundles:
             replacements = {}
             for name in (
                 "revenue_cagr",
                 "ebit_margin",
-                "terminal_ev_ebit",
-                "net_debt",
+                "terminal_ev_ebit_low",
+                "terminal_ev_ebit_high",
                 "net_debt_change",
                 "share_count_growth",
                 "distributions_per_share",
             ):
-                assumption = getattr(endpoint, name)
+                assumption = getattr(bundle, name)
                 source_ids = tuple(
                     valuation_source_aliases.get(source_id, source_id)
                     for source_id in assumption.source_ids
                 )
                 forward_source_ids.update(source_ids)
                 replacements[name] = replace(assumption, source_ids=source_ids)
-            normalized_endpoints.append(replace(endpoint, **replacements))
-        result.forward_scenario_assumptions = normalized_endpoints
+            normalized_bundles.append(replace(bundle, **replacements))
+        result.scenario_bundles = normalized_bundles
         known_source_ids = (
             document_source_ids
             | insider_source_ids
@@ -185,7 +187,10 @@ class AgentExecutionBoundary:
                     "result cites unknown evidence source(s)",
                     {citation.source_id for citation in result.citations},
                 ),
-                ("risk profile cites unknown evidence source(s)", set(result.risk_profile_evidence)),
+                (
+                    "revenue resilience cites unknown evidence source(s)",
+                    set(result.revenue_resilience.source_ids),
+                ),
                 ("company facts cite unknown evidence source(s)", fact_source_ids),
                 ("thesis card cites unknown evidence source(s)", thesis_card_source_ids),
                 ("forward assumptions cite unknown evidence source(s)", forward_source_ids),
@@ -220,12 +225,16 @@ class AgentExecutionBoundary:
             insider_source_ids=insider_source_ids,
         )
         self._validate_activated_case(result, candidate)
-        self._validate_portfolio_eligibility(result)
-        self._validate_risk_profile(result, candidate)
+        self._validate_revenue_resilience(result)
         self._validate_reverse_dcf_assessment(result, candidate)
         result.forward_scenario_analysis = ForwardScenarioEngine().analyze(
             self._forward_scenario_inputs(result, candidate)
         )
+        reconciliation_limitations = self._financial_reconciliation_limitations(candidate)
+        result.confidence_limitations = list(
+            dict.fromkeys([*result.confidence_limitations, *reconciliation_limitations])
+        )
+        self._validate_portfolio_eligibility(result)
         confidence_checks = self._apply_confidence_cap(result, candidate, document_source_ids)
 
         insider_checks = []
@@ -266,12 +275,18 @@ class AgentExecutionBoundary:
             ),
             "warnings": list(result.forward_scenario_analysis.warnings),
             "net_debt_bridges": self._net_debt_bridges(result, candidate),
+            "capital_allocation_limitations": [
+                warning
+                for warning in result.forward_scenario_analysis.warnings
+                if any(
+                    term in warning.lower()
+                    for term in ("net_debt", "share_count", "distribution")
+                )
+            ],
         }
-        consensus = candidate.full_results.get("cyclicality_consensus") or {}
-        validation_metadata["risk_profile"] = {
-            "consensus_strength": self._field(consensus, "consensus_strength"),
-            "evidence_confidence": result.risk_profile_confidence,
-        }
+        validation_metadata["financial_reconciliation_limitations"] = (
+            reconciliation_limitations
+        )
         validation_metadata["management_credibility"] = management_coverage
         validation_metadata.update(
             {
@@ -281,7 +296,6 @@ class AgentExecutionBoundary:
                 "analysis_status": result.analysis_status,
                 "deterministic_value_checks": [
                     *deterministic_checks,
-                    "model-owned expected return components are null",
                     "forward scenario output recalculated from sourced bundles",
                 ],
                 "insider_checks": insider_checks,
@@ -325,9 +339,6 @@ class AgentExecutionBoundary:
             ):
                 cap = "medium"
                 limitations.append("Reverse-DCF expectations are unavailable or incomplete.")
-            if result.risk_profile == "unclassified":
-                cap = "medium"
-                limitations.append("The business-risk profile is unclassified.")
             if result.forward_scenario_analysis.status != "available":
                 cap = "medium"
                 limitations.append(
@@ -446,22 +457,42 @@ class AgentExecutionBoundary:
 
     @classmethod
     def _validate_model_owned_arithmetic(cls, result, candidate):
-        if result.valuation_scenarios:
-            raise StockAnalysisValidationError(
-                "forward valuation scenarios are not allowed by the reverse-only policy"
-            )
-
-        if any(value is not None for value in result.expected_return_components.values()):
-            raise StockAnalysisValidationError(
-                "model-generated expected return components are not allowed"
-            )
         cls._validate_prose_upside(result)
-        return ["forward valuation scenarios are disabled"], []
+        return ["forward scenario values are calculated at the execution boundary"], []
 
     @classmethod
     def _forward_scenario_inputs(cls, result, candidate):
         reverse_dcf = candidate.full_results.get("reverse_dcf")
         valuation = candidate.full_results.get("valuation")
+        operating_history = cls._field(reverse_dcf, "operating_history")
+        assumptions = cls._field(reverse_dcf, "assumptions")
+        current_multiple = cls._field(valuation, "raw_ev_ebit") or cls._field(
+            valuation, "ev_ebit"
+        )
+        base_ceiling = cls._field(valuation, "ev_ebit_base_ceiling")
+        bull_ceiling = cls._field(valuation, "ev_ebit_bull_ceiling")
+        guardrail_high = cls._field(valuation, "ev_ebit_guardrail_high")
+        if base_ceiling is None:
+            base_ceiling = guardrail_high
+        if bull_ceiling is None:
+            bull_ceiling = guardrail_high
+        if current_multiple is not None:
+            base_ceiling = max(current_multiple, base_ceiling or current_multiple)
+            bull_ceiling = max(current_multiple, bull_ceiling or current_multiple)
+
+        annual_growth = [
+            cls._field(point, "revenue_growth")
+            for point in (cls._field(operating_history, "annuals") or ())
+        ]
+        demonstrated_growth = cls._max_number(
+            *annual_growth,
+            cls._field(operating_history, "three_year_revenue_cagr"),
+            cls._field(operating_history, "five_year_revenue_cagr"),
+        )
+        demonstrated_margin = cls._max_number(
+            cls._field(operating_history, "peak_ebit_margin"),
+            cls._field(assumptions, "ebit_margin_start"),
+        )
         return ForwardScenarioInputs(
             current_price=cls._field(reverse_dcf, "current_price"),
             current_revenue=cls._field(reverse_dcf, "current_revenue"),
@@ -469,33 +500,39 @@ class AgentExecutionBoundary:
             current_net_debt=cls._field(reverse_dcf, "current_net_debt"),
             terminal_multiple_guardrail=(
                 cls._field(valuation, "ev_ebit_guardrail_low"),
-                cls._field(valuation, "ev_ebit_guardrail_high"),
+                guardrail_high,
             ),
-            endpoints=tuple(result.forward_scenario_assumptions),
+            bundles=tuple(result.scenario_bundles),
             ranking_model=candidate.ranking_model,
             price_currency=cls._field(reverse_dcf, "price_currency"),
             financial_currency=cls._field(reverse_dcf, "financial_currency"),
+            base_terminal_multiple_ceiling=base_ceiling,
+            bull_terminal_multiple_ceiling=bull_ceiling,
+            demonstrated_revenue_cagr=demonstrated_growth,
+            demonstrated_ebit_margin=demonstrated_margin,
+            case_horizon_months=result.case_horizon_months,
         )
+
+    @staticmethod
+    def _max_number(*values):
+        numbers = [
+            value
+            for value in values
+            if isinstance(value, (int, float)) and isfinite(value)
+        ]
+        return max(numbers) if numbers else None
 
     @classmethod
     def _selected_required_return(cls, result, candidate):
         reverse_dcf = candidate.full_results.get("reverse_dcf")
         required_return = cls._field(reverse_dcf, "required_return")
-        profiles = cls._field(required_return, "profiles") or {}
-        profile = (
-            result.risk_profile
-            if result.risk_profile != "unclassified"
-            else cls._field(required_return, "baseline_profile")
-        )
-        return cls._field(profiles.get(profile), "discount_rate")
+        return cls._field(required_return, "required_return")
 
     @staticmethod
     def _validate_scenario_characterization(result):
         texts = [
             result.one_sentence_thesis,
             result.activation_trigger or "",
-            result.business_model_assessment,
-            result.revenue_growth_case,
             *result.confirming_evidence,
             *result.disconfirming_evidence,
         ]
@@ -564,32 +601,65 @@ class AgentExecutionBoundary:
     def _net_debt_bridges(cls, result, candidate):
         reverse_dcf = candidate.full_results.get("reverse_dcf")
         current_net_debt = cls._field(reverse_dcf, "current_net_debt")
+        current_shares = cls._field(reverse_dcf, "current_shares")
         current_sources = cls._field(reverse_dcf, "assumption_sources") or {}
         current_net_debt_source = current_sources.get("current_net_debt") or current_sources.get(
             "net_debt"
         )
+        if current_net_debt_source is None:
+            latest_r12 = cls._field(
+                candidate.full_results.get("financial_history"), "latest_r12"
+            )
+            current_net_debt_source = cls._field(latest_r12, "source_id")
         if current_net_debt_source is None:
             current_net_debt_source_ids = []
         elif isinstance(current_net_debt_source, (list, tuple)):
             current_net_debt_source_ids = list(current_net_debt_source)
         else:
             current_net_debt_source_ids = [current_net_debt_source]
+        current_shares_source_ids = [
+            "deterministic:reverse_dcf:current_shares"
+        ] if current_shares is not None else []
         return [
             {
-                "endpoint": endpoint.key,
+                "case": bundle.case,
                 "current_net_debt": current_net_debt,
-                "net_debt_change": endpoint.net_debt_change.value,
-                "projected_net_debt": endpoint.net_debt.value,
+                "net_debt_change": bundle.net_debt_change.value,
+                "projected_net_debt": current_net_debt + bundle.net_debt_change.value
+                if current_net_debt is not None
+                else None,
                 "current_net_debt_source_ids": current_net_debt_source_ids,
-                "change_source_ids": list(endpoint.net_debt_change.source_ids),
-                "provenance_type": endpoint.net_debt_change.provenance_type,
-                "mechanism": endpoint.net_debt_change.mechanism,
-                "reconciles": current_net_debt is not None
-                and endpoint.net_debt.value
-                == current_net_debt + endpoint.net_debt_change.value,
+                "current_shares_source_ids": current_shares_source_ids,
+                "change_source_ids": list(bundle.net_debt_change.source_ids),
+                "provenance_type": bundle.net_debt_change.provenance_type,
+                "mechanism": bundle.net_debt_change.mechanism,
+                "reconciles": current_net_debt is not None,
+                "current_shares": current_shares,
+                "share_count_growth": bundle.share_count_growth.value,
+                "projected_shares": current_shares * (1 + bundle.share_count_growth.value)
+                if current_shares is not None
+                else None,
+                "distributions_per_share": bundle.distributions_per_share.value,
+                "share_count_assumption_status": cls._zero_assumption_status(
+                    bundle.share_count_growth.value,
+                    bundle.share_count_growth.rationale,
+                ),
+                "distribution_assumption_status": cls._zero_assumption_status(
+                    bundle.distributions_per_share.value,
+                    bundle.distributions_per_share.rationale,
+                ),
             }
-            for endpoint in result.forward_scenario_assumptions
+            for bundle in result.scenario_bundles
         ]
+
+    @staticmethod
+    def _zero_assumption_status(value, rationale):
+        if value == 0 and any(
+            phrase in rationale.lower()
+            for phrase in ("missing", "unavailable", "not provided", "unknown")
+        ):
+            return "analyst_sensitivity_missing_data"
+        return "explicit_or_source_backed"
 
     @classmethod
     def _valuation_provenance(cls, candidate):
@@ -600,8 +670,6 @@ class AgentExecutionBoundary:
         implied_expectations = cls._field(reverse_dcf, "implied_expectations") or {}
         required_return = cls._field(reverse_dcf, "required_return")
         normalization = cls._field(reverse_dcf, "normalization")
-        rate_profiles = cls._field(required_return, "profiles") or {}
-        sensitivities = cls._field(reverse_dcf, "discount_rate_sensitivities") or {}
         expectation_curve = cls._field(reverse_dcf, "expectation_curve") or ()
         return {
             "status": cls._field(reverse_dcf, "status"),
@@ -663,26 +731,11 @@ class AgentExecutionBoundary:
                 name: cls._field(required_return, name)
                 for name in (
                     "policy_version",
-                    "risk_free_rate",
-                    "risk_free_rate_date",
-                    "risk_free_rate_source",
-                    "equity_risk_premium",
                     "market_cap",
                     "size_bucket",
-                    "size_adjustment",
-                    "baseline_profile",
+                    "required_return",
+                    "source_date",
                 )
-            },
-            "discount_rate_profiles": {
-                name: {
-                    key: cls._field(profile, key)
-                    for key in (
-                        "label",
-                        "business_risk_adjustment",
-                        "discount_rate",
-                    )
-                }
-                for name, profile in rate_profiles.items()
             },
             "implied_expectations": {
                 name: {
@@ -711,22 +764,6 @@ class AgentExecutionBoundary:
                 }
                 for point in expectation_curve
             ],
-            "discount_rate_sensitivities": {
-                profile_name: {
-                    "label": cls._field(sensitivity, "label"),
-                    "discount_rate": cls._field(sensitivity, "discount_rate"),
-                    "business_risk_adjustment": cls._field(
-                        sensitivity, "business_risk_adjustment"
-                    ),
-                    "implied_expectations": cls._serialize_expectations(
-                        cls._field(sensitivity, "implied_expectations") or {}
-                    ),
-                    "expectation_curve": cls._serialize_expectation_curve(
-                        cls._field(sensitivity, "expectation_curve") or ()
-                    ),
-                }
-                for profile_name, sensitivity in sensitivities.items()
-            },
             "warnings": list(cls._field(reverse_dcf, "warnings") or []),
         }
 
@@ -849,25 +886,6 @@ class AgentExecutionBoundary:
             aliases[
                 f"full_results.reverse_dcf.implied_expectations.{assumption}"
             ] = source_id
-        sensitivities = cls._field(reverse_dcf, "discount_rate_sensitivities") or {}
-        for profile, sensitivity in sensitivities.items():
-            expectations = cls._field(sensitivity, "implied_expectations") or {}
-            for assumption, expectation in expectations.items():
-                source_id = (
-                    cls._field(expectation, "source_id")
-                    or f"valuation:reverse_dcf:{profile}:{assumption}"
-                )
-                aliases[source_id] = source_id
-                aliases[
-                    "full_results.reverse_dcf.discount_rate_sensitivities."
-                    f"{profile}.implied_expectations.{assumption}"
-                ] = source_id
-            expectation_curve = cls._field(sensitivity, "expectation_curve") or ()
-            for point in expectation_curve:
-                expectation = cls._field(point, "ebit_margin_expectation")
-                source_id = cls._field(expectation, "source_id")
-                if source_id:
-                    aliases[source_id] = source_id
         expectation_curve = cls._field(reverse_dcf, "expectation_curve") or ()
         for point in expectation_curve:
             expectation = cls._field(point, "ebit_margin_expectation")
@@ -876,56 +894,31 @@ class AgentExecutionBoundary:
                 aliases[source_id] = source_id
         return aliases
 
-    @classmethod
-    def _validate_risk_profile(cls, result, candidate):
-        consensus = candidate.full_results.get("cyclicality_consensus") or {}
-        if cls._field(consensus, "status") != "complete":
-            if result.risk_profile != "unclassified" or result.risk_profile_evidence:
-                raise StockAnalysisValidationError(
-                    "model-selected risk profiles require a completed classifier consensus"
-                )
+    @staticmethod
+    def _validate_revenue_resilience(result):
+        resilience = result.revenue_resilience
+        if resilience.assessment == "unassessable":
             return
+        if not resilience.source_ids:
+            raise StockAnalysisValidationError(
+                "revenue resilience assessments require documentary evidence"
+            )
+        for name in ("recurring_driver", "variable_driver", "cash_flow_observation"):
+            if not getattr(resilience, name).strip():
+                raise StockAnalysisValidationError(
+                    f"revenue resilience requires {name.replace('_', ' ')}"
+                )
 
-        expected_profile = cls._field(consensus, "risk_profile")
-        evidence = cls._field(consensus, "evidence") or ()
-        expected_evidence = {
-            cls._field(item, "source_id")
-            for item in evidence
-            if cls._field(item, "source_id")
-        }
-        expected_confidence = cls._field(consensus, "evidence_confidence")
-        if expected_confidence is None:
-            expected_confidence = "medium" if expected_evidence else "low"
-        if expected_confidence not in {"low", "medium", "high"}:
-            raise StockAnalysisValidationError(
-                "classifier consensus has invalid evidence confidence"
-            )
-        if expected_confidence in {"medium", "high"} and not expected_evidence:
-            raise StockAnalysisValidationError(
-                "medium/high risk profile confidence requires documentary evidence"
-            )
-        if result.risk_profile != expected_profile:
-            raise StockAnalysisValidationError(
-                "risk profile must match the completed classifier consensus"
-            )
-        if result.risk_profile_confidence != expected_confidence:
-            raise StockAnalysisValidationError(
-                "risk profile confidence must match classifier evidence confidence"
-            )
-        if set(result.risk_profile_evidence) != expected_evidence:
-            raise StockAnalysisValidationError(
-                "risk profile evidence must match classifier consensus evidence"
-            )
-
-        reverse_dcf = candidate.full_results.get("reverse_dcf")
-        sensitivities = cls._field(reverse_dcf, "discount_rate_sensitivities") or {}
-        if (
-            cls._field(reverse_dcf, "status") == "available"
-            and expected_profile not in sensitivities
-        ):
-            raise StockAnalysisValidationError(
-                "classifier consensus has no matching deterministic discount-rate sensitivity"
-            )
+    @classmethod
+    def _financial_reconciliation_limitations(cls, candidate):
+        history = candidate.full_results.get("financial_history")
+        framing = cls._field(history, "half_year_comparison")
+        limitations = cls._field(framing, "limitations") or []
+        return [
+            limitation
+            for limitation in limitations
+            if isinstance(limitation, str) and limitation.startswith("Report ")
+        ]
 
     @classmethod
     def _deterministic_source_aliases(cls, candidate):
@@ -949,15 +942,28 @@ class AgentExecutionBoundary:
             source_id = "deterministic:" + ":".join(path)
             aliases[source_id] = source_id
             aliases["full_results." + ".".join(path)] = source_id
-            if path[-1] == "source_id" and isinstance(value, str):
+            if (
+                path[-1] == "source_id"
+                or (len(path) >= 2 and path[-2] == "source_ids")
+            ) and isinstance(value, str):
                 aliases[value] = value
 
         visit(candidate.full_results, [])
-        consensus = candidate.full_results.get("cyclicality_consensus")
-        if consensus is not None:
-            source_id = "deterministic:cyclicality_consensus"
-            aliases[source_id] = source_id
-            aliases["full_results.cyclicality_consensus"] = source_id
+        for path in (
+            ("financial_history", "half_year_comparison"),
+            ("insider",),
+            ("reverse_dcf", "required_return"),
+            ("reverse_dcf", "expectation_curve"),
+        ):
+            value = candidate.full_results
+            for part in path:
+                value = cls._field(value, part)
+                if value is None:
+                    break
+            if value is not None:
+                source_id = "deterministic:" + ":".join(path)
+                aliases[source_id] = source_id
+                aliases["full_results." + ".".join(path)] = source_id
         reverse_dcf = candidate.full_results.get("reverse_dcf")
         if cls._field(reverse_dcf, "normalization") is not None:
             source_id = "deterministic:reverse_dcf:normalization"
@@ -1166,6 +1172,13 @@ class AgentExecutionBoundary:
             if result.reconsideration_trigger is not None:
                 raise StockAnalysisValidationError(
                     "investable cases cannot have a reconsideration trigger"
+                )
+            if (
+                result.forward_scenario_analysis is None
+                or result.forward_scenario_analysis.status != "available"
+            ):
+                raise StockAnalysisValidationError(
+                    "investable cases require an available forward scenario"
                 )
             return
 

@@ -43,8 +43,7 @@ class AgentCohortRepository(BaseRepository):
             (snapshot_month,),
         )
 
-    @staticmethod
-    def _get(where_clause: str, params: tuple) -> dict | None:
+    def _get(self, where_clause: str, params: tuple) -> dict | None:
         with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(

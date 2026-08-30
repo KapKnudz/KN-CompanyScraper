@@ -119,7 +119,10 @@ def test_incremental_boundary_persists_material_update_with_linkage_metadata():
     )
     context = ThesisUpdateContext(
         candidate=candidate,
-        current_thesis={"id": 9},
+        current_thesis={
+            "id": 9,
+            "content": {"thesis_card_version": "individual-thesis-card-v2"},
+        },
         current_facts=[],
         prior_source_ids=(),
         new_source_ids=("news:new",),
@@ -172,17 +175,17 @@ def test_incremental_boundary_preserves_thesis_for_no_material_change():
     assert accepted.persisted_analysis.analysis_id == 16
 
 
-def test_no_material_change_upgrades_legacy_thesis_with_empty_card_sections():
+def test_legacy_thesis_requires_full_reassessment_before_incremental_update():
     candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
     legacy = valid_result().to_dict()
     for field in (
-        "thesis_card_version",
         "evidence_as_of",
         "business_model_profile",
         "margin_expansion_case",
         "timing_assessment",
     ):
         legacy.pop(field)
+    legacy["thesis_card_version"] = "individual-thesis-card-v1"
     context = ThesisUpdateContext(
         candidate=candidate,
         current_thesis={"id": 9, "content": legacy},
@@ -195,14 +198,11 @@ def test_no_material_change_upgrades_legacy_thesis_with_empty_card_sections():
     stock_boundary = MagicMock()
     stock_boundary.persist_response.return_value = MagicMock(analysis_id=20)
 
-    accepted = ThesisUpdateExecutionBoundary(stock_boundary).persist_response(
-        update_response("no_material_change", []), context, "test-model"
-    )
-
-    assert accepted.persisted_analysis.analysis_id == 20
-    persisted = json.loads(stock_boundary.persist_response.call_args.args[0])
-    assert persisted["thesis_card_version"] == "individual-thesis-card-v1"
-    assert persisted["business_model_profile"]["summary"] == ""
+    with pytest.raises(StockAnalysisValidationError, match="full reassessment"):
+        ThesisUpdateExecutionBoundary(stock_boundary).persist_response(
+            update_response("no_material_change", []), context, "test-model"
+        )
+    stock_boundary.persist_response.assert_not_called()
 
 
 def test_no_material_change_ignores_calculated_forward_scenario_output():

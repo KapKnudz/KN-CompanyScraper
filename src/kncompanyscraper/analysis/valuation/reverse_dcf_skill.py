@@ -17,10 +17,7 @@ from kncompanyscraper.analysis.valuation.reverse_dcf import (
     ReverseDcfEngine,
     ReverseDcfInputs,
 )
-from kncompanyscraper.analysis.valuation.required_return_policy import (
-    RequiredReturnDecision,
-    RiskProfile,
-)
+from kncompanyscraper.analysis.valuation.required_return_policy import RequiredReturnDecision
 from kncompanyscraper.analysis.statistics import cagr
 from kncompanyscraper.analysis.date_utils import MAX_PRICE_AGE_DAYS
 from kncompanyscraper.borsdata.kpi_ids import KpiIds
@@ -50,16 +47,6 @@ class ImpliedExpectation:
     outside_direction: OutsideDirection | None = None
     required_value_hint: str | None = None
     reason: str | None = None
-
-
-@dataclass(frozen=True)
-class DiscountRateSensitivity:
-    profile: RiskProfile
-    label: str
-    discount_rate: float
-    business_risk_adjustment: float
-    implied_expectations: dict[str, ImpliedExpectation]
-    expectation_curve: tuple["GrowthMarginExpectation", ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -111,7 +98,6 @@ class ReverseDcfAnalysis:
     baseline_valuation: DcfValue | None = None
     implied_expectations: dict[str, ImpliedExpectation] | None = None
     expectation_curve: tuple[GrowthMarginExpectation, ...] | None = None
-    discount_rate_sensitivities: dict[str, DiscountRateSensitivity] | None = None
     missing_information: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
 
@@ -302,17 +288,6 @@ class ReverseDcfSkill(Skill):
             self._growth_margin_point(inputs, growth)
             for growth in self.EXPECTATION_CURVE_GROWTH_RATES
         )
-        sensitivities = {
-            profile: self._build_sensitivity(
-                inputs,
-                decision.solve_bounds,
-                profile,
-                rate_profile.label,
-                rate_profile.discount_rate,
-                rate_profile.business_risk_adjustment,
-            )
-            for profile, rate_profile in decision.required_return.profiles.items()
-        }
         return ReverseDcfAnalysis(
             status="available",
             policy_version=decision.policy_version,
@@ -336,47 +311,7 @@ class ReverseDcfSkill(Skill):
             baseline_valuation=baseline,
             implied_expectations=expectations,
             expectation_curve=expectation_curve,
-            discount_rate_sensitivities=sensitivities,
             warnings=decision.warnings + self._LIMITATIONS,
-        )
-
-    def _build_sensitivity(
-        self,
-        inputs: ReverseDcfInputs,
-        solve_bounds: dict[str, tuple[float, float]],
-        profile: RiskProfile,
-        label: str,
-        discount_rate: float,
-        business_risk_adjustment: float,
-    ) -> DiscountRateSensitivity:
-        sensitivity_inputs = replace(
-            inputs,
-            assumptions=replace(inputs.assumptions, discount_rate=discount_rate),
-        )
-        expectations = {
-            assumption: self._solve(
-                sensitivity_inputs,
-                assumption,
-                bounds,
-                source_prefix=f"valuation:reverse_dcf:{profile}",
-            )
-            for assumption, bounds in solve_bounds.items()
-        }
-        expectation_curve = tuple(
-            self._growth_margin_point(
-                sensitivity_inputs,
-                growth,
-                source_prefix=f"valuation:reverse_dcf:{profile}:curve",
-            )
-            for growth in self.EXPECTATION_CURVE_GROWTH_RATES
-        )
-        return DiscountRateSensitivity(
-            profile=profile,
-            label=label,
-            discount_rate=discount_rate,
-            business_risk_adjustment=business_risk_adjustment,
-            implied_expectations=expectations,
-            expectation_curve=expectation_curve,
         )
 
     def _solve(
