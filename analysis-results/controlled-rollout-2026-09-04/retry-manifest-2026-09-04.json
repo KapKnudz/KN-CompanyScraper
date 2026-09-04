@@ -1,0 +1,385 @@
+{
+  "manifest_version": "deterministic-retry-manifest-v1",
+  "created_date": "2026-09-04",
+  "created_by": "firstmate workstream 1",
+  "source_evidence": "Read-only DB/source-copy audit evidence from /Users/kasperknudas/firstmate/projects/KN-CompanyScraper; existing raw attempts were not mutated.",
+  "model_calls_made_in_workstream": 0,
+  "retry_policy": "Fresh jobs only after later remediation; do not resume, repair, overwrite, or revalidate preserved predecessors.",
+  "companies": [
+    {
+      "company_id": 149,
+      "ticker": "GULD",
+      "company_name": "Guldbrev",
+      "active_company": true,
+      "retry_candidate": true,
+      "fresh_job": {
+        "status": "pending_not_launched_in_workstream_1",
+        "job_id": null
+      },
+      "preserved_predecessor_job": {
+        "job_id": 1327,
+        "status": "failed",
+        "terminal_failure_reason": "validation_attempts_exhausted",
+        "failure_stage": "qualitative",
+        "validation_message": "qualitative validation failed with 2 violations:\n- ownership claims must cite supplied ownership/liquidity evidence: document:3, news:408\n- precise ownership claim requires a supplied deterministic field",
+        "packet_hash": "b38363fa7176f701abd22d5ffd168f0b9c5f4bb2c961e3be1a6de857b08febcb",
+        "prompt_contract_version": "qualitative-stage-prompt-v3",
+        "base_prompt_sha256": "37d0b46fa40c8ea27bbfb732c41e4492aa692b33acb8e9430b4c98ffc3e73c89",
+        "policy_versions": {
+          "qualitative": {
+            "name": "nordic-case-investing-policy",
+            "version": "1.28.0",
+            "sha256": "04aad8e22c8db7263edbc11304a3848d2e4001c76db35717be2a71cbf0df3adc"
+          },
+          "deterministic": {
+            "peer_comparison.policy_version": "peer-benchmark-v1",
+            "reverse_dcf.policy_version": "reverse-dcf-v11-market-cap-hurdle"
+          }
+        },
+        "raw_attempts": [
+          {
+            "raw_response_id": 290,
+            "model_response_id": "codex-exec-01a06b74-2535-72c3-a479-b7f208956a9f",
+            "attempt": 1,
+            "validation_status": "rejected",
+            "validation_message": "ownership claims must cite supplied ownership/liquidity evidence: document:3, news:408",
+            "raw_response_sha256": "a225fbea5c1d7e50c052dc9985d4284b44af536e1509636d41a48223c4efa409",
+            "raw_response_bytes": 34753
+          },
+          {
+            "raw_response_id": 291,
+            "model_response_id": "codex-exec-01a06b7c-bd57-7bc2-88a3-baa5938b1c57",
+            "attempt": 2,
+            "validation_status": "rejected",
+            "validation_message": "qualitative validation failed with 2 violations:\n- ownership claims must cite supplied ownership/liquidity evidence: document:3, news:408\n- precise ownership claim requires a supplied deterministic field",
+            "raw_response_sha256": "52c1bdbe7400fd159474480e6b7d79633b8371a5140dfb6e0024eba10576136b",
+            "raw_response_bytes": 35151
+          }
+        ]
+      }
+    },
+    {
+      "company_id": 4,
+      "ticker": "CLAS B",
+      "company_name": "Clas Ohlson",
+      "active_company": true,
+      "retry_candidate": true,
+      "fresh_job": {
+        "status": "pending_not_launched_in_workstream_1",
+        "job_id": null
+      },
+      "preserved_predecessor_job": {
+        "job_id": 1347,
+        "status": "failed",
+        "terminal_failure_reason": "validation_attempts_exhausted",
+        "failure_stage": "qualitative",
+        "validation_message": "ownership claims must cite supplied ownership/liquidity evidence: document:106, document:315",
+        "packet_hash": "facd8140437dfce433a95f7f1099596924feea3d2bdee62b8a155a7eccb5925a",
+        "prompt_contract_version": "qualitative-stage-prompt-v3",
+        "base_prompt_sha256": "1427abdad5a391b537ec513b85e0746690a1834759b432d7a0f2221330cb8c28",
+        "policy_versions": {
+          "qualitative": {
+            "name": "nordic-case-investing-policy",
+            "version": "1.28.0",
+            "sha256": "04aad8e22c8db7263edbc11304a3848d2e4001c76db35717be2a71cbf0df3adc"
+          },
+          "deterministic": {
+            "peer_comparison.policy_version": "peer-benchmark-v1",
+            "reverse_dcf.policy_version": "reverse-dcf-v11-market-cap-hurdle"
+          }
+        },
+        "raw_attempts": [
+          {
+            "raw_response_id": 305,
+            "model_response_id": "codex-exec-01a06bc5-d7db-7162-840e-12af055cb229",
+            "attempt": 1,
+            "validation_status": "rejected",
+            "validation_message": "ownership claims must cite supplied ownership/liquidity evidence: document:106, document:315",
+            "raw_response_sha256": "a55eacdcb4299967febec10af1dc0362673cee430bae58895509a822d99275d3",
+            "raw_response_bytes": 45309
+          },
+          {
+            "raw_response_id": 306,
+            "model_response_id": "codex-exec-01a06bd2-3916-7762-8d64-9adbab993d46",
+            "attempt": 2,
+            "validation_status": "rejected",
+            "validation_message": "ownership claims must cite supplied ownership/liquidity evidence: document:106, document:315",
+            "raw_response_sha256": "e33c5b3a33fb80384690ddf66efb77f99b011aa92870910d390e4a106ea6a1e8",
+            "raw_response_bytes": 45337
+          }
+        ]
+      }
+    },
+    {
+      "company_id": 128,
+      "ticker": "NELLY",
+      "company_name": "Nelly Group",
+      "active_company": true,
+      "retry_candidate": true,
+      "fresh_job": {
+        "status": "pending_not_launched_in_workstream_1",
+        "job_id": null
+      },
+      "preserved_predecessor_job": {
+        "job_id": 1367,
+        "status": "failed",
+        "terminal_failure_reason": "validation_attempts_exhausted",
+        "failure_stage": "qualitative",
+        "validation_message": "ownership claims must cite supplied ownership/liquidity evidence: news:587, research:missing_information",
+        "packet_hash": "191a8fdf4d65b87778a097cf35035c27ac7cca3da1cf78a5d4dfa0edeb54d77b",
+        "prompt_contract_version": "qualitative-stage-prompt-v3",
+        "base_prompt_sha256": "37f38fc90a133c4d4df04fa8d881288a2cf7ce19dbd69b62364bc2501d47a1a6",
+        "policy_versions": {
+          "qualitative": {
+            "name": "nordic-case-investing-policy",
+            "version": "1.28.0",
+            "sha256": "04aad8e22c8db7263edbc11304a3848d2e4001c76db35717be2a71cbf0df3adc"
+          },
+          "deterministic": {
+            "peer_comparison.policy_version": "peer-benchmark-v1",
+            "reverse_dcf.policy_version": "reverse-dcf-v11-market-cap-hurdle"
+          }
+        },
+        "raw_attempts": [
+          {
+            "raw_response_id": 318,
+            "model_response_id": "codex-exec-01a06bfa-b623-77a2-96cf-61a98bed96df",
+            "attempt": 1,
+            "validation_status": "rejected",
+            "validation_message": "ownership claims must cite supplied ownership/liquidity evidence: news:587, research:missing_information",
+            "raw_response_sha256": "a380f2694cedc2630df097589df9e8f50ab9a6e686dab554077c6410e4b48f2f",
+            "raw_response_bytes": 38748
+          },
+          {
+            "raw_response_id": 319,
+            "model_response_id": "codex-exec-01a06bff-5990-7632-9193-5e09a4f814e9",
+            "attempt": 2,
+            "validation_status": "rejected",
+            "validation_message": "ownership claims must cite supplied ownership/liquidity evidence: news:587, research:missing_information",
+            "raw_response_sha256": "a380f2694cedc2630df097589df9e8f50ab9a6e686dab554077c6410e4b48f2f",
+            "raw_response_bytes": 38748
+          }
+        ]
+      }
+    },
+    {
+      "company_id": 37,
+      "ticker": "BETS B",
+      "company_name": "Betsson",
+      "active_company": true,
+      "retry_candidate": true,
+      "fresh_job": {
+        "status": "pending_not_launched_in_workstream_1",
+        "job_id": null
+      },
+      "preserved_predecessor_job": {
+        "job_id": 1335,
+        "status": "failed",
+        "terminal_failure_reason": "validation_attempts_exhausted",
+        "failure_stage": "qualitative",
+        "validation_message": "verdict coherence conflict: operating latent requires reverse_dcf.status=available",
+        "packet_hash": "0c1252bbcf959a5f40c755aa8582e2ef3db45851f60396e678862e39754eae1c",
+        "prompt_contract_version": "qualitative-stage-prompt-v3",
+        "base_prompt_sha256": "a6d8f0ab4675cc55783e1272e4169320eed401ea57b0459d0c827eeeda89ef18",
+        "policy_versions": {
+          "qualitative": {
+            "name": "nordic-case-investing-policy",
+            "version": "1.28.0",
+            "sha256": "04aad8e22c8db7263edbc11304a3848d2e4001c76db35717be2a71cbf0df3adc"
+          },
+          "deterministic": {
+            "peer_comparison.policy_version": "peer-benchmark-v1",
+            "reverse_dcf.policy_version": "reverse-dcf-v11-market-cap-hurdle"
+          }
+        },
+        "raw_attempts": [
+          {
+            "raw_response_id": 296,
+            "model_response_id": "codex-exec-01a06b8f-74d6-7681-9043-0751a797f0f6",
+            "attempt": 1,
+            "validation_status": "rejected",
+            "validation_message": "ownership claims must cite supplied ownership/liquidity evidence: document:18",
+            "raw_response_sha256": "c110607d8261f287085fbed0fee3b19d415c0871c628ee07eb146f672d38801c",
+            "raw_response_bytes": 40531
+          },
+          {
+            "raw_response_id": 297,
+            "model_response_id": "codex-exec-01a06b97-c5c5-7870-b27b-f6f60dc10f49",
+            "attempt": 2,
+            "validation_status": "rejected",
+            "validation_message": "verdict coherence conflict: operating latent requires reverse_dcf.status=available",
+            "raw_response_sha256": "bf18f4b3d7ab6b9ca6e708bb4906f0eb06a8f279b10cff53b8579859564ea3b7",
+            "raw_response_bytes": 40486
+          }
+        ]
+      }
+    },
+    {
+      "company_id": 151,
+      "ticker": "VUXEN",
+      "company_name": "Vuxen Group",
+      "active_company": true,
+      "retry_candidate": true,
+      "fresh_job": {
+        "status": "pending_not_launched_in_workstream_1",
+        "job_id": null
+      },
+      "preserved_predecessor_job": {
+        "job_id": 1359,
+        "status": "failed",
+        "terminal_failure_reason": "validation_attempts_exhausted",
+        "failure_stage": "qualitative",
+        "validation_message": "verdict coherence conflict: price latent requires a concrete price or valuation condition",
+        "packet_hash": "eec953784623d7777e59a292cc73fb2a6f32ec9fabf702180237fa65ecc68a20",
+        "prompt_contract_version": "qualitative-stage-prompt-v3",
+        "base_prompt_sha256": "2b48956e1e78a8d798f1ebc797f0eaf348523d62f29f7dd60ab4adda20beb535",
+        "policy_versions": {
+          "qualitative": {
+            "name": "nordic-case-investing-policy",
+            "version": "1.28.0",
+            "sha256": "04aad8e22c8db7263edbc11304a3848d2e4001c76db35717be2a71cbf0df3adc"
+          },
+          "deterministic": {
+            "peer_comparison.policy_version": "peer-benchmark-v1",
+            "reverse_dcf.policy_version": "reverse-dcf-v11-market-cap-hurdle"
+          }
+        },
+        "raw_attempts": [
+          {
+            "raw_response_id": 314,
+            "model_response_id": "codex-exec-01a06be9-1b3a-7590-91ee-0b7fa22f230d",
+            "attempt": 1,
+            "validation_status": "rejected",
+            "validation_message": "qualitative validation failed with 2 violations:\n- management claims must cite supplied documents: deterministic:reverse_dcf:operating_history, financial:annual:2025-04-30, financial:annual:2026-04-30\n- ownership claims must cite supplied ownership/liquidity evidence: document:234",
+            "raw_response_sha256": "ad04e626e50313977ec5049da6bf4438f23a3a5da7e667bb07b479df1392ccfa",
+            "raw_response_bytes": 43420
+          },
+          {
+            "raw_response_id": 315,
+            "model_response_id": "codex-exec-01a06bee-7631-7c00-b655-b4f2c9c6f07e",
+            "attempt": 2,
+            "validation_status": "rejected",
+            "validation_message": "verdict coherence conflict: price latent requires a concrete price or valuation condition",
+            "raw_response_sha256": "2db409754e4931a4a3f93fef9137f20f6192ad2b7f762d1481a46a1bf2339c72",
+            "raw_response_bytes": 42818
+          }
+        ]
+      }
+    },
+    {
+      "company_id": 101,
+      "ticker": "LIME",
+      "company_name": "Lime Technologies",
+      "active_company": true,
+      "retry_candidate": true,
+      "fresh_job": {
+        "status": "pending_not_launched_in_workstream_1",
+        "job_id": null
+      },
+      "preserved_predecessor_job": {
+        "job_id": 1363,
+        "status": "failed",
+        "terminal_failure_reason": "validation_attempts_exhausted",
+        "failure_stage": "qualitative",
+        "validation_message": "verdict coherence conflict: price latent requires a concrete price or valuation condition",
+        "packet_hash": "7a160ba745e3c54a9c59df8b742fcfedbaf756bb51e1b20507106b980a8f05e4",
+        "prompt_contract_version": "qualitative-stage-prompt-v3",
+        "base_prompt_sha256": "14b612f7f45b256dd4819d4d14e101d36a033d206ab652f70866410ffee2a3f2",
+        "policy_versions": {
+          "qualitative": {
+            "name": "nordic-case-investing-policy",
+            "version": "1.28.0",
+            "sha256": "04aad8e22c8db7263edbc11304a3848d2e4001c76db35717be2a71cbf0df3adc"
+          },
+          "deterministic": {
+            "peer_comparison.policy_version": "peer-benchmark-v1",
+            "reverse_dcf.policy_version": "reverse-dcf-v11-market-cap-hurdle"
+          }
+        },
+        "raw_attempts": [
+          {
+            "raw_response_id": 316,
+            "model_response_id": "codex-exec-01a06bf2-8e5f-7a00-8254-94dec40c2e30",
+            "attempt": 1,
+            "validation_status": "rejected",
+            "validation_message": "mixed revenue resilience requires a supported variable driver",
+            "raw_response_sha256": "6cc0c7206bbc1b1b81fd70f81bbbc266246b72b3610f44e375740c5552dd0a4b",
+            "raw_response_bytes": 38645
+          },
+          {
+            "raw_response_id": 317,
+            "model_response_id": "codex-exec-01a06bf7-33c5-73a0-b9ed-46caaab5d168",
+            "attempt": 2,
+            "validation_status": "rejected",
+            "validation_message": "verdict coherence conflict: price latent requires a concrete price or valuation condition",
+            "raw_response_sha256": "7a17a715417efcfa1bb5dd31c8fcfdf9d2c6e869b55c8947c63452d93142f8cd",
+            "raw_response_bytes": 38685
+          }
+        ]
+      }
+    },
+    {
+      "company_id": 110,
+      "ticker": "BYGGP",
+      "company_name": "Byggpartner",
+      "active_company": true,
+      "retry_candidate": true,
+      "fresh_job": {
+        "status": "pending_not_launched_in_workstream_1",
+        "job_id": null
+      },
+      "preserved_predecessor_job": {
+        "job_id": 1355,
+        "status": "failed",
+        "terminal_failure_reason": "validation_attempts_exhausted",
+        "failure_stage": "qualitative",
+        "validation_message": "variable revenue resilience conflicts with recurring revenue model types",
+        "packet_hash": "771e301a5e044b72221fa6da41e4768e16b2039bc88e2e6d4be8282555693e51",
+        "prompt_contract_version": "qualitative-stage-prompt-v3",
+        "base_prompt_sha256": "99ec8f42687a5cbc8a88a5aa6ee5d60b575fa0c0604cae73d9af80885418e534",
+        "policy_versions": {
+          "qualitative": {
+            "name": "nordic-case-investing-policy",
+            "version": "1.28.0",
+            "sha256": "04aad8e22c8db7263edbc11304a3848d2e4001c76db35717be2a71cbf0df3adc"
+          },
+          "deterministic": {
+            "peer_comparison.policy_version": "peer-benchmark-v1",
+            "reverse_dcf.policy_version": "reverse-dcf-v11-market-cap-hurdle"
+          }
+        },
+        "raw_attempts": [
+          {
+            "raw_response_id": 312,
+            "model_response_id": "codex-exec-01a06be1-0316-7a81-a657-4c432e2933b3",
+            "attempt": 1,
+            "validation_status": "rejected",
+            "validation_message": "variable revenue resilience conflicts with recurring revenue model types",
+            "raw_response_sha256": "4eb63f759963ba4eb0460c60a5f4585ec3a47ff126eaf8f47cdb3ee42858f710",
+            "raw_response_bytes": 37598
+          },
+          {
+            "raw_response_id": 313,
+            "model_response_id": "codex-exec-01a06be5-ac83-78f3-9f81-cc4fc7e33efd",
+            "attempt": 2,
+            "validation_status": "rejected",
+            "validation_message": "variable revenue resilience conflicts with recurring revenue model types",
+            "raw_response_sha256": "121f3eb4c314c238d42908b6928e0107bcb9ac90ac7c0c02441e5e90d21033e1",
+            "raw_response_bytes": 37358
+          }
+        ]
+      }
+    }
+  ],
+  "excluded_methodology_cases": [
+    {
+      "company_id": 154,
+      "ticker": "NAVIGO STAM",
+      "company_name": "Navigo Invest",
+      "excluded_from_retry_manifest": true,
+      "classification": "holding/property methodology case",
+      "preserved_failed_job_id": 1379,
+      "reason": "Excluded by remediation plan until approved holding/property valuation methodology exists."
+    }
+  ]
+}
