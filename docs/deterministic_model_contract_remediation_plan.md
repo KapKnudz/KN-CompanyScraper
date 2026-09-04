@@ -98,16 +98,16 @@ methodology decision is complete.
 
 ### Tasks
 
-- [ ] Record the existing failed job IDs, raw response IDs, failure stage,
+- [x] Record the existing failed job IDs, raw response IDs, failure stage,
   validation message, packet hash, prompt-contract version, and policy versions
   for all seven retry candidates.
-- [ ] Create minimal, private-text-free fixtures that reproduce each failure
+- [x] Create minimal, private-text-free fixtures that reproduce each failure
   shape rather than copying entire live prompts or reports.
-- [ ] Add one characterization test per company-shaped failure before changing
+- [x] Add one characterization test per company-shaped failure before changing
   validator or prompt behavior.
-- [ ] Confirm that NAVIGO is classified as a methodology case and not included
+- [x] Confirm that NAVIGO is classified as a methodology case and not included
   in the seven-job retry manifest.
-- [ ] Store a dated retry manifest that maps each fresh job to its preserved
+- [x] Store a dated retry manifest that maps each fresh job to its preserved
   predecessor job for audit comparison without mutating the predecessor.
 
 ### Acceptance criteria
@@ -196,10 +196,10 @@ condition rather than introduce a second blocker.
 
 ### Tests
 
-- [ ] BETS B-shaped price-latent output has one valuation condition and a
-  complete trigger spec.
-- [ ] VUXEN- and LIME-shaped operating triggers identify a metric/event,
-  threshold or direction, evidence window, and observation requirement.
+- [ ] BETS B-shaped operating-latent output has one named operating mechanism
+  and a complete trigger spec.
+- [ ] VUXEN- and LIME-shaped price triggers identify a concrete valuation
+  condition, evidence window, and observation requirement.
 - [ ] Generic phrases such as "a lower price" or "better results" fail.
 - [ ] A trigger combining price and operating confirmation without selecting a
   dominant blocker fails.
