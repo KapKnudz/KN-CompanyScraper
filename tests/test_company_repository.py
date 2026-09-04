@@ -31,7 +31,7 @@ def test_set_borsdata_identity_updates_id_and_listing_currency():
     assert "SET borsdata_id = %s" in sql
     assert "sector_id = %s" in sql
     assert "branch_id = %s" in sql
-    assert params == (700, "SEK", "SEK", None, 1, 75, 7)
+    assert params == (700, "SEK", "SEK", None, 1, 75, None, None, 7)
 
 
 def test_upsert_watchlist_companies_creates_and_activates_new_company():

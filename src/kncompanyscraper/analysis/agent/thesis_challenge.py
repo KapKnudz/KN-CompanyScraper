@@ -6,9 +6,9 @@ from kncompanyscraper.analysis.agent.context_provenance import (
     deterministic_context_sha256,
 )
 from kncompanyscraper.analysis.agent.output_schema import (
-    THESIS_UPDATE_OUTPUT_CONTRACT,
+    QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
     _contract_to_json_schema,
-    thesis_update_json_schema,
+    qualitative_thesis_update_json_schema,
 )
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt, AgentPromptBuilder
 from kncompanyscraper.analysis.agent.result_parser import _parse_contract
@@ -163,12 +163,16 @@ class ThesisChallengeService:
 
     @staticmethod
     def _source_ids(evidence: dict) -> set[str]:
-        return {
+        source_ids = {
             item["source_id"]
             for key in ("documents", "insider_transactions")
             for item in evidence.get(key, [])
             if item.get("source_id")
         }
+        source_ids.update(
+            evidence.get("ownership_liquidity", {}).get("source_ids", [])
+        )
+        return source_ids
 
 
 @dataclass(frozen=True)
@@ -198,7 +202,8 @@ class ThesisChallengeResponsePromptBuilder:
             "Either preserve the thesis exactly with no_material_change, revise it in "
             "direct response to the challenge, or request a full reassessment. Do not "
             "introduce later evidence. Forward numeric outputs remain calculator-derived: "
-            "provide sourced scenario bundles and set forward_scenario_analysis to null. "
+            "provide only the revised qualitative thesis; a separate required "
+            "scenario-authoring stage handles scenario bundles and calculation. "
             "Return only the required JSON."
         )
         packet = {
@@ -214,7 +219,7 @@ class ThesisChallengeResponsePromptBuilder:
             "current_facts": context.current_facts,
             "original_evidence": evidence,
             "candidate": asdict(context.candidate),
-            "output_contract": THESIS_UPDATE_OUTPUT_CONTRACT,
+            "output_contract": QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
         }
         return AgentPrompt(
             system=system,
@@ -222,7 +227,7 @@ class ThesisChallengeResponsePromptBuilder:
             policy_name=self.POLICY_NAME,
             policy_version=self.POLICY_VERSION,
             policy_sha256=sha256(system.encode("utf-8")).hexdigest(),
-            output_schema=thesis_update_json_schema(),
+            output_schema=qualitative_thesis_update_json_schema(),
             schema_name="thesis_update",
         )
 

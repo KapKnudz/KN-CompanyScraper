@@ -1,7 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 from typing import Literal
 
+from kncompanyscraper.analysis.valuation.forward_scenario import (
+    ForwardScenarioEngine,
+    ForwardScenarioInputs,
+    ForwardScenarioReadiness,
+)
 
 ReadinessStatus = Literal[
     "ready",
@@ -9,6 +14,7 @@ ReadinessStatus = Literal[
     "valuation_blocked",
     "method_unsupported",
 ]
+EvidenceSubsectionStatus = Literal["available", "partial", "unavailable", "stale"]
 BlockerCategory = Literal["evidence", "valuation", "method"]
 
 
@@ -26,6 +32,9 @@ class AgentReadinessAssessment:
     status: ReadinessStatus
     blockers: tuple[ReadinessBlocker, ...] = ()
     limitations: tuple[ReadinessBlocker, ...] = ()
+    forward_scenario_readiness: ForwardScenarioReadiness | None = None
+    liquidity_status: EvidenceSubsectionStatus = "unavailable"
+    ownership_status: EvidenceSubsectionStatus = "unavailable"
 
     @property
     def ready(self) -> bool:
@@ -88,18 +97,34 @@ class AgentReadinessGate:
         ):
             limitations.append(
                 ReadinessBlocker(
-                    code="terminal_multiple_guardrail_unavailable",
+                    code="historical_terminal_multiple_range_unavailable",
                     category="valuation",
-                    message="positive ordered EV/EBIT guardrails are unavailable",
+                    message=(
+                        "historical EV/EBIT range is unavailable; use current or "
+                        "peer valuation anchors"
+                    ),
                 )
             )
 
+        forward_scenario_readiness = assess_forward_scenario_readiness(candidate)
+        ownership_liquidity = candidate.research_evidence.get(
+            "ownership_liquidity", {}
+        )
+        liquidity_status = _subsection_status(
+            ownership_liquidity.get("liquidity")
+        )
+        ownership_status = _subsection_status(
+            ownership_liquidity.get("ownership")
+        )
         return AgentReadinessAssessment(
             company_id=candidate.company_id,
             ticker=candidate.ticker,
             status=_status(blockers),
             blockers=tuple(blockers),
             limitations=tuple(limitations),
+            forward_scenario_readiness=forward_scenario_readiness,
+            liquidity_status=liquidity_status,
+            ownership_status=ownership_status,
         )
 
     def require_ready(self, candidates: list) -> tuple[AgentReadinessAssessment, ...]:
@@ -107,6 +132,47 @@ class AgentReadinessGate:
         blocked = tuple(item for item in assessments if not item.ready)
         if blocked:
             raise AgentReadinessError(blocked)
+        return assessments
+
+    def require_forward_scenario_ready(
+        self, candidates: list
+    ) -> tuple[AgentReadinessAssessment, ...]:
+        assessments = tuple(self.assess(candidate) for candidate in candidates)
+        blocked = []
+        for assessment in assessments:
+            readiness = assessment.forward_scenario_readiness
+            if readiness is None or readiness.status == "required":
+                continue
+            category = (
+                "method"
+                if readiness.status == "method_not_supported"
+                else "valuation"
+            )
+            code = (
+                "forward_method_unsupported"
+                if category == "method"
+                else "forward_scenario_inputs_missing"
+            )
+            blocker = ReadinessBlocker(
+                code=code,
+                category=category,
+                message=(
+                    "forward scenario readiness is "
+                    f"{readiness.status}: "
+                    + ", ".join(readiness.missing_inputs or readiness.warnings)
+                ),
+            )
+            blocked.append(
+                replace(
+                    assessment,
+                    status="method_unsupported"
+                    if category == "method"
+                    else "valuation_blocked",
+                    blockers=(*assessment.blockers, blocker),
+                )
+            )
+        if blocked:
+            raise AgentReadinessError(tuple(blocked))
         return assessments
 
 
@@ -123,6 +189,13 @@ def _status(blockers: list[ReadinessBlocker]) -> ReadinessStatus:
 
 def _field(value, name):
     return value.get(name) if isinstance(value, dict) else getattr(value, name, None)
+
+
+def _subsection_status(value) -> EvidenceSubsectionStatus:
+    status = _field(value, "status")
+    if status in {"available", "partial", "unavailable", "stale"}:
+        return status
+    return "unavailable"
 
 
 def _positive(value) -> bool:
@@ -159,3 +232,28 @@ def _reverse_dcf_blockers(reverse_dcf) -> list[ReadinessBlocker]:
         return matched
     detail = "; ".join(missing) or "reverse DCF is unavailable"
     return [ReadinessBlocker("reverse_dcf_unavailable", "valuation", detail)]
+
+
+def assess_forward_scenario_readiness(candidate) -> ForwardScenarioReadiness:
+    reverse_dcf = candidate.full_results.get("reverse_dcf") or {}
+    valuation = candidate.full_results.get("valuation") or {}
+    current_multiple = _field(valuation, "raw_ev_ebit") or _field(
+        valuation, "ev_ebit"
+    )
+    return ForwardScenarioEngine.assess_readiness(
+        ForwardScenarioInputs(
+            current_price=_field(reverse_dcf, "current_price"),
+            current_revenue=_field(reverse_dcf, "current_revenue"),
+            current_shares=_field(reverse_dcf, "current_shares"),
+            current_net_debt=_field(reverse_dcf, "current_net_debt"),
+            historical_terminal_multiple_range=(
+                _field(valuation, "ev_ebit_guardrail_low"),
+                _field(valuation, "ev_ebit_guardrail_high"),
+            ),
+            bundles=(),
+            ranking_model=candidate.ranking_model,
+            price_currency=_field(reverse_dcf, "price_currency"),
+            financial_currency=_field(reverse_dcf, "financial_currency"),
+            current_terminal_multiple=current_multiple,
+        )
+    )

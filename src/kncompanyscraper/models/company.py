@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 @dataclass
 class Company:
@@ -15,6 +15,8 @@ class Company:
     branch_id: int | None = None
     stock_price_currency: str | None = None
     report_currency: str | None = None
+    market_id: int | None = None
+    listing_date: date | None = None
 
     @property
     def listing_currency(self) -> str | None:

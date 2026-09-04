@@ -74,6 +74,12 @@ def run_borsdata_insiders_once():
     ).run(companies)
 
 
+def run_borsdata_holdings_once():
+    from kncompanyscraper.composition import build_borsdata_holdings_job
+
+    return build_borsdata_holdings_job().run(repository.get_active_companies())
+
+
 def run_comparative_ranking_once():
     def run():
         job = ComparativeRankingJob(
@@ -192,6 +198,9 @@ def configure_schedule():
     schedule.every(config.SCRAPE_INTERVAL_MINUTES).minutes.do(run_once)
     schedule.every().day.at(config.BORSDATA_SYNC_TIME).do(run_borsdata_once)
     schedule.every().day.at(config.BORSDATA_INSIDER_SYNC_TIME).do(run_borsdata_insiders_once)
+    schedule.every().day.at(config.BORSDATA_HOLDINGS_SYNC_TIME).do(
+        run_borsdata_holdings_once
+    )
     schedule.every().day.at(config.COMPARATIVE_RANKING_TIME).do(
         run_comparative_ranking_once
     )
@@ -207,11 +216,12 @@ def configure_schedule():
 def start():
     logger.info(
         "Scheduler starting. News every %d minutes; Börsdata daily at %s; "
-        "insiders at %s; comparative ranking check at %s; "
+        "insiders at %s; holdings at %s; comparative ranking check at %s; "
         "benchmark sync at %s; performance at %s.",
         config.SCRAPE_INTERVAL_MINUTES,
         config.BORSDATA_SYNC_TIME,
         config.BORSDATA_INSIDER_SYNC_TIME,
+        config.BORSDATA_HOLDINGS_SYNC_TIME,
         config.COMPARATIVE_RANKING_TIME,
         config.BENCHMARK_SYNC_TIME,
         config.RANKING_PERFORMANCE_TIME,

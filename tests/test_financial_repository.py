@@ -31,6 +31,12 @@ def make_report(year=2025):
         raw_payload={"year": year},
         gross_income=40,
         operating_cash_flow=18,
+        cash=30,
+        eps=2.5,
+        dividend_per_share=1.25,
+        investing_cash_flow=-6,
+        financing_cash_flow=4,
+        broken_fiscal_year=False,
     )
 
 
@@ -42,13 +48,23 @@ def test_save_reports_maps_typed_columns_and_raw_payload():
         "kncompanyscraper.repositories.base_repository.get_connection",
         return_value=connection,
     ):
-        FinancialRepository().save_reports(7, "year", [make_report()])
+        saved_report = make_report()
+        saved_report.report_date = date(2026, 2, 15)
+        FinancialRepository().save_reports(7, "year", [saved_report])
 
     sql, params = cursor.execute.call_args[0]
     assert "INSERT INTO financials" in sql
     assert "raw_payload" in sql
     assert params[:4] == (7, "year", date(2025, 12, 31), 100)
-    assert params[8:13] == (10, 50, 12, 1_000, 80)
+    assert params[8:16] == (10, 50, 12, 30, 2.5, 1.25, -6, 4)
+    assert params[16:22] == (
+        1_000,
+        80,
+        2025,
+        1,
+        date(2026, 2, 15),
+        False,
+    )
 
 
 def test_latest_report_is_loaded_by_local_company_id():
@@ -68,11 +84,18 @@ def test_latest_report_is_loaded_by_local_company_id():
             "report_year": 2025,
             "report_period": 1,
             "period_end": date(2025, 12, 31),
+            "report_date": date(2026, 2, 15),
+            "broken_fiscal_year": True,
             "currency": "SEK",
             "raw_payload": {
                 "year": 2025,
                 "cash_Flow_From_Investing_Activities": -6,
             },
+            "cash": 30,
+            "eps": 2.5,
+            "dividend_per_share": 1.25,
+            "investing_cash_flow": -6,
+            "financing_cash_flow": 4,
             "gross_income": 40,
             "operating_cash_flow": 18,
         }
@@ -93,6 +116,12 @@ def test_latest_report_is_loaded_by_local_company_id():
     assert report.gross_income == 40
     assert report.operating_cash_flow == 18
     assert report.investing_cash_flow == -6
+    assert report.cash == 30
+    assert report.eps == 2.5
+    assert report.dividend_per_share == 1.25
+    assert report.financing_cash_flow == 4
+    assert report.report_date == date(2026, 2, 15)
+    assert report.broken_fiscal_year is True
 
 
 def test_latest_report_as_of_applies_publication_lag():
@@ -115,3 +144,28 @@ def test_latest_report_as_of_applies_publication_lag():
 
     assert before_release.year == 2024
     assert after_release.year == 2025
+
+
+def test_reports_as_of_prefers_actual_report_date_when_available():
+    repository = FinancialRepository()
+    reports = [
+        Report(
+            revenue=100,
+            operating_profit=20,
+            ebit=20,
+            ebitda=25,
+            net_income=15,
+            free_cash_flow=12,
+            equity=50,
+            total_assets=80,
+            total_debt=10,
+            shares_outstanding=1_000,
+            year=2025,
+            period_end=date(2025, 12, 31),
+            report_date=date(2026, 3, 15),
+        )
+    ]
+
+    with patch.object(repository, "_get_reports", return_value=reports):
+        assert repository.get_reports_as_of(7, "year", date(2026, 3, 1)) == []
+        assert repository.get_reports_as_of(7, "year", date(2026, 3, 15)) == reports

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 
 
 @dataclass(frozen=True)
@@ -11,6 +12,15 @@ class Instrument:
     report_currency: str | None = None
     sector_id: int | None = None
     branch_id: int | None = None
+    market_id: int | None = None
+    listing_date: date | None = None
+
+
+@dataclass(frozen=True)
+class Market:
+    id: int
+    name: str | None
+    exchange_name: str | None = None
 
 
 def match_instrument(company, instruments: list[Instrument]) -> Instrument | None:

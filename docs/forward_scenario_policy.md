@@ -41,6 +41,17 @@ resulting diluted shares, share-count change, and cumulative distributions per
 share. A zero caused by missing data is labelled as an analyst sensitivity; it
 is not presented as an evidence-backed forecast.
 
+## Driver attribution
+
+`scenario_driver_attribution` uses `scenario-driver-attribution-shapley-v1`.
+For each bear, base, and bull low/high endpoint, it attributes the change in
+holding value per share against a no-change reference state: zero revenue
+growth, current EBIT margin, zero net-debt change, zero dilution, zero
+distributions, and current EV/EBIT. The Shapley value averages each driver's
+marginal contribution across all driver orderings, so contributions are
+additive and do not depend on an arbitrary waterfall order. Annualized-return
+contributions are not reported because compounding makes them non-additive.
+
 ## Scenario bundles
 
 Every company supplies exactly three complete bundles at one shared horizon:
@@ -59,19 +70,21 @@ fundamental impairment, or both. Bear drivers may not improve on base, and bull
 drivers may not worsen from base.
 
 Every assumption must be finite, sourced, and accompanied by a rationale.
-Terminal multiples must remain within deterministic historical guardrails.
-An out-of-range value makes the analysis `insufficient_evidence`; it cannot be
-rescued by a model-authored exception.
+Historical terminal multiples are anchors and optimistic ceilings, not a
+universal downside floor. Bear multiples may fall below historical p10; an
+out-of-range bear value is not invalid solely because it is below history.
 
 The base terminal multiple may not exceed the greater of the current raw
-EV/EBIT and the company's historical 25th percentile. The bull terminal
-multiple may not exceed the greater of the current raw EV/EBIT and the
-historical 75th percentile. Base bundles may not exceed demonstrated revenue
-growth or EBIT-margin ceilings. A bull bundle may exceed at most one of its
-demonstrated growth, margin, or terminal-multiple ceilings; stacking two or
-more makes the scenario insufficient evidence. Growth and margin comparisons
-use the versioned absolute tolerance of 0.005; the tolerance applies only to
-validation and does not alter valuation inputs.
+EV/EBIT and the supported base ceiling. The bull terminal multiple may not
+exceed the supported bull ceiling. When historical coverage is unavailable,
+current EV/EBIT is the base anchor and the missing history produces a warning,
+not a block. Without historical or peer support, base and bull may not assume
+multiple expansion. Base bundles may not exceed demonstrated revenue growth or
+EBIT-margin ceilings. A bull bundle may exceed at most one of its demonstrated
+growth, margin, or terminal-multiple ceilings; stacking two or more makes the
+scenario insufficient evidence. Growth and margin comparisons use the versioned
+absolute tolerance of 0.005; the tolerance applies only to validation and does
+not alter valuation inputs.
 
 Management guidance remains a management claim. It may anchor a base endpoint
 only when the credibility ledger and current operating evidence support it.
@@ -85,7 +98,7 @@ The critic reviews both inputs and method:
 - allowed 24-, 36-, or 48-month horizon;
 - complete sourced bundles;
 - revenue compounding and EBIT-margin units;
-- terminal-multiple guardrails and declared exceptions;
+- terminal-multiple anchors and supported ceilings;
 - net-debt reconciliation and deterministic diluted-share derivation;
 - distribution treatment and absence of double counting;
 - bear/base/bull ordering;

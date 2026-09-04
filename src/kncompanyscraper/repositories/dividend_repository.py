@@ -38,10 +38,32 @@ class DividendRepository(BaseRepository):
 
         with self._get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM company_dividends WHERE company_id = %s AND source = %s",
-                    (company_id, source),
-                )
+                if dividends:
+                    keys = ", ".join("(%s, %s, %s, %s)" for _ in dividends)
+                    key_params = [
+                        value
+                        for dividend in dividends
+                        for value in (
+                            dividend.ex_date,
+                            dividend.amount,
+                            dividend.currency,
+                            dividend.dividend_type,
+                        )
+                    ]
+                    cur.execute(
+                        f"""
+                        DELETE FROM company_dividends
+                        WHERE company_id = %s AND source = %s
+                          AND (ex_date, amount, currency, dividend_type)
+                              NOT IN ({keys})
+                        """,
+                        (company_id, source, *key_params),
+                    )
+                else:
+                    cur.execute(
+                        "DELETE FROM company_dividends WHERE company_id = %s AND source = %s",
+                        (company_id, source),
+                    )
                 for dividend in dividends:
                     if dividend.amount <= 0:
                         raise ValueError("dividend amount must be positive")
@@ -52,6 +74,11 @@ class DividendRepository(BaseRepository):
                             distribution_frequency, source, fetched_at
                         )
                         VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                        ON CONFLICT (
+                            company_id, ex_date, dividend_type, amount, currency, source
+                        ) DO UPDATE SET
+                            distribution_frequency = EXCLUDED.distribution_frequency,
+                            fetched_at = NOW()
                         """,
                         (
                             company_id,

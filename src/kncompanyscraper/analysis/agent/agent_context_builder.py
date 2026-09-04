@@ -1,4 +1,5 @@
 from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
+from kncompanyscraper.analysis.ranking.sector_score_rules import ranking_model_for_branch
 
 
 class AgentContextBuilder:
@@ -64,6 +65,21 @@ class AgentContextBuilder:
             if limit is not None:
                 candidates = candidates[:limit]
         return candidates
+
+    def build_company(self, company, results: dict) -> AgentCandidate:
+        """Build one candidate from an exact-company deterministic snapshot."""
+        research_evidence = self._research_evidence(company.id)
+        return AgentCandidate(
+            rank=0,
+            company_id=company.id,
+            ticker=company.ticker,
+            name=company.name,
+            ranking_model=ranking_model_for_branch(company.branch_id),
+            full_results=self._full_results(
+                company.id, results, research_evidence
+            ),
+            research_evidence=research_evidence,
+        )
 
     def _create_candidate(self, rank, cs, results) -> AgentCandidate:
         research_evidence = self._research_evidence(cs.company_id)

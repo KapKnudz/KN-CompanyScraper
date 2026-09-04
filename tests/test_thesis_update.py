@@ -6,6 +6,10 @@ import pytest
 from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
 from kncompanyscraper.analysis.agent.context_provenance import deterministic_context_sha256
 from kncompanyscraper.analysis.agent.output_schema import CompanyFact
+from kncompanyscraper.analysis.agent.output_schema import (
+    ActivationTriggerEvidence,
+    ActivationTriggerSpec,
+)
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
     parse_thesis_update_result,
@@ -32,6 +36,62 @@ def update_response(impact="thesis_strengthened", changed_sections=None):
             ),
             "thesis": valid_result().to_dict(),
         }
+    )
+
+
+def latent_update_response(*, evidence_status="unresolved", evidence_window="Q3 2026 report"):
+    thesis = valid_result()
+    thesis.verdict = "latent_case"
+    thesis.latent_case_type = "operating"
+    thesis.activation_trigger = "The EBIT margin trigger remains unresolved."
+    thesis.activation_trigger_spec = ActivationTriggerSpec(
+        unresolved_claim="The margin recovery is durable.",
+        observable_metric_or_event="EBIT margin in the Q3 2026 report.",
+        threshold_or_direction="Maintain at least 12%.",
+        evidence_window=evidence_window,
+        single_observation_sufficient=True,
+        observation_requirement="One report establishes the stated margin condition.",
+    )
+    thesis.activation_trigger_evidence = [
+        ActivationTriggerEvidence(
+            evidence_item="The new report tests the margin condition.",
+            status=evidence_status,
+            rationale="The supplied report is directly relevant to the stored trigger.",
+            source_ids=["news:new"],
+        )
+    ]
+    return json.dumps(
+        {
+            "impact": "thesis_strengthened",
+            "summary": "The stored trigger was evaluated.",
+            "changed_sections": ["triggers_and_break_conditions"],
+            "thesis": thesis.to_dict(),
+        }
+    )
+
+
+def latent_context():
+    candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
+    current = valid_result()
+    current.verdict = "latent_case"
+    current.latent_case_type = "operating"
+    current.activation_trigger = "The EBIT margin trigger remains unresolved."
+    current.activation_trigger_spec = ActivationTriggerSpec(
+        unresolved_claim="The margin recovery is durable.",
+        observable_metric_or_event="EBIT margin in the Q3 2026 report.",
+        threshold_or_direction="Maintain at least 12%.",
+        evidence_window="Q3 2026 report",
+        single_observation_sufficient=True,
+        observation_requirement="One report establishes the stated margin condition.",
+    )
+    return ThesisUpdateContext(
+        candidate=candidate,
+        current_thesis={"id": 9, "content": current.to_dict()},
+        current_facts=[],
+        prior_source_ids=("news:old",),
+        new_source_ids=("news:new",),
+        deterministic_context_sha256="hash",
+        deterministic_context_changed=False,
     )
 
 
@@ -69,6 +129,9 @@ def test_context_builder_supplies_only_new_sources_and_detects_unchanged_context
                 {"source_id": "news:new", "text": "New release"},
             ],
             "insider_transactions": [],
+            "ownership_liquidity": {
+                "source_ids": ["liquidity:borsdata:42:2026-08-16:20d"]
+            },
         },
     )
     repository = MagicMock()
@@ -81,7 +144,10 @@ def test_context_builder_supplies_only_new_sources_and_detects_unchanged_context
 
     context = ThesisUpdateContextBuilder(repository).build(candidate)
 
-    assert context.new_source_ids == ("news:new",)
+    assert context.new_source_ids == (
+        "news:new",
+        "liquidity:borsdata:42:2026-08-16:20d",
+    )
     assert [
         item["source_id"] for item in context.candidate.research_evidence["documents"]
     ] == ["news:new"]
@@ -326,6 +392,54 @@ def test_update_prompt_has_incremental_schema_and_current_thesis():
         "no_material_change"
     )
     assert "Current thesis and provenance" in prompt.user
+
+
+def test_incremental_update_must_record_trigger_evaluation():
+    context = latent_context()
+    response = json.loads(latent_update_response())
+    response["thesis"]["activation_trigger_evidence"] = []
+
+    with pytest.raises(StockAnalysisValidationError, match="must evaluate the stored activation trigger"):
+        ThesisUpdateExecutionBoundary(MagicMock()).persist_response(
+            json.dumps(response), context, "test-model"
+        )
+
+
+def test_unresolved_trigger_evaluation_can_be_recorded_without_changing_thesis():
+    context = latent_context()
+    response = json.loads(latent_update_response())
+    response["impact"] = "no_material_change"
+    response["changed_sections"] = []
+    stock_boundary = MagicMock()
+    stock_boundary.persist_response.return_value = MagicMock(analysis_id=21)
+
+    accepted = ThesisUpdateExecutionBoundary(stock_boundary).persist_response(
+        json.dumps(response), context, "test-model"
+    )
+
+    assert accepted.persisted_analysis.analysis_id == 21
+
+
+def test_incremental_update_cannot_roll_an_unresolved_trigger_forward():
+    context = latent_context()
+
+    with pytest.raises(StockAnalysisValidationError, match="cannot roll"):
+        ThesisUpdateExecutionBoundary(MagicMock()).persist_response(
+            latent_update_response(evidence_window="Q4 2026 report"),
+            context,
+            "test-model",
+        )
+
+
+def test_incremental_update_cannot_leave_a_confirmed_trigger_latent():
+    context = latent_context()
+
+    with pytest.raises(StockAnalysisValidationError, match="requires activation"):
+        ThesisUpdateExecutionBoundary(MagicMock()).persist_response(
+            latent_update_response(evidence_status="confirms"),
+            context,
+            "test-model",
+        )
 
 
 def test_update_service_revalidates_stored_response_without_model_call():

@@ -4,11 +4,16 @@ from importlib import resources
 import json
 
 from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
-from kncompanyscraper.analysis.agent.json_support import json_default
-from kncompanyscraper.analysis.agent.output_schema import (
-    STOCK_ANALYSIS_OUTPUT_CONTRACT,
-    stock_analysis_json_schema,
+from kncompanyscraper.analysis.agent.agent_packet import (
+    AgentCandidatePacket,
+    serialize_packet,
 )
+from kncompanyscraper.analysis.agent.packet_measurement import measure_packet
+from kncompanyscraper.analysis.agent.output_schema import (
+    QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
+    qualitative_stock_analysis_json_schema,
+)
+from kncompanyscraper.analysis.policy_versions import THESIS_CALIBRATION_POLICY_VERSION
 
 
 @dataclass(frozen=True)
@@ -20,11 +25,14 @@ class AgentPrompt:
     policy_sha256: str = ""
     output_schema: dict | None = None
     schema_name: str = "stock_analysis"
+    packet_measurement: dict | None = None
+    contract_version: str = ""
 
 
 class AgentPromptBuilder:
     POLICY_NAME = "nordic-case-investing-policy"
-    POLICY_VERSION = "1.25.0"
+    POLICY_VERSION = "1.28.0"
+    CONTRACT_VERSION = "qualitative-stage-prompt-v3"
 
     def build(self, candidate: AgentCandidate) -> AgentPrompt:
         policy = self._read_resource("resources/analyst_policy.md")
@@ -32,15 +40,10 @@ class AgentPromptBuilder:
         template = self._read_resource("prompts/stock_analysis_prompt.md")
         policy_sha256 = sha256(f"{policy}\n\n{workflow}".encode("utf-8")).hexdigest()
 
-        candidate_json = json.dumps(
-            asdict(candidate),
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-            default=json_default,
-        )
+        packet = AgentCandidatePacket.from_candidate(candidate)
+        candidate_json = serialize_packet(packet)
         output_contract = json.dumps(
-            STOCK_ANALYSIS_OUTPUT_CONTRACT,
+            QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
             ensure_ascii=False,
             indent=2,
         )
@@ -49,8 +52,16 @@ class AgentPromptBuilder:
                 "# Policy provenance\n\n"
                 f"- Name: `{self.POLICY_NAME}`\n"
                 f"- Version: `{self.POLICY_VERSION}`\n"
+                f"- Thesis calibration: `{THESIS_CALIBRATION_POLICY_VERSION}`\n"
                 f"- SHA-256: `{policy_sha256}`\n\n"
                 f"{policy}\n\n{workflow}"
+                "\n\n# Evidence catalog\n\n"
+                "Use the single `evidence_catalog` in the candidate packet for every "
+                "citation and structured source ID. For deterministic values, cite "
+                "the exact supplied path beginning with `full_results.`; the execution "
+                "boundary verifies it by safe traversal and normalizes it to a "
+                "canonical `deterministic:<path>` ID. Never invent, abbreviate, or "
+                "extend a path with a nonexistent field or index."
             ),
             user=template.format(
                 candidate_json=candidate_json,
@@ -59,7 +70,9 @@ class AgentPromptBuilder:
             policy_name=self.POLICY_NAME,
             policy_version=self.POLICY_VERSION,
             policy_sha256=policy_sha256,
-            output_schema=stock_analysis_json_schema(),
+            output_schema=qualitative_stock_analysis_json_schema(),
+            packet_measurement=asdict(measure_packet(packet, pretty=False)),
+            contract_version=self.CONTRACT_VERSION,
         )
 
     @staticmethod

@@ -87,6 +87,22 @@ def test_challenge_rejects_citations_outside_original_evidence():
     repository.save.assert_not_called()
 
 
+def test_challenge_accepts_original_buyback_and_short_source_ids():
+    evidence = {
+        "ownership_liquidity": {
+            "source_ids": [
+                "buyback:borsdata:42:2026-08-20",
+                "short:borsdata:42:2026-08-30",
+            ]
+        }
+    }
+
+    assert ThesisChallengeService._source_ids(evidence) == {
+        "buyback:borsdata:42:2026-08-20",
+        "short:borsdata:42:2026-08-30",
+    }
+
+
 def open_challenge(raw_analysis_id=None):
     return {
         "id": 7,

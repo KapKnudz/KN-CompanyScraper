@@ -76,13 +76,23 @@ Use the deterministic reverse DCF to identify alternative growth–margin combin
 
 Assess revenue resilience separately from the arithmetic. Compare recurring or contractual revenue with transaction, usage, project, or order volume, and describe observed operating or cash-flow variability when available. Keep uncertainty in `revenue_resilience.limitations`; never infer it from order timing alone. The deterministic required return is selected only by market-cap bucket and cannot be changed by this assessment.
 
+Use `resilient` only when persistence is evidenced by contracts, renewals,
+retention, or equivalent observations; use `mixed` only when both recurring and
+variable drivers are material and evidenced; use `variable` for primarily
+transaction, product, usage, project, or order-driven revenue; and use
+`unassessable` when the mechanism or persistence evidence is insufficient.
+Consumables, membership, a familiar brand, and possible repeat purchases do not
+establish recurring revenue. Licensing does not by itself establish recurring
+revenue: distinguish one-time rights and delivery agreements from sourced
+royalties, renewals, or other persistent contractual economics.
+
 Do not assert a forward return, fair value, price target, or upside percentage as a free-text model claim. A forward numeric output is permitted only when it is the reproducible result of individually stated, sourced, bounded assumptions accepted by the deterministic forward-scenario boundary. Present its bear, base, and bull ranges as sensitivity output, never as a point forecast or probability-weighted expected value. Historical valuation can anchor a terminal-multiple range but does not establish an entitlement to mean reversion.
 
 Forward sensitivities must separate multiple-compression bears from fundamental-impairment bears. Numeric downside comes only from the calculator's bear output. Qualitative judgment affects evidence confidence and challenge severity; it must not create a second competing downside estimate. Missing or invalid assumptions remain visible as insufficient evidence.
 
 Describe reverse-DCF expectations only as `plausible`, `demanding`, `unsupported`, or `unassessable`, using company-specific historical and prospective evidence. Never translate these labels into a score or apply generic numerical cutoffs. Missing comparative evidence means `unassessable`, not `unsupported`.
 
-Treat missing data as uncertainty, never as neutral or favorable evidence. Do not invent values. State what is missing and how it affects the verdict.
+Treat missing data as uncertainty, never as neutral or favorable evidence. Do not invent values. State what is missing and how it affects the verdict. Classify each missing-information item explicitly as `core` when it can change the business economics, material customer concentration or retention, financial normalization, balance-sheet integrity, valuation, or stated thesis mechanism; otherwise classify it as `supplemental`. Include a short conclusion-impact explanation for every item. Do not infer the class from vague keywords.
 
 ## Management and organizational DNA
 
@@ -132,7 +142,9 @@ Return one of four verdicts:
 
 - `reject`: the case fails a core requirement or has an unfavorable evidence-weighted setup.
 - `watch`: potentially relevant, but important evidence or economics are insufficient.
-- `latent_case`: the business is understood and the setup is credible, but a specified price or operating trigger is still required.
+- `latent_case`: the business is understood and the setup is credible, but exactly one specified `price` or `operating` trigger is still required. A price-latent case is credible but insufficient at the current price; an operating-latent case has sufficient return capacity but its operating mechanism remains unproven.
 - `activated_case`: the operating thesis, valuation, and current trigger align sufficiently for deeper human review.
 
 An `activated_case` is not an instruction to trade. Portfolio sizing requires portfolio-wide risk, liquidity, tax, and mandate context that is not available in a company-only analysis.
+
+Every latent case must provide one primary trigger with an unresolved claim, an observable company-specific metric or event, a threshold or directional result, an evidence window, and an explanation of why one observation is or is not sufficient. Do not use generic triggers such as `better results`, `more evidence`, or `two strong reports`. A multi-report window is valid only when it tests a named persistence risk such as acquisition integration, customer replacement, margin durability, or working-capital normalization.

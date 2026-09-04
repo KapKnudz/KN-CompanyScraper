@@ -22,6 +22,8 @@ class CompanyRepository(BaseRepository):
                 report_currency,
                 sector_id,
                 branch_id,
+                market_id,
+                listing_date,
                 last_updated
                 FROM companies
                 WHERE id = %s
@@ -48,6 +50,8 @@ class CompanyRepository(BaseRepository):
                 report_currency,
                 sector_id,
                 branch_id,
+                market_id,
+                listing_date,
                 last_updated
                 FROM companies
                 WHERE ticker = %s
@@ -57,6 +61,44 @@ class CompanyRepository(BaseRepository):
 
             row = cur.fetchone()
             return Company(**row) if row else None
+
+    def get_active_by_id(self, company_id: int) -> Company | None:
+        """Return a company only when it is currently on the active watchlist."""
+        with self._get_dict_cursor() as cur:
+            cur.execute(
+                """
+                SELECT c.id, c.name, c.ticker, c.mfn_slug, c.borsdata_id,
+                       c.isin, c.currency, c.stock_price_currency,
+                       c.report_currency, c.sector_id, c.branch_id, c.market_id,
+                       c.listing_date, c.last_updated
+                FROM companies c
+                JOIN watchlist w ON w.company_id = c.id
+                WHERE c.id = %s AND w.active = TRUE
+                """,
+                (company_id,),
+            )
+            row = cur.fetchone()
+            return Company(**row) if row else None
+
+    def get_active_by_ticker(self, ticker: str) -> Company | None:
+        """Return the active company matching a ticker case-insensitively."""
+        with self._get_dict_cursor() as cur:
+            cur.execute(
+                """
+                SELECT c.id, c.name, c.ticker, c.mfn_slug, c.borsdata_id,
+                       c.isin, c.currency, c.stock_price_currency,
+                       c.report_currency, c.sector_id, c.branch_id, c.market_id,
+                       c.listing_date, c.last_updated
+                FROM companies c
+                JOIN watchlist w ON w.company_id = c.id
+                WHERE UPPER(c.ticker) = UPPER(%s) AND w.active = TRUE
+                """,
+                (ticker,),
+            )
+            rows = cur.fetchall()
+            if len(rows) > 1:
+                raise ValueError(f"Ambiguous active ticker selector: {ticker}")
+            return Company(**rows[0]) if rows else None
 
     def create(self, company: Company) -> Company:
         with self._get_dict_cursor() as cur:
@@ -136,6 +178,8 @@ class CompanyRepository(BaseRepository):
                        c.report_currency,
                        c.sector_id,
                        c.branch_id,
+                       c.market_id,
+                       c.listing_date,
                        c.last_updated
                 FROM companies c
                          JOIN watchlist w
@@ -163,6 +207,8 @@ class CompanyRepository(BaseRepository):
                        c.report_currency,
                        c.sector_id,
                        c.branch_id,
+                       c.market_id,
+                       c.listing_date,
                        c.last_updated
                 FROM companies c
                 WHERE EXISTS (
@@ -183,6 +229,8 @@ class CompanyRepository(BaseRepository):
         sector_id: int | None,
         branch_id: int | None,
         report_currency: str | None = None,
+        market_id: int | None = None,
+        listing_date=None,
     ) -> None:
         with self._get_cursor() as cur:
             cur.execute(
@@ -194,6 +242,8 @@ class CompanyRepository(BaseRepository):
                     report_currency = COALESCE(%s, report_currency),
                     sector_id = %s,
                     branch_id = %s,
+                    market_id = %s,
+                    listing_date = %s,
                     last_updated = NOW()
                 WHERE id = %s
                 """,
@@ -204,9 +254,42 @@ class CompanyRepository(BaseRepository):
                     report_currency,
                     sector_id,
                     branch_id,
+                    market_id,
+                    listing_date,
                     company_id,
                 ),
             )
+
+    def upsert_borsdata_markets(self, markets: list) -> None:
+        with self._get_cursor() as cur:
+            for market in markets:
+                cur.execute(
+                    """
+                    INSERT INTO borsdata_markets (id, name, exchange_name, fetched_at)
+                    VALUES (%s, %s, %s, NOW())
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        exchange_name = EXCLUDED.exchange_name,
+                        fetched_at = NOW()
+                    """,
+                    (market.id, market.name, market.exchange_name),
+                )
+
+    def get_listing_identity(self, company_id: int) -> dict | None:
+        with self._get_dict_cursor() as cur:
+            cur.execute(
+                """
+                SELECT c.market_id,
+                       COALESCE(m.name, m.exchange_name) AS venue,
+                       c.listing_date
+                FROM companies c
+                LEFT JOIN borsdata_markets m ON m.id = c.market_id
+                WHERE c.id = %s
+                """,
+                (company_id,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
 
     def upsert_watchlist_companies(
         self,

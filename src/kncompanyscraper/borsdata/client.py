@@ -5,13 +5,18 @@ from datetime import date, datetime
 from kncompanyscraper import config
 from kncompanyscraper.logger import get_logger
 from kncompanyscraper.http_transport import request_with_retry
-from kncompanyscraper.borsdata.report import Report
+from kncompanyscraper.borsdata.report import InstrumentReportBundle, Report
 from kncompanyscraper.borsdata.kpi import Kpi
 from kncompanyscraper.borsdata.kpi_history import KpiHistory, KpiHistoryPoint
-from kncompanyscraper.borsdata.instrument import Instrument
+from kncompanyscraper.borsdata.instrument import Instrument, Market
 from kncompanyscraper.borsdata.stock_price import StockPrice
 from kncompanyscraper.borsdata.dividend import CashDividend
 from kncompanyscraper.models.insider_transaction import InsiderTransaction
+from kncompanyscraper.models.ownership_flow import (
+    BuybackEvent,
+    HoldingsInstrumentResult,
+    ShortInterestSnapshot,
+)
 
 logger = get_logger(__name__)
 
@@ -52,8 +57,25 @@ class BorsdataClient:
                 report_currency=item.get("reportCurrency"),
                 sector_id=item.get("sectorId"),
                 branch_id=item.get("branchId"),
+                market_id=item.get("marketId"),
+                listing_date=(
+                    date.fromisoformat(item["listingDate"][:10])
+                    if item.get("listingDate")
+                    else None
+                ),
             )
             for item in data.get("instruments") or []
+        ]
+
+    def get_markets(self) -> list[Market]:
+        data = self._get("/v1/markets")
+        return [
+            Market(
+                id=item["id"],
+                name=item.get("name"),
+                exchange_name=item.get("exchangeName"),
+            )
+            for item in data.get("markets") or []
         ]
 
     def get_kpi_history(self, instrument_id, kpi_id, report_type="year", price_type="mean", max_count=20):
@@ -74,20 +96,83 @@ class BorsdataClient:
 
         return KpiHistory(kpi_id=kpi_id, values=points)
 
-    def get_reports(self, instrument_id, report_type="year", max_count=20):
+    def get_report_bundles(
+        self,
+        instrument_ids,
+        max_year_count=20,
+        max_r12q_count=40,
+        original=False,
+    ) -> dict[int, InstrumentReportBundle]:
+        instrument_ids = list(instrument_ids)
+        if not instrument_ids:
+            raise ValueError("Börsdata report endpoint requires at least one instrument")
+        if len(set(instrument_ids)) != len(instrument_ids):
+            raise ValueError("Börsdata report endpoint does not accept duplicate instruments")
+        if len(instrument_ids) > 50:
+            raise ValueError("Börsdata report endpoint accepts at most 50 instruments")
+
         data = self._get(
-            f"/v1/instruments/{instrument_id}/reports/{report_type}",
-            {"maxCount": max_count},
+            "/v1/instruments/reports",
+            {
+                "instList": ",".join(str(value) for value in instrument_ids),
+                "maxYearCount": max_year_count,
+                "maxR12QCount": max_r12q_count,
+                "original": int(bool(original)),
+            },
         )
 
-        return [self._report_from_json(r) for r in data.get("reports") or []]
+        requested = set(instrument_ids)
+        bundles = {}
+        for item in data.get("reportList") or []:
+            instrument_id = item.get("instrument")
+            if instrument_id not in requested:
+                raise ValueError(
+                    "Börsdata report response included unexpected instrument "
+                    f"{instrument_id}"
+                )
+            if instrument_id in bundles:
+                raise ValueError(
+                    "Börsdata report response included duplicate instrument "
+                    f"{instrument_id}"
+                )
+            bundles[instrument_id] = InstrumentReportBundle(
+                instrument_id=instrument_id,
+                annual=tuple(
+                    self._report_from_json(report)
+                    for report in item.get("reportsYear") or []
+                ),
+                r12=tuple(
+                    self._report_from_json(report)
+                    for report in item.get("reportsR12") or []
+                ),
+                quarterly=tuple(
+                    self._report_from_json(report)
+                    for report in item.get("reportsQuarter") or []
+                ),
+                error=item.get("error"),
+            )
+
+        for instrument_id in instrument_ids:
+            if instrument_id not in bundles:
+                bundles[instrument_id] = InstrumentReportBundle(
+                    instrument_id=instrument_id,
+                    annual=(),
+                    r12=(),
+                    quarterly=(),
+                    error="Börsdata report response omitted instrument",
+                )
+        return bundles
 
     def get_stock_price(self, instrument_id, max_count=None):
         params = {"maxCount": max_count} if max_count is not None else None
         data = self._get(f"/v1/instruments/{instrument_id}/stockprices", params)
 
         return [
-            StockPrice(date=date.fromisoformat(p["d"][:10]), close=p["c"])
+            StockPrice(
+                date=date.fromisoformat(p["d"][:10]),
+                close=p["c"],
+                volume=p.get("v"),
+            )
             for p in data.get("stockPricesList") or []
         ]
 
@@ -145,23 +230,30 @@ class BorsdataClient:
     def get_insider_transactions(
         self,
         instrument_ids: list[int],
-    ) -> dict[int, list[InsiderTransaction]]:
+    ) -> dict[int, HoldingsInstrumentResult[InsiderTransaction]]:
         if not instrument_ids:
             return {}
-        if len(instrument_ids) > 50:
-            raise ValueError("Börsdata insider endpoint accepts at most 50 instruments")
+        self._validate_holdings_batch(instrument_ids, "insider")
 
         data = self._get(
             "/v1/holdings/insider",
             {"instList": ",".join(str(instrument_id) for instrument_id in instrument_ids)},
         )
-        transactions_by_instrument = {instrument_id: [] for instrument_id in instrument_ids}
+        requested = set(instrument_ids)
+        parsed = {}
 
         for instrument in data.get("list") or []:
             instrument_id = instrument.get("insId")
-            if instrument_id not in transactions_by_instrument:
-                continue
+            if instrument_id not in requested:
+                raise ValueError(
+                    f"Börsdata insider response included unexpected instrument {instrument_id}"
+                )
+            if instrument_id in parsed:
+                raise ValueError(
+                    f"Börsdata insider response included duplicate instrument {instrument_id}"
+                )
 
+            transactions = []
             for row in instrument.get("values") or []:
                 transaction_type = {19: "buy", 25: "sell"}.get(row.get("transactionType"))
                 transaction_date = row.get("transactionDate")
@@ -174,7 +266,7 @@ class BorsdataClient:
                 ):
                     continue
 
-                transactions_by_instrument[instrument_id].append(
+                transactions.append(
                     InsiderTransaction(
                         person_name=row["ownerName"],
                         person_role=row.get("ownerPosition"),
@@ -193,7 +285,115 @@ class BorsdataClient:
                     )
                 )
 
-        return transactions_by_instrument
+            parsed[instrument_id] = HoldingsInstrumentResult(
+                instrument_id,
+                tuple(transactions),
+                instrument.get("error"),
+            )
+
+        for instrument_id in instrument_ids:
+            parsed.setdefault(
+                instrument_id,
+                HoldingsInstrumentResult(
+                    instrument_id,
+                    error="Börsdata insider response omitted instrument",
+                ),
+            )
+        return parsed
+
+    def get_buybacks(
+        self, instrument_ids: list[int]
+    ) -> dict[int, HoldingsInstrumentResult[BuybackEvent]]:
+        self._validate_holdings_batch(instrument_ids, "buyback")
+        if not instrument_ids:
+            return {}
+        data = self._get(
+            "/v1/holdings/buyback",
+            {"instList": ",".join(str(value) for value in instrument_ids)},
+        )
+        requested = set(instrument_ids)
+        parsed = {}
+        for instrument in data.get("list") or []:
+            instrument_id = instrument.get("insId")
+            self._validate_holdings_response_instrument(
+                parsed, requested, instrument_id, "buyback"
+            )
+            events = tuple(
+                BuybackEvent(
+                    event_date=date.fromisoformat(row["date"][:10]),
+                    change_shares=row["change"],
+                    change_pct_raw=row["changeProc"],
+                    reported_price=row["price"],
+                    currency=row.get("currency"),
+                    treasury_shares=row["shares"],
+                    treasury_shares_pct_raw=row["sharesProc"],
+                    raw_payload=row,
+                )
+                for row in instrument.get("values") or []
+            )
+            parsed[instrument_id] = HoldingsInstrumentResult(
+                instrument_id, events, instrument.get("error")
+            )
+        for instrument_id in instrument_ids:
+            parsed.setdefault(
+                instrument_id,
+                HoldingsInstrumentResult(
+                    instrument_id,
+                    error="Börsdata buyback response omitted instrument",
+                ),
+            )
+        return parsed
+
+    def get_shorts(self) -> dict[int, ShortInterestSnapshot]:
+        data = self._get("/v1/holdings/shorts")
+        parsed = {}
+        for row in data.get("list") or []:
+            instrument_id = row.get("insId")
+            if instrument_id in parsed:
+                raise ValueError(
+                    f"Börsdata shorts response included duplicate instrument {instrument_id}"
+                )
+            if instrument_id is None:
+                raise ValueError("Börsdata shorts response included no instrument ID")
+            raw_date = row.get("lastTransactionDate")
+            parsed[instrument_id] = ShortInterestSnapshot(
+                instrument_id=instrument_id,
+                short_pct_raw=row.get("shortsProc"),
+                reported_holder_count=row.get("shortsHolders"),
+                average_short_pct_raw=row.get("shortsAvgProc"),
+                short_value_millions_raw=row.get("shortsMilj"),
+                average_short_value_millions_raw=row.get("shortsAvgMilj"),
+                last_transaction_date=(
+                    date.fromisoformat(raw_date[:10]) if raw_date else None
+                ),
+                days_to_cover_sum=row.get("dtcSum"),
+                days_to_cover_average=row.get("dtcAvg"),
+                trend_1w=row.get("trend1w"),
+                trend_1m=row.get("trend1m"),
+                trend_3m=row.get("trend3m"),
+                trend_6m=row.get("trend6m"),
+                error=row.get("error"),
+                raw_payload=row,
+            )
+        return parsed
+
+    @staticmethod
+    def _validate_holdings_batch(instrument_ids, endpoint):
+        if len(set(instrument_ids)) != len(instrument_ids):
+            raise ValueError(f"Börsdata {endpoint} endpoint does not accept duplicates")
+        if len(instrument_ids) > 50:
+            raise ValueError(f"Börsdata {endpoint} endpoint accepts at most 50 instruments")
+
+    @staticmethod
+    def _validate_holdings_response_instrument(parsed, requested, instrument_id, endpoint):
+        if instrument_id not in requested:
+            raise ValueError(
+                f"Börsdata {endpoint} response included unexpected instrument {instrument_id}"
+            )
+        if instrument_id in parsed:
+            raise ValueError(
+                f"Börsdata {endpoint} response included duplicate instrument {instrument_id}"
+            )
 
     def _report_from_json(self, r):
         return Report(
@@ -210,6 +410,10 @@ class BorsdataClient:
             gross_income=r.get("gross_Income"),
             operating_cash_flow=r.get("cash_Flow_From_Operating_Activities"),
             investing_cash_flow=r.get("cash_Flow_From_Investing_Activities"),
+            financing_cash_flow=r.get("cash_Flow_From_Financing_Activities"),
+            cash=r.get("cash_And_Equivalents"),
+            eps=r.get("earnings_Per_Share"),
+            dividend_per_share=r.get("dividend"),
             year=r.get("year"),
             period=r.get("period"),
             period_end=(
@@ -217,6 +421,12 @@ class BorsdataClient:
                 if r.get("report_End_Date")
                 else None
             ),
+            report_date=(
+                date.fromisoformat(r["report_Date"][:10])
+                if r.get("report_Date")
+                else None
+            ),
+            broken_fiscal_year=r.get("broken_Fiscal_Year"),
             currency=r.get("currency"),
             raw_payload=r,
         )

@@ -299,12 +299,26 @@ subsequent 90-, 180-, and 365-day unadjusted price returns calculated from store
 Börsdata prices. Missing future horizons remain null and no insider score is
 created.
 
-Call OpenAI for a deliberately bounded number of shortlisted companies,
-validate each structured response, and persist it to PostgreSQL:
+Run the deliberately bounded shortlist with the local Codex CLI, using
+high-reasoning Luna by default, then validate each structured response and
+persist it to PostgreSQL:
 
 ```
 python -m kncompanyscraper.main analyze-shortlist --max-candidates 1
 ```
+
+The local provider runs `codex exec` ephemerally with a read-only sandbox and
+the prompt-specific JSON schema. It requires an authenticated Codex CLI, not an
+OpenAI or DeepSeek API key. Override the defaults with `--model` and
+`--reasoning-effort`, or set `CODEX_LOCAL_MODEL`,
+`CODEX_LOCAL_REASONING_EFFORT`, and `CODEX_LOCAL_TIMEOUT_SECONDS`. Local
+responses that fail the deterministic semantic boundary receive at most one
+targeted repair attempt per stage; every rejected raw response remains stored.
+Scenario authoring has the same one-repair ceiling. A normal first pass therefore
+uses one qualitative call and one scenario call.
+If a run reaches that ceiling, resume from its latest rejected response with
+`--repair-rejected`; `--retry-rejected` remains the no-model path for
+revalidating after a local validator fix.
 
 To retry or analyze exact shortlisted companies without rebilling earlier
 candidates, add `--company-ids`, for example:
@@ -321,10 +335,47 @@ schema validation, citation checks, and persistence boundary:
 python -m kncompanyscraper.main analyze-shortlist --provider deepseek --max-candidates 1
 ```
 
-This command makes paid API calls. It requires the selected provider's API key;
-the mandatory candidate limit prevents accidentally analyzing the entire shortlist.
+The `openai` and `deepseek` providers make paid API calls and require the
+selected provider's API key. The mandatory candidate limit prevents
+accidentally analyzing the entire shortlist.
 For the five-company shadow pilot, pass `--max-candidates 5` after inspecting
 the exported prompts.
+
+Run a fresh, exact-company full reassessment for active watchlist companies with
+one selector form:
+
+```
+python -m kncompanyscraper.main analyze-company --company-ids 114
+python -m kncompanyscraper.main analyze-company --tickers "MSAB B" "AVT B"
+```
+
+Selectors must identify distinct active companies. The command refreshes every
+mandatory upstream domain before model invocation (reports, the mutable price
+window, dividends, required KPIs, historical valuation/fundamental inputs, and
+the MFN feed). Insider, buyback, short-interest, and other ownership-flow
+refreshes are optional; failures remain typed packet limitations and never look
+like confirmed empty coverage. The packet retains the latest two annual reports,
+the latest interim report and its comparable prior-year interim when available,
+plus material later MFN releases without duplicate report announcements.
+
+Exact-company analysis is sequential, does not run watchlist ranking, and does
+not read or update the monthly agent cohort. Monthly cohorts belong to shortlist
+and comparative batch selection, such as `refresh-agent-cohort` and the monthly
+ranking commands.
+
+If a run is interrupted after its packet is frozen, the CLI prints the exact
+resumable command. It can also be invoked directly:
+
+```
+python -m kncompanyscraper.main analyze-company --resume-job-id 1234
+```
+
+Resume uses the job's frozen packet, accepted stage artifacts, provider, model,
+reasoning effort, and policy settings. It cannot be combined with selectors or
+model-setting overrides. A completed job reports `already-completed` and does
+not create another analysis or thesis revision. Job results retain packet hash,
+raw stage artifact IDs, policy versions, model-call counts, packet sizes, and
+named stage timings for reproducibility and rollout diagnostics.
 
 Each accepted stock analysis also creates a versioned company-thesis revision.
 The response is an `individual-thesis-card-v2` with one shared schema for
@@ -349,6 +400,16 @@ without exposing raw model responses:
 python -m kncompanyscraper.main export-thesis-summaries \
   --output ./analysis-results/thesis-summaries.json
 ```
+
+Measure rollout coverage for the sourced, reconciled falsifiable-case contract
+across the latest accepted thesis for every company:
+
+```
+python -m kncompanyscraper.main audit-thesis-contract-coverage \
+  --output ./analysis-results/thesis-contract-coverage.json
+```
+
+The report is diagnostic only and does not modify stored analyses.
 
 Its structured fact ledger keeps concise observations under fixed business-model,
 revenue, margin, balance-sheet, management, ownership, valuation, and risk headings.

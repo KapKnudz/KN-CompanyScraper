@@ -20,6 +20,18 @@ def test_agent_cohort_candidates_passes_ranking_to_context_builder():
     )
 
 
+def test_local_agent_adapter_defaults_to_luna_high(monkeypatch):
+    monkeypatch.setattr(composition.config, "CODEX_LOCAL_MODEL", "gpt-5.6-luna")
+    monkeypatch.setattr(composition.config, "CODEX_LOCAL_REASONING_EFFORT", "high")
+    monkeypatch.setattr(composition.config, "CODEX_LOCAL_TIMEOUT_SECONDS", 321)
+
+    adapter = composition.build_agent_model_adapter("local", None, None)
+
+    assert adapter.model == "gpt-5.6-luna"
+    assert adapter.reasoning_effort == "high"
+    assert adapter.timeout_seconds == 321
+
+
 def test_adjudicate_monthly_ranking_supplies_challenge_repository():
     ranking_run = {"id": 42, "scores": []}
 
@@ -80,4 +92,20 @@ def test_scheduler_borsdata_run_uses_canonical_ingestion_factory():
     mapping.map_companies.assert_called_once_with(companies)
     factory.assert_called_once_with()
     job_factory.assert_called_once_with(ingestion, job_repository.return_value)
+    job.run.assert_called_once_with(companies)
+
+
+def test_scheduler_holdings_run_uses_canonical_factory():
+    companies = [MagicMock()]
+    job = MagicMock()
+    with (
+        patch.object(scheduler.repository, "get_active_companies", return_value=companies),
+        patch(
+            "kncompanyscraper.composition.build_borsdata_holdings_job",
+            return_value=job,
+        ) as factory,
+    ):
+        scheduler.run_borsdata_holdings_once()
+
+    factory.assert_called_once_with()
     job.run.assert_called_once_with(companies)

@@ -10,6 +10,14 @@ Evaluate only how the supplied new evidence and current deterministic results af
 6. Use `full_reassessment_required` for transformative acquisitions or disposals, accounting restatements, fundamental business-model changes, or evidence that makes the prior analytical frame invalid.
 7. For `no_material_change`, return no changed sections and preserve the substantive thesis. For every other impact, identify each materially changed section.
 8. Do not treat publication itself, management optimism, or a share-price move as confirmation. Cite every new or retained material fact with an allowed original source ID.
+9. Evaluate the stored `activation_trigger_spec` against each new evidence item. Record `confirms`, `weakens`, or `unresolved` in `activation_trigger_evidence` with the evidence source IDs. Do not roll an unresolved trigger forward into an equivalent new waiting period. Resolve, revise, or break the thesis when the stated metric or event has been observed.
+10. Re-test the falsification condition and each typed thesis-break test. Preserve
+    its category and prescribed response unless new evidence changes the actual
+    decision rule; do not silently move a failed condition or replace its
+    baseline.
+11. Re-select the strongest confirming and disconfirming evidence when the new
+    item is more decision-relevant than the stored item. Keep the broader
+    evidence lists separate from these two decisive fields.
 
 Research-evidence status fields are not under `full_results`. Cite only the exact supplied paths `research_evidence.insider_status` or `research_evidence.insider_event_count`; never prefix them with `full_results.`
 

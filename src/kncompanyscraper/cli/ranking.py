@@ -137,6 +137,14 @@ def _cmd_rank_analyzed_candidates(args):
         return
 
     ranking_run = ranking_repo.get_run(result.run_id)
+    analyses = AnalysisRepository().get_validated_stock_analyses_by_ids(
+        {
+            int(company_id): analysis_id
+            for company_id, analysis_id in (
+                (ranking_run.get("inputs_summary") or {}).get("analysis_ids", {})
+            ).items()
+        }
+    )
     print(f"# Comparative ranking (Run {result.run_id})\n")
     for case in ranking_run["scores"]:
         base_band = case.get("base_band")
@@ -152,6 +160,7 @@ def _cmd_rank_analyzed_candidates(args):
         downside_text = f"{downside:.1%}" if downside is not None else "n/a"
         print(
             f"{case['rank']:>3}. {case['ticker']:<8} "
+            f"verdict={_verdict_label(analyses.get(case.get('company_id'))):<17} "
             f"tier={case['tier']:<8} "
             f"base={base_return:<13} "
             f"downside={downside_text:<7} "
@@ -162,3 +171,12 @@ def _cmd_rank_analyzed_candidates(args):
         with args.output.open("w", encoding="utf-8") as f:
             json.dump(ranking_run, f, indent=2, ensure_ascii=False)
         print(f"Exported results to {args.output}")
+
+
+def _verdict_label(analysis):
+    if not isinstance(analysis, dict):
+        return "n/a"
+    content = analysis.get("content", {})
+    if content.get("verdict") == "latent_case" and content.get("latent_case_type"):
+        return f"{content['latent_case_type']}-latent"
+    return content.get("verdict", "n/a")

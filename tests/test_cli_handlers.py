@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from kncompanyscraper import main
 from kncompanyscraper.cli import agent, backtest, dividend, portfolio
+from kncompanyscraper.main import build_parser
 from kncompanyscraper.constants import BORSDATA_DIVIDEND_SOURCE
 from kncompanyscraper.models.enums import RankingModel
 
@@ -186,7 +187,7 @@ def test_select_portfolio_persists_and_optionally_exports_selection(tmp_path):
     assert '"status": "not_ready"' in output.read_text(encoding="utf-8")
 
 
-def test_export_thesis_summaries_exports_only_current_v2_analyses(tmp_path, capsys):
+def test_export_thesis_summaries_exports_only_enriched_v2_analyses(tmp_path, capsys):
     from kncompanyscraper.analysis.policy_versions import FORWARD_SCENARIO_POLICY_VERSION
     from kncompanyscraper.models.stored_analysis import StoredAnalysisDocument
 
@@ -201,11 +202,24 @@ def test_export_thesis_summaries_exports_only_current_v2_analyses(tmp_path, caps
                 "reverse_dcf_expectation_assessment": "unassessable",
                 "thesis_break_conditions": [],
                 "missing_information": [],
-                "scenario_bundles": [],
+                "scenario_bundles": [
+                    {"case": "bear"},
+                    {"case": "base"},
+                    {"case": "bull"},
+                ],
                 "forward_scenario_analysis": {
                     "status": "available",
                     "policy_version": FORWARD_SCENARIO_POLICY_VERSION,
-                    "bands": [],
+                    "bands": [
+                        {
+                            "case": case,
+                            "low_price": 1,
+                            "high_price": 2,
+                            "low_annualized_return": 0.01,
+                            "high_annualized_return": 0.02,
+                        }
+                        for case in ("bear", "base", "bull")
+                    ],
                 },
             },
             "metadata": {},
@@ -242,7 +256,7 @@ def test_sync_agent_evidence_handles_companies_without_explicit_mfn_slug(capsys)
     service = MagicMock()
     run = MagicMock()
     service.analyze_watchlist.return_value = run
-    run.shortlist_for_agent.return_value = [shortlist]
+    run.ranking.shortlist_for_agent.return_value = [shortlist]
     company = SimpleNamespace(id=153, name="Avtech", mfn_slug=None)
     ingestion = MagicMock()
     ingestion.sync_company.return_value = SimpleNamespace(
@@ -272,4 +286,184 @@ def test_sync_agent_evidence_handles_companies_without_explicit_mfn_slug(capsys)
         agent._cmd_sync_agent_evidence(SimpleNamespace(max_candidates=1))
 
     ingestion.sync_company.assert_called_once_with(company)
+    run.ranking.shortlist_for_agent.assert_called_once_with(top_n=1, max_total=1)
     assert "1 releases, 2 report PDFs added" in capsys.readouterr().out
+
+
+def test_analyze_shortlist_defaults_to_local_provider():
+    args = build_parser().parse_args(["analyze-shortlist"])
+
+    assert args.provider == "local"
+
+
+def test_audit_thesis_calibration_exports_flags_and_reads_history(tmp_path, capsys):
+    output = tmp_path / "calibration.json"
+    repository = MagicMock()
+    repository.get_latest_validated_stock_analyses.return_value = {}
+    repository.get_validated_stock_analysis_revisions.return_value = {}
+
+    with patch(
+        "kncompanyscraper.repositories.analysis_repository.AnalysisRepository",
+        return_value=repository,
+    ):
+        agent._cmd_audit_thesis_calibration(SimpleNamespace(output=output))
+
+    assert json.loads(output.read_text(encoding="utf-8"))["diagnostic_only"] is True
+    repository.get_validated_stock_analysis_revisions.assert_called_once_with()
+    assert "diagnostic thesis calibration audit" in capsys.readouterr().out
+
+
+def test_audit_thesis_contract_coverage_exports_latest_validated_cards(
+    tmp_path, capsys
+):
+    output = tmp_path / "contract-coverage.json"
+    repository = MagicMock()
+    repository.get_latest_validated_stock_analyses.return_value = {}
+
+    with patch(
+        "kncompanyscraper.repositories.analysis_repository.AnalysisRepository",
+        return_value=repository,
+    ):
+        agent._cmd_audit_thesis_contract_coverage(SimpleNamespace(output=output))
+
+    exported = json.loads(output.read_text(encoding="utf-8"))
+    assert exported["measurement_version"] == "thesis-contract-coverage-v2"
+    assert exported["coverage_rate"] is None
+    repository.get_latest_validated_stock_analyses.assert_called_once_with()
+    assert "0 complete (n/a)" in capsys.readouterr().out
+
+
+def test_audit_thesis_contract_coverage_command_is_registered():
+    args = build_parser().parse_args(
+        ["audit-thesis-contract-coverage", "--output", "coverage.json"]
+    )
+
+    assert args.func is agent._cmd_audit_thesis_contract_coverage
+
+
+def test_analyze_company_parses_one_selector_form_or_resume():
+    args = build_parser().parse_args(["analyze-company", "--tickers", "MSAB B", "AVT B"])
+
+    assert args.tickers == ["MSAB B", "AVT B"]
+    assert args.company_ids is None
+    assert args.resume_job_id is None
+
+    resumed = build_parser().parse_args(
+        ["analyze-company", "--resume-job-id", "1234"]
+    )
+    assert resumed.resume_job_id == 1234
+
+
+def test_repair_agent_report_parses_authoritative_source_fields():
+    args = build_parser().parse_args(
+        [
+            "repair-agent-report",
+            "--company-id",
+            "153",
+            "--title",
+            "AVTECH Annual Report 2024",
+            "--url",
+            "https://storage.mfn.se/avtech-annual-report-2024.pdf",
+            "--published-at",
+            "2025-04-11T08:30:00+02:00",
+            "--document-type",
+            "annual_report",
+        ]
+    )
+
+    assert args.company_id == 153
+    assert args.document_type == "annual_report"
+    assert args.func is agent._cmd_repair_agent_report
+
+
+def test_analyze_company_summary_distinguishes_all_outcomes(capsys):
+    outcomes = [
+        SimpleNamespace(ticker="A", status="accepted", job_id=1, resume_command="resume 1"),
+        SimpleNamespace(
+            ticker="B", status="blocked-before-model", job_id=2, resume_command="resume 2"
+        ),
+        SimpleNamespace(ticker="C", status="failed", job_id=3, resume_command="resume 3"),
+        SimpleNamespace(ticker="D", status="resumable", job_id=4, resume_command="resume 4"),
+        SimpleNamespace(
+            ticker="E", status="already-completed", job_id=5, resume_command="resume 5"
+        ),
+    ]
+    pipeline = MagicMock()
+    pipeline.resolve_companies.return_value = [SimpleNamespace(id=1)]
+    pipeline.run.return_value = outcomes
+
+    with (
+        patch(
+            "kncompanyscraper.composition.build_agent_model_adapter",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "kncompanyscraper.composition.build_company_analysis_pipeline",
+            return_value=pipeline,
+        ),
+    ):
+        agent._cmd_analyze_company(
+            SimpleNamespace(
+                company_ids=[1],
+                tickers=None,
+                resume_job_id=None,
+                provider=None,
+                model=None,
+                reasoning_effort=None,
+            )
+        )
+
+    output = capsys.readouterr().out
+    assert "A: accepted" in output
+    assert "B: blocked-before-model" in output
+    assert "C: failed" in output
+    assert "D: resumable" in output
+    assert "E: already-completed" in output
+    assert "Resume: resume 4" in output
+    assert (
+        "Summary: accepted=1, blocked-before-model=1, failed=1, "
+        "resumable=1, already-completed=1"
+    ) in output
+
+
+def test_analyze_company_does_not_enter_ranking_or_monthly_cohort_workflows():
+    pipeline = MagicMock()
+    pipeline.resolve_companies.return_value = [SimpleNamespace(id=114)]
+    pipeline.run.return_value = []
+    adapter = SimpleNamespace(model="gpt-5.6-luna", reasoning_effort="high")
+
+    with (
+        patch(
+            "kncompanyscraper.composition.build_agent_model_adapter",
+            return_value=adapter,
+        ),
+        patch(
+            "kncompanyscraper.composition.build_company_analysis_pipeline",
+            return_value=pipeline,
+        ),
+        patch(
+            "kncompanyscraper.composition.build_watchlist_analysis_service",
+            side_effect=AssertionError("exact-company analysis entered ranking"),
+        ),
+        patch(
+            "kncompanyscraper.composition.refresh_agent_cohort_snapshot",
+            side_effect=AssertionError("exact-company analysis entered cohort"),
+        ),
+    ):
+        agent._cmd_analyze_company(
+            SimpleNamespace(
+                company_ids=[114],
+                tickers=None,
+                resume_job_id=None,
+                provider=None,
+                model=None,
+                reasoning_effort=None,
+            )
+        )
+
+    pipeline.run.assert_called_once()
+    assert pipeline.run.call_args.kwargs["settings"] == {
+        "provider": "local",
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "high",
+    }

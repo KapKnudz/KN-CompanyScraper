@@ -90,12 +90,15 @@ class ValuationRepository(BaseRepository):
         currency: str | None = None,
     ) -> None:
         query = """
-            INSERT INTO stock_prices (company_id, price_date, close, currency, fetched_at)
-            VALUES (%s, %s, %s, %s, NOW())
+            INSERT INTO stock_prices (
+                company_id, price_date, close, currency, volume, fetched_at
+            )
+            VALUES (%s, %s, %s, %s, %s, NOW())
             ON CONFLICT (company_id, price_date)
             DO UPDATE SET
                 close = EXCLUDED.close,
                 currency = EXCLUDED.currency,
+                volume = EXCLUDED.volume,
                 fetched_at = NOW()
         """
         with self._get_conn() as conn:
@@ -103,15 +106,53 @@ class ValuationRepository(BaseRepository):
                 for price in prices:
                     cur.execute(
                         query,
-                        (company_id, price.date, price.close, price.currency or currency),
+                        (
+                            company_id,
+                            price.date,
+                            price.close,
+                            price.currency or currency,
+                            price.volume,
+                        ),
                     )
+
+    def get_liquidity_prices_as_of(
+        self,
+        company_id: int,
+        target_date: date,
+        limit: int = 120,
+    ) -> list[StockPrice]:
+        """Return the latest volume-bearing prices at or before *target_date*."""
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT price_date, close, currency, volume
+                    FROM stock_prices
+                    WHERE company_id = %s
+                      AND price_date <= %s
+                      AND volume IS NOT NULL
+                    ORDER BY price_date DESC
+                    LIMIT %s
+                    """,
+                    (company_id, target_date, limit),
+                )
+                rows = cur.fetchall()
+        return [
+            StockPrice(
+                date=row["price_date"],
+                close=float(row["close"]),
+                currency=row["currency"],
+                volume=int(row["volume"]),
+            )
+            for row in rows
+        ]
 
     def get_latest_stock_price(self, company_id: int) -> StockPrice | None:
         with self._get_conn() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
-                    SELECT price_date, close, currency
+                    SELECT price_date, close, currency, volume
                     FROM stock_prices
                     WHERE company_id = %s
                     ORDER BY price_date DESC
@@ -127,6 +168,7 @@ class ValuationRepository(BaseRepository):
             date=row["price_date"],
             close=float(row["close"]),
             currency=row["currency"],
+            volume=int(row["volume"]) if row.get("volume") is not None else None,
         )
 
     def get_stock_price_on_date(
@@ -140,7 +182,7 @@ class ValuationRepository(BaseRepository):
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
-                    SELECT price_date, close, currency
+                    SELECT price_date, close, currency, volume
                     FROM stock_prices
                     WHERE company_id = %s AND price_date <= %s
                     ORDER BY price_date DESC
@@ -157,6 +199,7 @@ class ValuationRepository(BaseRepository):
             date=row["price_date"],
             close=float(row["close"]),
             currency=row["currency"],
+            volume=int(row["volume"]) if row.get("volume") is not None else None,
         )
 
     def get_stock_price_on_or_after(
@@ -170,7 +213,7 @@ class ValuationRepository(BaseRepository):
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
-                    SELECT price_date, close, currency
+                    SELECT price_date, close, currency, volume
                     FROM stock_prices
                     WHERE company_id = %s AND price_date >= %s
                     ORDER BY price_date
@@ -187,6 +230,7 @@ class ValuationRepository(BaseRepository):
             date=row["price_date"],
             close=float(row["close"]),
             currency=row["currency"],
+            volume=int(row["volume"]) if row.get("volume") is not None else None,
         )
 
     def get_stock_price_bounds(self, company_id: int) -> tuple[date, date] | None:

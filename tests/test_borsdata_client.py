@@ -9,8 +9,8 @@ from kncompanyscraper.borsdata.client import BorsdataClient
 from kncompanyscraper.borsdata.kpi import Kpi
 from kncompanyscraper.borsdata.kpi_history import KpiHistory
 from kncompanyscraper.borsdata.stock_price import StockPrice
-from kncompanyscraper.borsdata.report import Report
-from kncompanyscraper.borsdata.instrument import Instrument
+from kncompanyscraper.borsdata.report import InstrumentReportBundle, Report
+from kncompanyscraper.borsdata.instrument import Instrument, Market
 from kncompanyscraper.borsdata.dividend import CashDividend
 
 MOCKS_DIR = Path(__file__).resolve().parent / "mocks"
@@ -48,6 +48,8 @@ class TestBorsdataClient:
                     "reportCurrency": "SEK",
                     "sectorId": 1,
                     "branchId": 75,
+                    "marketId": 4,
+                    "listingDate": "2020-02-03T00:00:00",
                 }
             ]
         }
@@ -59,7 +61,38 @@ class TestBorsdataClient:
         result = BorsdataClient(api_key="test").get_instruments()
 
         assert result == [
-            Instrument(42, "Testbolaget", "SE0000000042", "TEST", "SEK", "SEK", 1, 75)
+            Instrument(
+                42,
+                "Testbolaget",
+                "SE0000000042",
+                "TEST",
+                "SEK",
+                "SEK",
+                1,
+                75,
+                4,
+                date(2020, 2, 3),
+            )
+        ]
+
+    def test_get_markets_maps_venue_identity(self, monkeypatch):
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: FakeResponse(
+                {
+                    "markets": [
+                        {
+                            "id": 4,
+                            "name": "Stockholm",
+                            "exchangeName": "Nasdaq Stockholm",
+                        }
+                    ]
+                }
+            ),
+        )
+
+        assert BorsdataClient(api_key="test").get_markets() == [
+            Market(4, "Stockholm", "Nasdaq Stockholm")
         ]
 
     def test_init_raises_when_no_api_key(self, monkeypatch):
@@ -95,19 +128,82 @@ class TestBorsdataClient:
         assert [p.value for p in result.values] == [12.50, 14.20, 16.80, 15.90, 18.50]
         assert [p.period for p in result.values] == [1, 1, 1, 1, 1]
 
-    def test_get_reports_maps_reports(self, monkeypatch):
-        payload = load_mock("reports_mock.json")
+    def test_get_report_bundles_maps_reports_and_explicit_batch_parameters(self, monkeypatch):
+        reports = load_mock("reports_mock.json")["reports"]
+        payload = {
+            "reportList": [
+                {
+                    "instrument": 3,
+                    "reportsYear": reports,
+                    "reportsQuarter": reports[:1],
+                    "reportsR12": reports[:2],
+                }
+            ]
+        }
+        requests_seen = []
+
+        def fake_get(url, params, timeout):
+            requests_seen.append((url, params, timeout))
+            return FakeResponse(payload)
+
         monkeypatch.setattr(
             "kncompanyscraper.borsdata.client.requests.get",
-            lambda url, params, timeout: FakeResponse(payload),
+            fake_get,
         )
 
         client = BorsdataClient(api_key="test")
-        result = client.get_reports(3)
+        result = client.get_report_bundles(
+            [3], max_year_count=20, max_r12q_count=40, original=False
+        )
 
-        assert len(result) == 5
-        assert all(isinstance(r, Report) for r in result)
-        assert result[-1].revenue == 550_000_000
+        assert isinstance(result[3], InstrumentReportBundle)
+        assert len(result[3].annual) == 5
+        assert len(result[3].quarterly) == 1
+        assert len(result[3].r12) == 2
+        assert all(isinstance(r, Report) for r in result[3].annual)
+        assert result[3].annual[-1].revenue == 550_000_000
+        assert requests_seen[0][0].endswith("/v1/instruments/reports")
+        assert requests_seen[0][1] == {
+            "instList": "3",
+            "maxYearCount": 20,
+            "maxR12QCount": 40,
+            "original": 0,
+            "authKey": "test",
+        }
+
+    @pytest.mark.parametrize(
+        "instrument_ids",
+        [([], "at least one"), ([3, 3], "duplicate"), (list(range(51)), "at most 50")],
+    )
+    def test_get_report_bundles_rejects_invalid_batches(self, instrument_ids):
+        with pytest.raises(ValueError, match=instrument_ids[1]):
+            BorsdataClient(api_key="test").get_report_bundles(instrument_ids[0])
+
+    def test_get_report_bundles_marks_omitted_and_preserves_per_instrument_errors(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: FakeResponse(
+                {"reportList": [{"instrument": 3, "error": "NOT_ACTIVE"}]}
+            ),
+        )
+
+        result = BorsdataClient(api_key="test").get_report_bundles([3, 4])
+
+        assert result[3].error == "NOT_ACTIVE"
+        assert result[4].error == "Börsdata report response omitted instrument"
+
+    def test_get_report_bundles_rejects_unexpected_response_instrument(self, monkeypatch):
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: FakeResponse(
+                {"reportList": [{"instrument": 99}]}
+            ),
+        )
+
+        with pytest.raises(ValueError, match="unexpected instrument 99"):
+            BorsdataClient(api_key="test").get_report_bundles([3])
 
     def test_report_mapping_preserves_missing_values_without_fabricating_ebitda(self):
         report = BorsdataClient(api_key="test")._report_from_json(
@@ -115,7 +211,14 @@ class TestBorsdataClient:
                 "year": 2025,
                 "period": 1,
                 "operating_Income": 12.0,
+                "cash_And_Equivalents": 30.0,
+                "earnings_Per_Share": 2.5,
+                "dividend": 1.25,
                 "cash_Flow_From_Investing_Activities": -7.0,
+                "cash_Flow_From_Financing_Activities": 4.0,
+                "report_End_Date": "2025-06-30T00:00:00",
+                "report_Date": "2025-08-15T00:00:00",
+                "broken_Fiscal_Year": True,
                 "intangible_Assets": 500.0,
             }
         )
@@ -126,6 +229,12 @@ class TestBorsdataClient:
         assert report.net_income is None
         assert report.total_debt is None
         assert report.investing_cash_flow == -7.0
+        assert report.financing_cash_flow == 4.0
+        assert report.cash == 30.0
+        assert report.eps == 2.5
+        assert report.dividend_per_share == 1.25
+        assert report.report_date == date(2025, 8, 15)
+        assert report.broken_fiscal_year is True
 
     def test_get_stock_price_maps_prices(self, monkeypatch):
         payload = load_mock("stock_prices_mock.json")
@@ -140,6 +249,7 @@ class TestBorsdataClient:
         assert len(result) == 5
         assert all(isinstance(p, StockPrice) for p in result)
         assert result[0].close == pytest.approx(278.0)
+        assert result[0].volume == 2_500_000
 
     def test_get_dividends_maps_historical_calendar(self, monkeypatch):
         payload = {
@@ -260,15 +370,97 @@ class TestBorsdataClient:
 
         result = BorsdataClient(api_key="test").get_insider_transactions([3])
 
-        assert [transaction.transaction_type for transaction in result[3]] == ["buy", "sell"]
-        assert result[3][1].shares == 50
-        assert result[3][1].total_value == 1500.0
-        assert result[3][0].currency == "SEK"
-        assert result[3][0].source == "borsdata:19"
+        assert [transaction.transaction_type for transaction in result[3].values] == ["buy", "sell"]
+        assert result[3].values[1].shares == 50
+        assert result[3].values[1].total_value == 1500.0
+        assert result[3].values[0].currency == "SEK"
+        assert result[3].values[0].source == "borsdata:19"
 
     def test_get_insider_transactions_rejects_more_than_fifty_instruments(self):
         with pytest.raises(ValueError, match="at most 50"):
             BorsdataClient(api_key="test").get_insider_transactions(list(range(51)))
+
+    def test_get_insider_transactions_distinguishes_omitted_error_and_empty(self, monkeypatch):
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: FakeResponse(
+                {
+                    "list": [
+                        {"insId": 3, "values": []},
+                        {"insId": 4, "error": "NOT_ACTIVE"},
+                    ]
+                }
+            ),
+        )
+
+        result = BorsdataClient(api_key="test").get_insider_transactions([3, 4, 5])
+
+        assert result[3].values == () and result[3].error is None
+        assert result[4].error == "NOT_ACTIVE"
+        assert result[5].error == "Börsdata insider response omitted instrument"
+
+    def test_get_buybacks_preserves_raw_units_and_errors(self, monkeypatch):
+        row = {
+            "change": -1000,
+            "changeProc": -0.25,
+            "price": 42.5,
+            "currency": "SEK",
+            "shares": 5000,
+            "sharesProc": 1.25,
+            "date": "2026-08-20T00:00:00",
+        }
+        monkeypatch.setattr(
+            "kncompanyscraper.borsdata.client.requests.get",
+            lambda url, params, timeout: FakeResponse(
+                {"list": [{"insId": 3, "values": [row]}]}
+            ),
+        )
+
+        result = BorsdataClient(api_key="test").get_buybacks([3, 4])
+
+        event = result[3].values[0]
+        assert event.change_shares == -1000
+        assert event.change_pct_raw == -0.25
+        assert event.treasury_shares_pct_raw == 1.25
+        assert event.raw_payload == row
+        assert result[4].error == "Börsdata buyback response omitted instrument"
+
+    def test_get_shorts_fetches_unfiltered_universe_and_preserves_signs(self, monkeypatch):
+        requests_seen = []
+
+        def fake_get(url, params, timeout):
+            requests_seen.append((url, params))
+            return FakeResponse(
+                {
+                    "list": [
+                        {
+                            "insId": 3,
+                            "shortsProc": -1.5,
+                            "shortsHolders": 2.0,
+                            "shortsAvgProc": -0.75,
+                            "shortsMilj": 12.0,
+                            "shortsAvgMilj": 6.0,
+                            "lastTransactionDate": "2026-08-20",
+                            "dtcSum": 4.5,
+                            "dtcAvg": 2.25,
+                            "trend1w": -0.1,
+                            "trend1m": 0.2,
+                            "trend3m": 0.3,
+                            "trend6m": 0.4,
+                        }
+                    ]
+                }
+            )
+
+        monkeypatch.setattr("kncompanyscraper.borsdata.client.requests.get", fake_get)
+
+        result = BorsdataClient(api_key="test").get_shorts()
+
+        assert result[3].short_pct_raw == -1.5
+        assert result[3].trend_1w == -0.1
+        assert result[3].last_transaction_date == date(2026, 8, 20)
+        assert requests_seen[0][0].endswith("/v1/holdings/shorts")
+        assert requests_seen[0][1] == {"authKey": "test"}
 
     def test_http_error_does_not_expose_api_key(self, monkeypatch):
         response = requests.Response()

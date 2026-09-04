@@ -14,6 +14,9 @@ from kncompanyscraper.cli import sync
         ("sync-borsdata", sync._cmd_sync_borsdata),
         ("sync-fundamental-history", sync._cmd_sync_fundamental_history),
         ("sync-borsdata-insiders", sync._cmd_sync_borsdata_insiders),
+        ("sync-borsdata-holdings", sync._cmd_sync_borsdata_holdings),
+        ("backfill-borsdata-liquidity", sync._cmd_backfill_borsdata_liquidity),
+        ("report-ownership-liquidity", sync._cmd_report_ownership_liquidity),
         ("sync-borsdata-dividends", sync._cmd_sync_borsdata_dividends),
     ],
 )
@@ -79,3 +82,53 @@ def test_sync_fundamental_history_calls_current_service_method(capsys):
         companies[0]
     )
     assert "1 synced, 0 failed" in capsys.readouterr().out
+
+
+def test_sync_borsdata_holdings_uses_composition_factory(capsys):
+    companies = [SimpleNamespace(id=1)]
+    result = SimpleNamespace(
+        synced=1,
+        failed=0,
+        buyback_rows=2,
+        short_snapshots=1,
+        failures=(),
+    )
+    with (
+        patch("kncompanyscraper.composition.build_borsdata_holdings_job") as factory,
+        patch(
+            "kncompanyscraper.repositories.company_repository.CompanyRepository"
+        ) as companies_repo,
+    ):
+        companies_repo.return_value.get_active_companies.return_value = companies
+        factory.return_value.run.return_value = result
+        sync._cmd_sync_borsdata_holdings(SimpleNamespace())
+
+    factory.return_value.run.assert_called_once_with(companies)
+    assert "1 synced, 0 failed, 2 buyback rows, 1 short snapshots" in capsys.readouterr().out
+
+
+def test_ownership_liquidity_report_prints_json(capsys):
+    report = SimpleNamespace(to_dict=lambda: {"as_of": "2026-08-31", "counts": {}})
+    with (
+        patch(
+            "kncompanyscraper.analysis.ownership_liquidity_coverage."
+            "OwnershipLiquidityCoverageReport"
+        ) as service,
+        patch(
+            "kncompanyscraper.repositories.company_repository.CompanyRepository"
+        ) as companies,
+        patch(
+            "kncompanyscraper.repositories.ownership_flow_repository."
+            "OwnershipFlowRepository"
+        ) as repository,
+    ):
+        companies.return_value.get_active_companies.return_value = [
+            SimpleNamespace(id=1)
+        ]
+        service.return_value.build.return_value = report
+        sync._cmd_report_ownership_liquidity(
+            SimpleNamespace(as_of="2026-08-31", stale_after_days=7)
+        )
+
+    service.assert_called_once_with(repository.return_value, stale_after_days=7)
+    assert '"as_of": "2026-08-31"' in capsys.readouterr().out

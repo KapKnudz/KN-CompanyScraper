@@ -46,9 +46,14 @@ class BorsdataInsiderJob:
                 continue
 
             for company in batch:
+                response = transactions[company.borsdata_id]
+                if response.error:
+                    self.job_repository.fail(job_ids[company.id], response.error)
+                    failures.append(f"{company.name}: {response.error}")
+                    continue
                 try:
                     company_inserted = self.insider_repository.save_all(
-                        transactions.get(company.borsdata_id, []),
+                        list(response.values),
                         company.id,
                     )
                 except Exception as exc:

@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+from datetime import date
 
 from kncompanyscraper.borsdata.instrument import Instrument, match_instrument
 from kncompanyscraper.borsdata.instrument_mapping import BorsdataInstrumentMappingService
@@ -48,14 +49,34 @@ def test_mapping_service_persists_only_resolved_companies():
     companies = [make_company(ticker="ONE", company_id=1), make_company(ticker="MISSING", company_id=2)]
     client = MagicMock()
     client.get_instruments.return_value = [
-        Instrument(101, "One", None, "ONE", "SEK", "SEK", 1, 75)
+        Instrument(
+            101,
+            "One",
+            None,
+            "ONE",
+            "SEK",
+            "SEK",
+            1,
+            75,
+            4,
+            date(2020, 2, 3),
+        )
     ]
+    client.get_markets.return_value = []
     repository = MagicMock()
 
     result = BorsdataInstrumentMappingService(client, repository).map_companies(companies)
 
     repository.set_borsdata_identity.assert_called_once_with(
-        1, 101, "SEK", 1, 75, report_currency="SEK"
+        1,
+        101,
+        "SEK",
+        1,
+        75,
+        report_currency="SEK",
+        market_id=4,
+        listing_date=date(2020, 2, 3),
     )
+    repository.upsert_borsdata_markets.assert_called_once_with([])
     assert result.mapped == 1
     assert result.unresolved == ["Test Company"]

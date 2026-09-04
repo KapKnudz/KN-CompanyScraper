@@ -161,6 +161,32 @@ def test_get_latest_validated_stock_analyses_parses_content():
 
     assert analyses[42]["analysis_id"] == 7
     assert analyses[42]["content"]["company_id"] == 42
+
+
+def test_get_validated_stock_analysis_revisions_groups_history():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [
+        {
+            "id": 123,
+            "company_id": 42,
+            "content": '{"verdict": "watch"}',
+            "created_by": "test-model",
+            "created_at": datetime(2026, 9, 3, tzinfo=timezone.utc),
+            "metadata": {"validation_status": "accepted"},
+        }
+    ]
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.cursor.return_value.__enter__.return_value = cursor
+
+    with patch(
+        "kncompanyscraper.repositories.base_repository.get_connection",
+        return_value=connection,
+    ):
+        history = AnalysisRepository().get_validated_stock_analysis_revisions()
+
+    assert history[42][0]["content"] == {"verdict": "watch"}
+    assert history[42][0]["analysis_id"] == 123
     sql = cursor.execute.call_args[0][0]
     assert "validation_status" in sql
 

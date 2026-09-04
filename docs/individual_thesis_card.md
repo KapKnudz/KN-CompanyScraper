@@ -85,6 +85,54 @@ Timing is the catalyst calendar within the fixed case horizon. Each catalyst has
 An assumption horizon is not itself a catalyst. When `timing_assessment` and the
 overall case both specify a horizon, they must match.
 
+## Falsifiable case and decisive evidence
+
+`falsifiable_case` makes the headline thesis testable. Its statement is the
+same text as `one_sentence_thesis`, while its separate falsification test names
+an observable failure condition, uses the fixed case horizon, and cites the
+evidence establishing the current baseline.
+
+`strongest_confirming_evidence` and `strongest_disconfirming_evidence` each
+select one decision-relevant item with source IDs and an explanation of why it
+matters. The older confirming/disconfirming lists remain as broad narrative
+support; the decisive fields prevent the key evidence from being buried in
+free text.
+
+## Thesis-break tests
+
+`thesis_break_tests` stores observable decision rules under six non-overlapping
+types: revenue or demand, margin or execution, balance sheet or dilution,
+management credibility, valuation overshoot, and superior evidence or
+opportunity. Every test states the condition, metric or event, threshold or
+direction, prescribed response, and the evidence establishing its baseline.
+The legacy `thesis_break_conditions` strings remain readable for historical
+cards, but new analysis should use the structured tests.
+
+## Confidence limitations and latent cases
+
+`missing_information` remains a flattened consumer-facing list. New cards also
+store one matching `missing_information_details` object per item, with an
+explicit `core` or `supplemental` class and a conclusion-impact explanation.
+Only unresolved core items can impose the deterministic medium-confidence cap;
+the absence of textual company evidence still caps confidence at low.
+
+`latent_case` is split internally into `latent_case_type=price` and
+`latent_case_type=operating`. A price-latent card is a credible business whose
+current price is not sufficient, while an operating-latent card has return
+capacity but one named operating mechanism remains unproven. Each latent card
+stores one structured primary activation trigger. Historical cards without
+these fields remain readable and export with a null subtype and no inferred
+trigger.
+
+The trigger specification names the unresolved claim, observable metric or
+event, threshold or direction, bounded evidence window, and whether one
+observation is sufficient. Incremental updates append trigger evidence with
+`confirms`, `weakens`, or `unresolved`; they cannot silently start an equivalent
+new waiting period. Revenue resilience separately records source IDs for its
+recurring and variable drivers. `resilient` requires persistence evidence,
+`mixed` requires both supported components, and product or transaction revenue
+without contractual stickiness is `variable`.
+
 ## Forward scenarios
 
 General-company cards contain one sourced `scenario_bundles` entry for each of
@@ -95,6 +143,12 @@ corresponding price and annualized-return bands and stores them in
 The public bear mechanism may describe multiple compression, fundamental
 impairment, or both. Base bands wider than 15 percentage points are
 `insufficient_evidence` and cannot enter an actionable ranking.
+
+`peak_margin_bridge` is deterministic post-processing. It reports the current
+and observed peak EBIT margins, historical gross-to-EBIT spreads, margin
+runway, and scenario EBIT margins. Forecast gross margin and forecast
+gross-to-EBIT spread remain `null` unless an independently sourced forecast
+gross-margin input is added.
 
 ## Validation
 

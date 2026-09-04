@@ -26,7 +26,10 @@ def report(year, period, period_end):
         total_assets=150.0,
         equity=80.0,
         total_debt=20.0,
+        cash=10.0,
         shares_outstanding=10.0,
+        dividend_per_share=2.0,
+        financing_cash_flow=-1.0,
     )
 
 
@@ -190,3 +193,88 @@ def test_financial_evidence_ignores_rounding_and_non_h1_document_values():
     assert evidence.half_year_comparison.limitations == (
         "No comparable prior-year H1 is available.",
     )
+
+
+def test_scenario_history_uses_full_history_but_prompt_detail_stays_bounded():
+    annual = [report(year, 4, date(year, 12, 31)) for year in range(2015, 2026)]
+    quarterly = [
+        report(2023 + (period - 1) // 4, ((period - 1) % 4) + 1, date(2023 + (period - 1) // 4, ((period - 1) % 4 + 1) * 3, 28))
+        for period in range(1, 17)
+    ]
+    r12 = [report(year, 4, date(year, 12, 31)) for year in range(2022, 2026)]
+    for item in r12:
+        item.revenue = float(item.year * 10)
+        item.ebit = item.operating_profit = item.revenue * (0.05 + (item.year - 2022) * 0.01)
+
+    class Repository:
+        def get_reports_as_of(self, company_id, period_type, as_of):
+            return {
+                "year": list(reversed(annual)),
+                "quarter": list(reversed(quarterly)),
+                "r12": list(reversed(r12)),
+            }[period_type]
+
+    evidence = StructuredFinancialEvidenceBuilder(Repository()).build(
+        42, as_of=date(2026, 8, 18)
+    )
+    history = evidence.scenario_history
+
+    assert len(evidence.annual_reports) == 10
+    assert len(evidence.quarterly_reports) == 12
+    assert history.annual_observation_count == 11
+    assert history.quarterly_observation_count == 16
+    assert history.r12_observation_count == 4
+    assert history.revenue_cagr_10_year is not None
+    assert history.r12_ebit_margin_peak == pytest.approx(0.08)
+    assert history.source_ids["r12_ebit_margin"] == tuple(
+        f"financial:r12:{year}-12-31" for year in range(2025, 2021, -1)
+    )
+
+
+def test_scenario_history_excludes_broken_periods_and_keeps_missing_values_null():
+    annual = [
+        report(2020, 4, date(2020, 12, 31)),
+        report(2022, 4, date(2022, 12, 31)),
+        report(2025, 4, date(2025, 12, 31)),
+    ]
+    annual[1].broken_fiscal_year = True
+    annual[1].cash = None
+    for item in annual:
+        item.financing_cash_flow = None
+    annual[2].financing_cash_flow = None
+    quarterly = []
+    r12 = []
+
+    class Repository:
+        def get_reports_as_of(self, company_id, period_type, as_of):
+            return {"year": list(reversed(annual)), "quarter": quarterly, "r12": r12}[period_type]
+
+    history = StructuredFinancialEvidenceBuilder(Repository()).build(
+        42, as_of=date(2026, 8, 18)
+    ).scenario_history
+
+    assert history.revenue_cagr_3_year is None
+    assert history.net_debt_change_3_year is None
+    assert history.financing_cash_flow_observations == ()
+    assert any("broken fiscal year" in item for item in history.exclusions)
+    assert history.source_ids["revenue_cagr_3_year"] == ()
+    assert history.dividend_consistency is True
+
+
+def test_older_r12_observations_change_deterministic_margin_range():
+    r12 = [report(year, 4, date(year, 12, 31)) for year in range(2010, 2026)]
+    for item in r12:
+        item.revenue = 100.0
+        item.ebit = item.operating_profit = 10.0
+    r12[0].ebit = r12[0].operating_profit = -20.0
+
+    class Repository:
+        def get_reports_as_of(self, company_id, period_type, as_of):
+            return {"year": [], "quarter": [], "r12": list(reversed(r12))}[period_type]
+
+    history = StructuredFinancialEvidenceBuilder(Repository()).build(
+        42, as_of=date(2026, 8, 18)
+    ).scenario_history
+
+    assert history.r12_ebit_margin_trough == pytest.approx(-0.20)
+    assert "financial:r12:2010-12-31" in history.source_ids["r12_ebit_margin"]

@@ -45,25 +45,34 @@ def test_peer_comparison_selects_comparable_companies_and_preserves_provenance()
     included = company(2, "PEER")
     other_branch = company(3, "OTHER", branch_id=11)
     other_currency = company(4, "EURO", currency="EUR")
+    overflow = company(5, "PEER2")
     target_reports = {1: report(2025, 1_000.0, 100.0)}
     peer_reports = {
         2: report(2025, 1_100.0, 110.0),
         3: report(2025, 1_100.0, 110.0),
         4: report(2025, 1_100.0, 110.0),
+        5: report(2025, 1_200.0, 120.0),
     }
     prior_reports = {
         1: report(2024, 900.0, 90.0),
         2: report(2024, 1_000.0, 100.0),
         3: report(2024, 1_000.0, 100.0),
         4: report(2024, 1_000.0, 100.0),
+        5: report(2024, 1_100.0, 110.0),
     }
 
     class Companies:
         def get_by_id(self, company_id):
-            return {1: target, 2: included, 3: other_branch, 4: other_currency}[company_id]
+            return {
+                1: target,
+                2: included,
+                3: other_branch,
+                4: other_currency,
+                5: overflow,
+            }[company_id]
 
         def get_active_companies(self):
-            return [target, included, other_branch, other_currency]
+            return [target, included, other_branch, other_currency, overflow]
 
     class Financials:
         def get_latest_report_as_of(self, company_id, period_type, as_of):
@@ -79,11 +88,9 @@ def test_peer_comparison_selects_comparable_companies_and_preserves_provenance()
                 close=10.0 if company_id == 1 else 12.0,
             )
 
-    comparison = PeerComparisonBuilder(Companies(), Financials(), Valuations()).build(
-        1,
-        as_of=date(2026, 8, 24),
-        target_terminal_ev_ebit=(8.0, 12.0),
-    )
+    comparison = PeerComparisonBuilder(
+        Companies(), Financials(), Valuations(), max_peers=1
+    ).build(1, as_of=date(2026, 8, 24), target_terminal_ev_ebit=(8.0, 12.0))
 
     assert comparison.status == "available"
     assert comparison.selection_basis == "same_branch_id_and_currency"
@@ -101,6 +108,7 @@ def test_peer_comparison_selects_comparable_companies_and_preserves_provenance()
     assert {(item.ticker, item.reason) for item in comparison.excluded_peers} == {
         ("OTHER", "different branch_id"),
         ("EURO", "reporting currencies differ"),
+        ("PEER2", "peer set limit reached"),
     }
 
 

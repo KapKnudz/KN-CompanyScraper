@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,6 +12,7 @@ from kncompanyscraper.analysis.agent.readiness import (
     AgentReadinessError,
     AgentReadinessGate,
 )
+from kncompanyscraper.analysis.agent.result_parser import StockAnalysisValidationError
 from tests.test_agent_result_boundary import valid_response
 
 
@@ -27,8 +29,20 @@ def ready_candidate():
                 "ev_ebit_guardrail_high": 15.0,
             },
         },
-        research_evidence={"documents": [{"source_id": "document:1"}]},
+        research_evidence={
+            "documents": [{"source_id": "document:1"}],
+            "ownership_liquidity": {
+                "source_ids": ["liquidity:borsdata:42:2026-08-31:20d"]
+            },
+        },
     )
+
+
+def qualitative_response() -> str:
+    payload = json.loads(valid_response())
+    payload.pop("scenario_bundles")
+    payload.pop("forward_scenario_analysis")
+    return json.dumps(payload)
 
 
 def test_agent_analysis_service_routes_model_output_through_persistence_boundary():
@@ -46,18 +60,23 @@ def test_agent_analysis_service_routes_model_output_through_persistence_boundary
     model_adapter.generate.return_value = OpenAIModelResponse(
         response_id="resp_123",
         model="gpt-5.6-sol",
-        output_text=valid_response(),
+        output_text=qualitative_response(),
         usage={"total_tokens": 150},
     )
     boundary = MagicMock()
-    boundary.persist_response.return_value = "persisted"
+    boundary.validate_qualitative_response.return_value = "qualitative"
+    boundary.persist_validated_result.return_value = "persisted"
 
     results = AgentAnalysisService(model_adapter, boundary, prompt_builder).analyze([candidate])
 
     assert results == ["persisted"]
     model_adapter.generate.assert_called_once_with(prompt)
-    boundary.persist_response.assert_called_once_with(
-        valid_response(),
+    boundary.validate_qualitative_response.assert_called_once_with(
+        qualitative_response(),
+        candidate,
+    )
+    boundary.persist_validated_result.assert_called_once_with(
+        "qualitative",
         candidate,
         created_by="gpt-5.6-sol",
         metadata={
@@ -68,8 +87,15 @@ def test_agent_analysis_service_routes_model_output_through_persistence_boundary
             "policy_sha256": "abc123",
             "candidate_rank": 1,
             "evidence_as_of": None,
-            "evidence_source_ids": ["document:1"],
+            "evidence_source_ids": [
+                "document:1",
+                "liquidity:borsdata:42:2026-08-31:20d",
+            ],
             "deterministic_context_sha256": deterministic_context_sha256(candidate),
+            "qualitative_raw_analysis_id": None,
+            "qualitative_raw_analysis_ids": [],
+            "qualitative_attempts": 1,
+            "qualitative_validation_errors": [],
         },
     )
 
@@ -83,11 +109,14 @@ def test_agent_analysis_service_preserves_raw_response_before_validation():
     model_adapter.generate.return_value = OpenAIModelResponse(
         response_id="resp_123",
         model="gpt-5.6-sol",
-        output_text=valid_response(),
+        output_text=qualitative_response(),
         usage={},
     )
     boundary = MagicMock()
-    boundary.persist_response.side_effect = ValueError("invalid citation")
+    boundary.validate_qualitative_response.side_effect = StockAnalysisValidationError(
+        "invalid citation"
+    )
+    model_adapter.repair = None
     raw_repository = MagicMock()
     raw_repository.save_stock_analysis_raw.return_value = 77
 
@@ -190,7 +219,7 @@ def test_readiness_gate_exposes_stable_blockers_for_incomplete_packet():
     ]
     assert [limitation.code for limitation in assessment.limitations] == [
         "stock_price_stale",
-        "terminal_multiple_guardrail_unavailable",
+        "historical_terminal_multiple_range_unavailable",
     ]
 
 
@@ -208,6 +237,107 @@ def test_agent_analysis_service_blocks_entire_batch_before_prompt_or_model_call(
 
     prompt_builder.build.assert_not_called()
     model_adapter.generate.assert_not_called()
+
+
+def test_agent_analysis_service_skips_scenarios_when_inputs_are_limited():
+    candidate = ready_candidate()
+    prompt = AgentPrompt(system="policy", user="candidate")
+    prompt_builder = MagicMock()
+    prompt_builder.build.return_value = prompt
+    model_adapter = MagicMock()
+    model_adapter.generate.return_value = OpenAIModelResponse(
+        response_id="local-1",
+        model="codex-exec/gpt-5.6-luna",
+        output_text=qualitative_response(),
+        usage={},
+    )
+    boundary = MagicMock()
+    boundary.validate_qualitative_response.return_value = "qualitative"
+    boundary.persist_validated_result.return_value = "persisted"
+    scenario_authoring = MagicMock()
+
+    result = AgentAnalysisService(
+        model_adapter,
+        boundary,
+        prompt_builder,
+        scenario_authoring_service=scenario_authoring,
+    ).analyze([candidate])
+
+    assert result == ["persisted"]
+    scenario_authoring.author.assert_not_called()
+    boundary.persist_validated_result.assert_called_once()
+
+
+def test_local_adapter_repairs_semantic_boundary_rejection():
+    candidate = ready_candidate()
+    prompt = AgentPrompt(system="policy", user="candidate")
+    first = OpenAIModelResponse("local-1", "local-model", "first", {})
+    repaired = OpenAIModelResponse("local-2", "local-model", "repaired", {})
+    model_adapter = MagicMock(max_repair_attempts=1)
+    model_adapter.generate.return_value = first
+    model_adapter.repair.return_value = repaired
+    boundary = MagicMock()
+    boundary.validate_qualitative_response.side_effect = [
+        StockAnalysisValidationError("unknown source"),
+        "qualitative",
+    ]
+    boundary.persist_validated_result.return_value = "persisted"
+    raw_repository = MagicMock()
+    raw_repository.save_stock_analysis_raw.side_effect = [71, 72]
+
+    result = AgentAnalysisService(
+        model_adapter,
+        boundary,
+        MagicMock(build=MagicMock(return_value=prompt)),
+        raw_response_repository=raw_repository,
+    ).analyze([candidate])
+
+    assert result == ["persisted"]
+    model_adapter.repair.assert_called_once_with(prompt, "first", "unknown source")
+    assert raw_repository.update_raw_validation.call_args_list[0].args == (
+        71,
+        "rejected",
+        "unknown source",
+    )
+    assert raw_repository.update_raw_validation.call_args_list[-1].args == (
+        72,
+        "accepted",
+    )
+
+
+def test_local_adapter_repairs_latest_stored_rejection():
+    candidate = ready_candidate()
+    prompt = AgentPrompt(system="policy", user="candidate")
+    repaired = OpenAIModelResponse("local-2", "local-model", "repaired", {})
+    model_adapter = MagicMock(max_repair_attempts=1)
+    model_adapter.repair.return_value = repaired
+    boundary = MagicMock()
+    boundary.validate_qualitative_response.return_value = "qualitative"
+    boundary.persist_validated_result.return_value = "persisted"
+    raw_repository = MagicMock()
+    raw_repository.get_latest_rejected_initial_analyses.return_value = {
+        candidate.company_id: {
+            "id": 71,
+            "content": "first",
+            "metadata": {"validation_error": "unknown source"},
+        }
+    }
+    raw_repository.save_stock_analysis_raw.return_value = 72
+    prompt_builder = MagicMock()
+    prompt_builder.build.return_value = prompt
+
+    result = AgentAnalysisService(
+        model_adapter,
+        boundary,
+        prompt_builder,
+        raw_response_repository=raw_repository,
+    ).repair_rejected([candidate])
+
+    assert result == ["persisted"]
+    model_adapter.repair.assert_called_once_with(prompt, "first", "unknown source")
+    metadata = boundary.persist_validated_result.call_args.kwargs["metadata"]
+    assert metadata["repaired_from_raw_analysis_id"] == 71
+    assert metadata["raw_analysis_id"] == 72
 
 
 def test_readiness_gate_marks_property_method_unsupported():
@@ -259,5 +389,39 @@ def test_readiness_gate_allows_analysis_without_terminal_multiple_history():
     assert assessment.status == "ready"
     assert not assessment.blockers
     assert [item.code for item in assessment.limitations] == [
-        "terminal_multiple_guardrail_unavailable"
+        "historical_terminal_multiple_range_unavailable"
     ]
+
+
+def test_readiness_gate_reports_ownership_and_liquidity_subsection_statuses():
+    candidate = ready_candidate()
+    candidate.research_evidence["ownership_liquidity"] = {
+        "liquidity": {"status": "available"},
+        "ownership": {"status": "stale"},
+    }
+
+    assessment = AgentReadinessGate().assess(candidate)
+
+    assert assessment.liquidity_status == "available"
+    assert assessment.ownership_status == "stale"
+
+
+def test_ownership_evidence_does_not_rescue_missing_fundamental_evidence():
+    candidate = AgentCandidate(
+        1,
+        42,
+        "TEST",
+        "Testbolaget",
+        research_evidence={
+            "ownership_liquidity": {
+                "source_ids": ["liquidity:borsdata:42:2026-08-31:20d"],
+                "liquidity": {"status": "available"},
+                "ownership": {"status": "unavailable"},
+            }
+        },
+    )
+
+    assessment = AgentReadinessGate().assess(candidate)
+
+    assert assessment.status == "evidence_blocked"
+    assert assessment.blockers[0].code == "primary_evidence_missing"

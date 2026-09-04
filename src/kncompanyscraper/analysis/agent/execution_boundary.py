@@ -1,16 +1,38 @@
-from dataclasses import dataclass, fields, is_dataclass, replace
+from dataclasses import dataclass, fields, replace
 from datetime import date
 from math import isfinite
 import re
 
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
+    parse_qualitative_stock_analysis_result,
     parse_stock_analysis_result,
 )
-from kncompanyscraper.analysis.agent.output_schema import StockAnalysisResult
+from kncompanyscraper.analysis.agent.agent_packet import (
+    SourcePathError,
+    build_evidence_catalog,
+    resolve_source_id,
+)
+from kncompanyscraper.analysis.agent.output_schema import (
+    MissingInformationItem,
+    StockAnalysisResult,
+)
+from kncompanyscraper.analysis.agent.historical_forecast_table import (
+    build_historical_forecast_table,
+)
+from kncompanyscraper.analysis.agent.peak_margin_bridge import (
+    build_peak_margin_bridge,
+)
+from kncompanyscraper.analysis.agent.scenario_driver_attribution import (
+    build_scenario_driver_attribution,
+)
 from kncompanyscraper.analysis.valuation.forward_scenario import (
     ForwardScenarioEngine,
     ForwardScenarioInputs,
+)
+from kncompanyscraper.analysis.policy_versions import (
+    THESIS_CALIBRATION_POLICY_VERSION,
+    VERDICT_COHERENCE_POLICY_VERSION,
 )
 
 
@@ -21,14 +43,20 @@ class PersistedStockAnalysis:
 
 
 class AgentExecutionBoundary:
-    VALIDATION_VERSION = "agent-boundary-v20-thesis-v2"
+    VALIDATION_VERSION = "agent-boundary-v22-thesis-calibration"
+    VERDICT_POLICY_VERSION = VERDICT_COHERENCE_POLICY_VERSION
+    NO_OWNERSHIP_LIQUIDITY_ASSESSMENT = (
+        "Ownership and liquidity evidence are unavailable. "
+        "No inference can be made from their absence."
+    )
     NO_INSIDER_ASSESSMENT = (
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
     )
 
-    def __init__(self, analysis_repository):
+    def __init__(self, analysis_repository, *, require_mandatory_scenarios=False):
         self.analysis_repository = analysis_repository
+        self.require_mandatory_scenarios = require_mandatory_scenarios
 
     def persist_response(
         self,
@@ -38,12 +66,98 @@ class AgentExecutionBoundary:
         metadata: dict | None = None,
     ) -> PersistedStockAnalysis:
         result = self.validate_response(raw_response, candidate)
-        return self._persist_validated_response(result, candidate, created_by, metadata)
+        return self.persist_validated_result(result, candidate, created_by, metadata)
+
+    def validate_qualitative_response(
+        self, raw_response: str, candidate
+    ) -> StockAnalysisResult:
+        """Validate the qualitative stage without scenario calculation or persistence."""
+        result = parse_qualitative_stock_analysis_result(raw_response)
+        self._validate_identity(result, candidate)
+        self._raise_qualitative_validation_violations(result, candidate)
+        return self._persist_validated_response(
+            result,
+            candidate,
+            created_by="",
+            metadata=None,
+            include_scenarios=False,
+            persist=False,
+        )
+
+    def _raise_qualitative_validation_violations(self, result, candidate):
+        """Report independent semantic violations in one repairable response."""
+        research_evidence = candidate.research_evidence
+        document_source_ids = {
+            source.get("source_id")
+            for source in research_evidence.get("documents", [])
+        }
+        document_source_ids.update(
+            research_evidence.get("prior_document_source_ids", [])
+        )
+        insider_source_ids = {
+            source.get("source_id")
+            for source in research_evidence.get("insider_transactions", [])
+        }
+        insider_source_ids.update(
+            research_evidence.get("prior_insider_source_ids", [])
+        )
+        ownership_liquidity = research_evidence.get("ownership_liquidity", {})
+        ownership_liquidity_source_ids = set(
+            ownership_liquidity.get("source_ids", [])
+        )
+        evidence_catalog = build_evidence_catalog(
+            candidate.full_results, research_evidence
+        )
+        result.management_credibility_ledger = [
+            claim
+            for claim in result.management_credibility_ledger
+            if not (
+                set(claim.claim_source_ids or claim.source_ids)
+                | set(claim.outcome_source_ids)
+            )
+            or (
+                set(claim.claim_source_ids or claim.source_ids)
+                | set(claim.outcome_source_ids)
+            ).issubset(document_source_ids)
+        ]
+
+        checks = (
+            lambda: self._validate_thesis_card(result, candidate, evidence_catalog),
+            lambda: self._validate_model_owned_arithmetic(result, candidate),
+            lambda: self._validate_scenario_characterization(result),
+            lambda: self._validate_management_ledger(result),
+            lambda: self._validate_management_sources(result, document_source_ids),
+            lambda: self._validate_assessment_sections(
+                result,
+                document_source_ids=document_source_ids,
+                insider_source_ids=insider_source_ids,
+                ownership_liquidity_source_ids=ownership_liquidity_source_ids,
+                ownership_liquidity=ownership_liquidity,
+            ),
+            lambda: self._validate_activated_case(result, candidate),
+            lambda: self._validate_revenue_resilience(result),
+            lambda: self._validate_reverse_dcf_assessment(result, candidate),
+            lambda: self._validate_portfolio_eligibility(
+                result, require_scenario=False
+            ),
+        )
+        violations = []
+        for check in checks:
+            try:
+                check()
+            except StockAnalysisValidationError as exc:
+                violations.extend(getattr(exc, "violations", (str(exc),)))
+        _raise_validation_violations(violations)
+
+    @classmethod
+    def validate_response(cls, raw_response: str, candidate) -> StockAnalysisResult:
+        """Parse and validate a complete result before persistence-side normalization."""
+        result = parse_stock_analysis_result(raw_response)
+        cls._validate_identity(result, candidate)
+        return result
 
     @staticmethod
-    def validate_response(raw_response: str, candidate) -> StockAnalysisResult:
-        """Parse and validate model identity before persistence-side normalization."""
-        result = parse_stock_analysis_result(raw_response)
+    def _validate_identity(result: StockAnalysisResult, candidate) -> None:
         if result.company_id != candidate.company_id:
             raise StockAnalysisValidationError(
                 f"result.company_id {result.company_id} does not match candidate {candidate.company_id}"
@@ -57,7 +171,16 @@ class AgentExecutionBoundary:
                 "model-backed analysis_status must be complete; blocked packets belong "
                 "to the deterministic readiness output"
             )
-        return result
+    def persist_validated_result(
+        self,
+        result: StockAnalysisResult,
+        candidate,
+        created_by: str,
+        metadata: dict | None = None,
+    ) -> PersistedStockAnalysis:
+        """Validate and persist a result after all model stages have completed."""
+        self._validate_identity(result, candidate)
+        return self._persist_validated_response(result, candidate, created_by, metadata)
 
     def _persist_validated_response(
         self,
@@ -65,6 +188,9 @@ class AgentExecutionBoundary:
         candidate,
         created_by: str,
         metadata: dict | None,
+        *,
+        include_scenarios: bool = True,
+        persist: bool = True,
     ) -> PersistedStockAnalysis:
 
         document_source_ids = {
@@ -75,6 +201,11 @@ class AgentExecutionBoundary:
             source.get("source_id")
             for source in candidate.research_evidence.get("insider_transactions", [])
         }
+        ownership_liquidity_source_ids = set(
+            candidate.research_evidence.get("ownership_liquidity", {}).get(
+                "source_ids", []
+            )
+        )
         document_source_ids.update(
             candidate.research_evidence.get("prior_document_source_ids", [])
         )
@@ -82,35 +213,92 @@ class AgentExecutionBoundary:
             candidate.research_evidence.get("prior_insider_source_ids", [])
         )
         prior_source_ids = set(candidate.research_evidence.get("prior_source_ids", []))
-        valuation_source_aliases = {
-            **self._deterministic_source_aliases(candidate),
-            **self._valuation_source_aliases(candidate),
-            "research_evidence.insider_event_count": "research:insider_event_count",
-            "research_evidence.insider_status": "research:insider_status",
-            "full_results.insider_status": "research:insider_status",
-        }
-        if "missing_information" in candidate.research_evidence:
-            valuation_source_aliases.update(
-                {
-                    "research:missing_information": "research:missing_information",
-                    "research_evidence.missing_information": "research:missing_information",
-                }
-            )
-        for citation in result.citations:
-            citation.source_id = valuation_source_aliases.get(
-                citation.source_id, citation.source_id
-            )
-        self._normalize_assessment_claims(
-            result.management_claims, valuation_source_aliases
+        evidence_catalog = build_evidence_catalog(
+            candidate.full_results, candidate.research_evidence
         )
+        self._merge_missing_information(
+            result,
+            candidate.research_evidence.get("missing_information", []),
+        )
+        for citation in result.citations:
+            citation.source_id = self._resolve_source_alias(
+                citation.source_id,
+                evidence_catalog,
+                candidate.full_results,
+                candidate.research_evidence,
+            )
         self._normalize_assessment_claims(
-            result.insider_claims, valuation_source_aliases
+            result.management_claims,
+            evidence_catalog,
+            candidate.full_results,
+            candidate.research_evidence,
+        )
+        sourced_ownership_claims = [
+            claim for claim in result.ownership_claims if claim.source_ids
+        ]
+        if sourced_ownership_claims:
+            result.ownership_claims = sourced_ownership_claims
+        self._normalize_assessment_claims(
+            result.ownership_claims,
+            evidence_catalog,
+            candidate.full_results,
+            candidate.research_evidence,
+        )
+        supported_ownership_claims = [
+            claim
+            for claim in result.ownership_claims
+            if set(claim.source_ids).issubset(ownership_liquidity_source_ids)
+        ]
+        if supported_ownership_claims:
+            result.ownership_claims = supported_ownership_claims
+        self._normalize_assessment_claims(
+            result.insider_claims,
+            evidence_catalog,
+            candidate.full_results,
+            candidate.research_evidence,
         )
         resilience_source_ids = [
-            valuation_source_aliases.get(source_id, source_id)
+            self._resolve_source_alias(
+                source_id,
+                evidence_catalog,
+                candidate.full_results,
+                candidate.research_evidence,
+            )
             for source_id in result.revenue_resilience.source_ids
         ]
-        result.revenue_resilience.source_ids = resilience_source_ids
+        recurring_source_ids = [
+            self._resolve_source_alias(
+                source_id,
+                evidence_catalog,
+                candidate.full_results,
+                candidate.research_evidence,
+            )
+            for source_id in result.revenue_resilience.recurring_source_ids
+        ]
+        variable_source_ids = [
+            self._resolve_source_alias(
+                source_id,
+                evidence_catalog,
+                candidate.full_results,
+                candidate.research_evidence,
+            )
+            for source_id in result.revenue_resilience.variable_source_ids
+        ]
+        result.revenue_resilience.recurring_source_ids = list(
+            dict.fromkeys(recurring_source_ids)
+        )
+        result.revenue_resilience.variable_source_ids = list(
+            dict.fromkeys(variable_source_ids)
+        )
+        result.revenue_resilience.source_ids = list(
+            dict.fromkeys(
+                [
+                    *resilience_source_ids,
+                    *result.revenue_resilience.recurring_source_ids,
+                    *result.revenue_resilience.variable_source_ids,
+                ]
+            )
+        )
         fact_source_ids = set()
         seen_facts = set()
         for heading_field in fields(result.company_fact_ledger):
@@ -125,14 +313,21 @@ class AgentExecutionBoundary:
                     raise StockAnalysisValidationError(
                         f"company fact must cite evidence: {heading}"
                     )
-                fact.source_ids = [
-                    valuation_source_aliases.get(source_id, source_id)
-                    for source_id in fact.source_ids
-                ]
                 if len(fact.source_ids) != len(set(fact.source_ids)):
                     raise StockAnalysisValidationError(
                         f"company fact contains duplicate source IDs: {heading}"
                     )
+                fact.source_ids = list(
+                    dict.fromkeys(
+                        self._resolve_source_alias(
+                            source_id,
+                            evidence_catalog,
+                            candidate.full_results,
+                            candidate.research_evidence,
+                        )
+                        for source_id in fact.source_ids
+                    )
+                )
                 if fact.source_date is not None:
                     try:
                         date.fromisoformat(fact.source_date)
@@ -150,36 +345,24 @@ class AgentExecutionBoundary:
         thesis_card_source_ids = self._validate_thesis_card(
             result,
             candidate,
-            valuation_source_aliases,
+            evidence_catalog,
         )
-        forward_source_ids = set()
-        normalized_bundles = []
-        for bundle in result.scenario_bundles:
-            replacements = {}
-            for name in (
-                "revenue_cagr",
-                "ebit_margin",
-                "terminal_ev_ebit_low",
-                "terminal_ev_ebit_high",
-                "net_debt_change",
-                "share_count_growth",
-                "distributions_per_share",
-            ):
-                assumption = getattr(bundle, name)
-                source_ids = tuple(
-                    valuation_source_aliases.get(source_id, source_id)
-                    for source_id in assumption.source_ids
-                )
-                forward_source_ids.update(source_ids)
-                replacements[name] = replace(assumption, source_ids=source_ids)
-            normalized_bundles.append(replace(bundle, **replacements))
-        result.scenario_bundles = normalized_bundles
         known_source_ids = (
             document_source_ids
             | insider_source_ids
+            | ownership_liquidity_source_ids
             | prior_source_ids
-            | set(valuation_source_aliases.values())
+            | set(evidence_catalog["canonical_source_ids"])
         )
+        if include_scenarios:
+            forward_source_ids = self.validate_forward_scenario_sources(
+                result,
+                candidate,
+                source_aliases=evidence_catalog,
+                known_source_ids=known_source_ids,
+            )
+        else:
+            forward_source_ids = set()
         self._validate_known_sources(
             known_source_ids,
             (
@@ -203,6 +386,14 @@ class AgentExecutionBoundary:
                     },
                 ),
                 (
+                    "ownership claims cite unknown evidence source(s)",
+                    {
+                        source_id
+                        for claim in result.ownership_claims
+                        for source_id in claim.source_ids
+                    },
+                ),
+                (
                     "insider claims cite unknown evidence source(s)",
                     {
                         source_id
@@ -217,28 +408,117 @@ class AgentExecutionBoundary:
             result, candidate
         )
         self._validate_scenario_characterization(result)
+        result.management_credibility_ledger = [
+            claim
+            for claim in result.management_credibility_ledger
+            if not (
+                set(claim.claim_source_ids or claim.source_ids)
+                | set(claim.outcome_source_ids)
+            )
+            or (
+                set(claim.claim_source_ids or claim.source_ids)
+                | set(claim.outcome_source_ids)
+            ).issubset(document_source_ids)
+        ]
         management_coverage = self._validate_management_ledger(result)
+        if management_coverage["omitted_claim_count"]:
+            self._merge_missing_information(
+                result,
+                [
+                    "Eligible management claims were omitted from the credibility ledger"
+                ],
+                impacts={
+                    "Eligible management claims were omitted from the credibility ledger": (
+                        "supplemental",
+                        "The supplied narrative history does not support a complete ledger of all eligible testable management claims.",
+                    )
+                },
+            )
         self._validate_management_sources(result, document_source_ids)
         self._validate_assessment_sections(
             result,
             document_source_ids=document_source_ids,
             insider_source_ids=insider_source_ids,
+            ownership_liquidity_source_ids=ownership_liquidity_source_ids,
+            ownership_liquidity=candidate.research_evidence.get(
+                "ownership_liquidity", {}
+            ),
         )
+        # Preserve the fast, legacy diagnostic for missing reverse-DCF inputs;
+        # the full verdict matrix runs below after forward scenarios exist.
         self._validate_activated_case(result, candidate)
         self._validate_revenue_resilience(result)
         self._validate_reverse_dcf_assessment(result, candidate)
-        result.forward_scenario_analysis = ForwardScenarioEngine().analyze(
-            self._forward_scenario_inputs(result, candidate)
-        )
+        if include_scenarios:
+            result.forward_scenario_analysis = self.calculate_forward_scenario(
+                result, candidate
+            )
+            result.historical_forecast_table = build_historical_forecast_table(
+                candidate,
+                result,
+                result.forward_scenario_analysis,
+            )
+            result.peak_margin_bridge = build_peak_margin_bridge(candidate, result)
+            result.scenario_driver_attribution = build_scenario_driver_attribution(
+                candidate, result
+            )
+            if result.scenario_bundles:
+                deterministic_limitations = [
+                    *(
+                        result.historical_forecast_table.get("limitations", [])
+                        if result.historical_forecast_table
+                        else []
+                    ),
+                    *(
+                        result.peak_margin_bridge.get("limitations", [])
+                        if result.peak_margin_bridge
+                        else []
+                    ),
+                ]
+                self._merge_missing_information(result, deterministic_limitations)
+        else:
+            result.forward_scenario_analysis = None
+            result.historical_forecast_table = None
+            result.peak_margin_bridge = None
+            result.scenario_driver_attribution = None
+        if include_scenarios and self.require_mandatory_scenarios:
+            self._require_completed_forward_scenario(result, candidate)
         reconciliation_limitations = self._financial_reconciliation_limitations(candidate)
         result.confidence_limitations = list(
             dict.fromkeys([*result.confidence_limitations, *reconciliation_limitations])
         )
-        self._validate_portfolio_eligibility(result)
-        confidence_checks = self._apply_confidence_cap(result, candidate, document_source_ids)
+        coherence_checks = self._validate_verdict_coherence(
+            result,
+            candidate,
+            require_forward_scenario=include_scenarios,
+        )
+        self._validate_portfolio_eligibility(result, require_scenario=include_scenarios)
+        confidence_checks = self._apply_confidence_cap(
+            result, candidate, document_source_ids
+        )
+
+        warnings = list(deterministic_warnings)
+        ownership_checks = []
+        if ownership_liquidity_source_ids:
+            ownership_checks.append(
+                "ownership/liquidity assessment uses supplied deterministic evidence "
+                f"({len(ownership_liquidity_source_ids)} source IDs available)"
+            )
+        else:
+            if (
+                result.ownership_and_flow_assessment
+                != self.NO_OWNERSHIP_LIQUIDITY_ASSESSMENT
+            ):
+                warnings.append(
+                    "model ownership/liquidity assessment replaced because no evidence was supplied"
+                )
+            result.ownership_and_flow_assessment = (
+                self.NO_OWNERSHIP_LIQUIDITY_ASSESSMENT
+            )
+            result.ownership_claims = []
+            ownership_checks.append("no-data ownership/liquidity assessment normalized")
 
         insider_checks = []
-        warnings = list(deterministic_warnings)
         if insider_source_ids:
             cited_source_ids = {
                 citation.source_id for citation in result.citations
@@ -266,24 +546,26 @@ class AgentExecutionBoundary:
         if valuation_provenance is not None:
             validation_metadata["valuation_provenance"] = valuation_provenance
         required_return = self._selected_required_return(result, candidate)
-        validation_metadata["forward_scenario"] = {
-            "policy_version": result.forward_scenario_analysis.policy_version,
-            "status": result.forward_scenario_analysis.status,
-            "required_return": required_return,
-            "methodology_flags": list(
-                result.forward_scenario_analysis.methodology_flags
-            ),
-            "warnings": list(result.forward_scenario_analysis.warnings),
-            "net_debt_bridges": self._net_debt_bridges(result, candidate),
-            "capital_allocation_limitations": [
-                warning
-                for warning in result.forward_scenario_analysis.warnings
-                if any(
-                    term in warning.lower()
-                    for term in ("net_debt", "share_count", "distribution")
-                )
-            ],
-        }
+        validation_metadata["forward_scenario"] = None
+        if result.forward_scenario_analysis is not None:
+            validation_metadata["forward_scenario"] = {
+                "policy_version": result.forward_scenario_analysis.policy_version,
+                "status": result.forward_scenario_analysis.status,
+                "required_return": required_return,
+                "methodology_flags": list(
+                    result.forward_scenario_analysis.methodology_flags
+                ),
+                "warnings": list(result.forward_scenario_analysis.warnings),
+                "net_debt_bridges": self._net_debt_bridges(result, candidate),
+                "capital_allocation_limitations": [
+                    warning
+                    for warning in result.forward_scenario_analysis.warnings
+                    if any(
+                        term in warning.lower()
+                        for term in ("net_debt", "share_count", "distribution")
+                    )
+                ],
+            }
         validation_metadata["financial_reconciliation_limitations"] = (
             reconciliation_limitations
         )
@@ -296,13 +578,24 @@ class AgentExecutionBoundary:
                 "analysis_status": result.analysis_status,
                 "deterministic_value_checks": [
                     *deterministic_checks,
-                    "forward scenario output recalculated from sourced bundles",
+                    *(["forward scenario output recalculated from sourced bundles"]
+                      if include_scenarios else []),
                 ],
                 "insider_checks": insider_checks,
+                "ownership_liquidity_checks": ownership_checks,
                 "confidence_checks": confidence_checks,
+                "confidence_cap": self._confidence_cap_details(
+                    result, candidate, document_source_ids
+                ),
+                "verdict_coherence": coherence_checks,
+                "verdict_policy_version": self.VERDICT_POLICY_VERSION,
+                "thesis_calibration_policy_version": THESIS_CALIBRATION_POLICY_VERSION,
                 "warnings": warnings,
             }
         )
+
+        if not persist:
+            return result
 
         analysis_id = self.analysis_repository.save_stock_analysis(
             result,
@@ -311,39 +604,221 @@ class AgentExecutionBoundary:
         )
         return PersistedStockAnalysis(analysis_id=analysis_id, result=result)
 
+    @classmethod
+    def calculate_forward_scenario(cls, result, candidate):
+        return ForwardScenarioEngine().analyze(
+            cls._forward_scenario_inputs(result, candidate)
+        )
+
+    @classmethod
+    def validate_forward_scenario_sources(
+        cls,
+        result,
+        candidate,
+        *,
+        source_aliases=None,
+        known_source_ids=None,
+        source_whitelist=None,
+    ):
+        strict_whitelist = source_whitelist is not None
+        if strict_whitelist:
+            source_aliases = {}
+            known_source_ids = set(source_whitelist)
+        elif source_aliases is None:
+            source_aliases = build_evidence_catalog(
+                candidate.full_results, candidate.research_evidence
+            )
+        if known_source_ids is None:
+            known_source_ids = {
+                source.get("source_id")
+                for key in ("documents", "insider_transactions")
+                for source in candidate.research_evidence.get(key, [])
+            }
+            known_source_ids.update(
+                candidate.research_evidence.get("ownership_liquidity", {}).get(
+                    "source_ids", []
+                )
+            )
+            known_source_ids.update(
+                candidate.research_evidence.get("prior_source_ids", [])
+            )
+            known_source_ids.update(
+                candidate.research_evidence.get("prior_document_source_ids", [])
+            )
+            known_source_ids.update(
+                candidate.research_evidence.get("prior_insider_source_ids", [])
+            )
+            known_source_ids.update(source_aliases["canonical_source_ids"])
+
+        forward_source_ids = set()
+        normalized_bundles = []
+        for bundle in result.scenario_bundles:
+            replacements = {}
+            for name in (
+                "revenue_cagr",
+                "ebit_margin",
+                "terminal_ev_ebit_low",
+                "terminal_ev_ebit_high",
+                "net_debt_change",
+                "share_count_growth",
+                "distributions_per_share",
+            ):
+                assumption = getattr(bundle, name)
+                source_ids = tuple(
+                    source_id
+                    if strict_whitelist
+                    else cls._resolve_source_alias(
+                        source_id,
+                        source_aliases,
+                        candidate.full_results,
+                        candidate.research_evidence,
+                    )
+                    for source_id in assumption.source_ids
+                )
+                forward_source_ids.update(source_ids)
+                replacements[name] = replace(assumption, source_ids=source_ids)
+            normalized_bundles.append(replace(bundle, **replacements))
+        result.scenario_bundles = normalized_bundles
+        cls._validate_known_sources(
+            known_source_ids,
+            (("forward assumptions cite unknown evidence source(s)", forward_source_ids),),
+            strict=strict_whitelist,
+        )
+        return forward_source_ids
+
+    @classmethod
+    def _require_completed_forward_scenario(cls, result, candidate):
+        if candidate.ranking_model != "general":
+            return
+        readiness = cls._forward_scenario_inputs(result, candidate)
+        if ForwardScenarioEngine.assess_readiness(readiness).status != "required":
+            return
+        analysis = result.forward_scenario_analysis
+        if (
+            analysis is None
+            or analysis.status != "available"
+            or len(result.scenario_bundles) != 3
+            or len(analysis.bands) != 3
+        ):
+            raise StockAnalysisValidationError(
+                "completed general-company analyses require exactly three "
+                "scenario bundles and three calculated bands"
+            )
+
     @staticmethod
-    def _validate_known_sources(known_source_ids, source_groups) -> None:
+    def _validate_known_sources(known_source_ids, source_groups, *, strict=False) -> None:
         for label, source_ids in source_groups:
+            # Generated deterministic IDs have already passed exact traversal
+            # in _resolve_source_alias; they are intentionally not enumerated
+            # in the compact catalog.
             unknown = sorted(set(source_ids) - known_source_ids)
+            if not strict:
+                unknown = [
+                    source_id
+                    for source_id in unknown
+                    if not source_id.startswith("deterministic:")
+                ]
             if unknown:
                 raise StockAnalysisValidationError(
                     f"{label}: " + ", ".join(unknown)
                 )
 
+    @staticmethod
+    def _merge_missing_information(result, items, *, impacts=None):
+        """Keep packet and deterministic limitations visible in the card."""
+        impacts = impacts or {}
+        normalized_items = []
+        seen_items = set()
+        for item in items or ():
+            if not isinstance(item, str):
+                continue
+            item = item.strip()
+            if not item or item.casefold() in seen_items:
+                continue
+            normalized_items.append(item)
+            seen_items.add(item.casefold())
+
+        result.missing_information = list(result.missing_information or [])
+        existing_keys = {
+            item.casefold()
+            for item in result.missing_information
+            if isinstance(item, str)
+        }
+        for item in normalized_items:
+            if item.casefold() not in existing_keys:
+                result.missing_information.append(item)
+                existing_keys.add(item.casefold())
+
+        # Align legacy/detail casing and fill any detail omitted by an older
+        # model response. New entries therefore cannot lose their impact class.
+        detail_by_key = {}
+        for detail in result.missing_information_details or []:
+            key = detail.item.strip().casefold()
+            matching_item = next(
+                (
+                    item
+                    for item in result.missing_information
+                    if isinstance(item, str) and item.casefold() == key
+                ),
+                detail.item.strip(),
+            )
+            detail.item = matching_item
+            detail_by_key[key] = detail
+
+        details = []
+        for item in result.missing_information:
+            if not isinstance(item, str) or not item.strip():
+                continue
+            item = item.strip()
+            key = item.casefold()
+            detail = detail_by_key.get(key)
+            if detail is None:
+                limitation_class, impact = impacts.get(
+                    item,
+                    AgentExecutionBoundary._default_missing_information_impact(item),
+                )
+                detail = MissingInformationItem(
+                    item=item,
+                    limitation_class=limitation_class,
+                    impact=impact,
+                )
+            details.append(detail)
+        result.missing_information = list(
+            dict.fromkeys(
+                item.strip()
+                for item in result.missing_information
+                if isinstance(item, str) and item.strip()
+            )
+        )
+        result.missing_information_details = details
+
+    @staticmethod
+    def _default_missing_information_impact(item):
+        lowered = item.casefold()
+        core_markers = (
+            "no textual company reports",
+            "no dated annual report",
+            "broken fiscal year",
+            "comparable prior-year interim",
+            "historical table rows unavailable",
+            "cash-flow normalization",
+            "current r12",
+        )
+        if any(marker in lowered for marker in core_markers):
+            return (
+                "core",
+                "This missing input can affect the fundamental company conclusion.",
+            )
+        return (
+            "supplemental",
+            "This missing input limits context but does not by itself establish a broken fundamental case.",
+        )
+
     @classmethod
     def _apply_confidence_cap(cls, result, candidate, document_source_ids):
-        cap = "high"
-        limitations = []
-        reverse_dcf = candidate.full_results.get("reverse_dcf")
-
-        if not document_source_ids:
-            cap = "low"
-            limitations.append("No textual company reports or releases were supplied.")
-        else:
-            if result.missing_information:
-                cap = "medium"
-                limitations.append("Material information remains missing.")
-            if (
-                cls._field(reverse_dcf, "status") != "available"
-                or not (cls._field(reverse_dcf, "expectation_curve") or ())
-            ):
-                cap = "medium"
-                limitations.append("Reverse-DCF expectations are unavailable or incomplete.")
-            if result.forward_scenario_analysis.status != "available":
-                cap = "medium"
-                limitations.append(
-                    "Forward scenario evidence is insufficient or the method is unsupported."
-                )
+        details = cls._confidence_cap_details(result, candidate, document_source_ids)
+        cap = details["cap"]
+        limitations = details["reasons"]
 
         confidence_rank = {"low": 0, "medium": 1, "high": 2}
         proposed = result.confidence
@@ -357,6 +832,65 @@ class AgentExecutionBoundary:
             f"deterministic confidence cap is {cap}",
             f"accepted confidence is {result.confidence}",
         ]
+
+    @classmethod
+    def _confidence_cap_details(cls, result, candidate, document_source_ids):
+        cap = "high"
+        reasons = []
+        reverse_dcf = candidate.full_results.get("reverse_dcf")
+
+        if not document_source_ids:
+            cap = "low"
+            reasons.append("No textual company reports or releases were supplied.")
+        else:
+            core_limitations = [
+                item.item
+                for item in result.missing_information_details
+                if item.limitation_class == "core"
+            ]
+            legacy_missing_information = bool(
+                result.missing_information and not result.missing_information_details
+            )
+            if core_limitations or legacy_missing_information:
+                cap = "medium"
+                reasons.append(
+                    "Unresolved core information remains missing."
+                    if core_limitations
+                    else "Legacy missing-information entries have no materiality class."
+                )
+            if (
+                cls._field(reverse_dcf, "status") != "available"
+                or not (cls._field(reverse_dcf, "expectation_curve") or ())
+            ):
+                cap = "medium"
+                reasons.append("Reverse-DCF expectations are unavailable or incomplete.")
+            normalization = cls._field(reverse_dcf, "normalization")
+            if cls._field(normalization, "confidence") == "low":
+                cap = "medium"
+                reasons.append("Cash-flow normalization confidence is low.")
+            if (
+                result.forward_scenario_analysis is not None
+                and result.forward_scenario_analysis.status != "available"
+            ):
+                cap = "medium"
+                reasons.append(
+                    "Forward scenario evidence is insufficient or the method is unsupported."
+                )
+        return {
+            "cap": cap,
+            "reasons": list(dict.fromkeys(reasons)),
+            "core_limitation_items": [
+                item.item
+                for item in result.missing_information_details
+                if item.limitation_class == "core"
+            ],
+            "supplemental_limitation_items": [
+                item.item
+                for item in result.missing_information_details
+                if item.limitation_class == "supplemental"
+            ],
+            "accepted_confidence": result.confidence,
+        }
 
     @classmethod
     def _validate_thesis_card(cls, result, candidate, source_aliases):
@@ -385,13 +919,99 @@ class AgentExecutionBoundary:
 
         def normalize(source_ids):
             normalized = [
-                source_aliases.get(source_id, source_id) for source_id in source_ids
+                cls._resolve_source_alias(
+                    source_id,
+                    source_aliases,
+                    candidate.full_results,
+                    candidate.research_evidence,
+                )
+                for source_id in source_ids
             ]
             if len(normalized) != len(set(normalized)):
                 raise StockAnalysisValidationError(
                     "thesis card contains duplicate source IDs"
                 )
             return normalized
+
+        falsifiable = result.falsifiable_case
+        falsifiable.statement = falsifiable.statement.strip()
+        falsifiable.falsification_test = falsifiable.falsification_test.strip()
+        falsifiable.source_ids = normalize(falsifiable.source_ids)
+        if (
+            falsifiable.statement
+            and falsifiable.statement != result.one_sentence_thesis.strip()
+        ):
+            raise StockAnalysisValidationError(
+                "falsifiable_case.statement must match one_sentence_thesis"
+            )
+        if (
+            falsifiable.horizon_months is not None
+            and result.case_horizon_months is not None
+            and falsifiable.horizon_months != result.case_horizon_months
+        ):
+            raise StockAnalysisValidationError(
+                "falsifiable-case horizon must match case_horizon_months"
+            )
+        if falsifiable.falsification_test and not falsifiable.source_ids:
+            raise StockAnalysisValidationError(
+                "falsifiable case must cite evidence"
+            )
+
+        decisive_source_ids = set()
+        for label, evidence in (
+            ("strongest confirming evidence", result.strongest_confirming_evidence),
+            ("strongest disconfirming evidence", result.strongest_disconfirming_evidence),
+        ):
+            if evidence is None:
+                continue
+            evidence.statement = evidence.statement.strip()
+            evidence.why_it_matters = evidence.why_it_matters.strip()
+            evidence.source_ids = normalize(evidence.source_ids)
+            if not evidence.statement or not evidence.why_it_matters:
+                raise StockAnalysisValidationError(
+                    f"{label} requires a statement and why_it_matters"
+                )
+            if not evidence.source_ids:
+                raise StockAnalysisValidationError(f"{label} must cite evidence")
+            decisive_source_ids.update(evidence.source_ids)
+
+        break_types = set()
+        break_source_ids = set()
+        allowed_break_types = {
+            "revenue_or_demand",
+            "margin_or_execution",
+            "balance_sheet_or_dilution",
+            "management_credibility",
+            "valuation_overshoot",
+            "superior_evidence_or_opportunity",
+        }
+        for test in result.thesis_break_tests:
+            fields_to_strip = (
+                "condition",
+                "observable_metric_or_event",
+                "threshold_or_direction",
+            )
+            for field_name in fields_to_strip:
+                setattr(test, field_name, getattr(test, field_name).strip())
+            test.source_ids = normalize(test.source_ids)
+            if test.break_type not in allowed_break_types:
+                raise StockAnalysisValidationError(
+                    f"unsupported thesis break type: {test.break_type}"
+                )
+            if test.break_type in break_types:
+                raise StockAnalysisValidationError(
+                    f"duplicate thesis break type: {test.break_type}"
+                )
+            if any(not getattr(test, field_name) for field_name in fields_to_strip):
+                raise StockAnalysisValidationError(
+                    "thesis break tests require a condition, observable, and threshold"
+                )
+            if not test.source_ids:
+                raise StockAnalysisValidationError(
+                    "thesis break tests must cite the evidence establishing the baseline"
+                )
+            break_types.add(test.break_type)
+            break_source_ids.update(test.source_ids)
 
         profile = result.business_model_profile
         profile_fields = (
@@ -447,13 +1067,171 @@ class AgentExecutionBoundary:
                 )
             catalyst_source_ids.update(catalyst.source_ids)
 
+        if result.verdict == "latent_case":
+            if result.latent_case_type not in {"price", "operating"}:
+                raise StockAnalysisValidationError(
+                    "latent_case requires latent_case_type price or operating"
+                )
+            if not (result.activation_trigger or "").strip():
+                raise StockAnalysisValidationError(
+                    "latent_case requires one primary activation_trigger"
+                )
+            if result.activation_trigger_spec is None:
+                raise StockAnalysisValidationError(
+                    "latent_case requires activation_trigger_spec"
+                )
+            cls._validate_activation_trigger(result)
+        elif result.latent_case_type is not None:
+            raise StockAnalysisValidationError(
+                "non-latent verdicts must have latent_case_type null"
+            )
+        elif result.activation_trigger_spec is not None:
+            raise StockAnalysisValidationError(
+                "non-latent verdicts cannot have activation_trigger_spec"
+            )
+
+        trigger_evidence_source_ids = set()
+        for evidence in result.activation_trigger_evidence:
+            evidence.evidence_item = evidence.evidence_item.strip()
+            evidence.rationale = evidence.rationale.strip()
+            evidence.source_ids = normalize(evidence.source_ids)
+            if not evidence.evidence_item or not evidence.rationale:
+                raise StockAnalysisValidationError(
+                    "activation trigger evidence requires an item and rationale"
+                )
+            if not evidence.source_ids:
+                raise StockAnalysisValidationError(
+                    "activation trigger evidence requires source_ids"
+                )
+            trigger_evidence_source_ids.update(evidence.source_ids)
+
+        if result.verdict == "activated_case" and result.activation_trigger:
+            raise StockAnalysisValidationError(
+                "activated_case cannot retain an unresolved activation_trigger"
+            )
+
+        missing_items = [item.strip() for item in result.missing_information]
+        result.missing_information = list(dict.fromkeys(missing_items))
+        detail_items = []
+        for detail in result.missing_information_details:
+            detail.item = detail.item.strip()
+            detail.impact = detail.impact.strip()
+            if not detail.item or not detail.impact:
+                raise StockAnalysisValidationError(
+                    "missing-information details require item and impact"
+                )
+            if detail.limitation_class not in {"core", "supplemental"}:
+                raise StockAnalysisValidationError(
+                    "missing-information details require core or supplemental class"
+                )
+            if detail.item in detail_items:
+                raise StockAnalysisValidationError(
+                    "missing-information details contain duplicate items"
+                )
+            detail_items.append(detail.item)
+        if result.missing_information_details and set(detail_items) != set(
+            result.missing_information
+        ):
+            raise StockAnalysisValidationError(
+                "missing-information details must cover exactly missing_information"
+            )
+
         return {
+            *falsifiable.source_ids,
+            *decisive_source_ids,
+            *break_source_ids,
             *profile.source_ids,
             *margin.source_ids,
             *margin.contrary_source_ids,
             *timing.source_ids,
             *catalyst_source_ids,
+            *trigger_evidence_source_ids,
         }
+
+    @staticmethod
+    def _validate_activation_trigger(result):
+        spec = result.activation_trigger_spec
+        fields = (
+            spec.unresolved_claim,
+            spec.observable_metric_or_event,
+            spec.threshold_or_direction,
+            spec.evidence_window,
+            spec.observation_requirement,
+        )
+        if any(not isinstance(value, str) or not value.strip() for value in fields):
+            raise StockAnalysisValidationError(
+                "activation_trigger_spec requires all trigger definition fields"
+            )
+        vague = re.compile(
+            r"\b(?:better results|more evidence|two strong reports|"
+            r"wait for two reports|"
+            r"generic evidence|more data)\b",
+            re.IGNORECASE,
+        )
+        if vague.search(" ".join(fields)):
+            raise StockAnalysisValidationError(
+                "activation triggers must name a company-specific metric or event"
+            )
+        observable_text = spec.observable_metric_or_event
+        if not re.search(
+            r"\b(?:arr|mrr|revenue|sales|ebit|ebitda|gross margin|ebit margin|"
+            r"free cash flow|operating cash flow|customer(?:s)?|churn|retention|"
+            r"renewal|renewals|orders?|volume|share price|valuation|multiple|"
+            r"net debt|working capital|backlog|bookings|margin)\b"
+            r"|\bq[1-4]\b|\bfy\s*20\d{2}\b|%|[<>]=?",
+            observable_text,
+            re.IGNORECASE,
+        ):
+            raise StockAnalysisValidationError(
+                "activation triggers must name a company-specific metric or event"
+            )
+        if not re.search(
+            r"\b(?:above|below|at least|at most|no more than|maintain|maintains?|"
+            r"remain|reaches?|exceeds?|replace|replaces?|renew|renews?|increase|"
+            r"decrease|positive|negative|within|by|from|to)\b|[<>]=?|\d",
+            spec.threshold_or_direction,
+            re.IGNORECASE,
+        ):
+            raise StockAnalysisValidationError(
+                "activation triggers must state a threshold or directional result"
+            )
+        if re.search(
+            r"\b(?:indefinitely|forever|until further notice|future reports?|"
+            r"ongoing reports?|another report(?:ing period)?|next reporting period|"
+            r"future evidence)\b",
+            spec.evidence_window,
+            re.IGNORECASE,
+        ):
+            raise StockAnalysisValidationError(
+                "activation trigger evidence_window must be bounded and non-rolling"
+            )
+        multi_observation = bool(
+            re.search(
+                r"\b(?:two|2|multiple|several|consecutive)\b|"
+                r"\breports?\b.*\b(?:reports?|quarters?)\b|"
+                r"\bq[1-4]\b.*\bq[1-4]\b",
+                spec.evidence_window,
+                re.IGNORECASE,
+            )
+        )
+        if multi_observation and spec.single_observation_sufficient:
+            raise StockAnalysisValidationError(
+                "a multi-report activation trigger cannot claim one observation is sufficient"
+            )
+        if multi_observation and len(spec.observation_requirement.strip()) < 20:
+            raise StockAnalysisValidationError(
+                "multi-report activation triggers must explain the persistence risk tested"
+            )
+        if multi_observation and not re.search(
+            r"\b(?:persist|durab|temporary|integration|replacement|replace|"
+            r"margin|working[- ]capital|normalization|retention|churn|acquisition|"
+            r"customer|baseline|recheck|one observation|single observation|quarter)\w*\b",
+            spec.observation_requirement,
+            re.IGNORECASE,
+        ):
+            raise StockAnalysisValidationError(
+                "multi-report activation triggers must name the persistence risk tested"
+            )
 
     @classmethod
     def _validate_model_owned_arithmetic(cls, result, candidate):
@@ -471,11 +1249,11 @@ class AgentExecutionBoundary:
         )
         base_ceiling = cls._field(valuation, "ev_ebit_base_ceiling")
         bull_ceiling = cls._field(valuation, "ev_ebit_bull_ceiling")
-        guardrail_high = cls._field(valuation, "ev_ebit_guardrail_high")
+        historical_high = cls._field(valuation, "ev_ebit_guardrail_high")
         if base_ceiling is None:
-            base_ceiling = guardrail_high
+            base_ceiling = historical_high
         if bull_ceiling is None:
-            bull_ceiling = guardrail_high
+            bull_ceiling = historical_high
         if current_multiple is not None:
             base_ceiling = max(current_multiple, base_ceiling or current_multiple)
             bull_ceiling = max(current_multiple, bull_ceiling or current_multiple)
@@ -498,14 +1276,15 @@ class AgentExecutionBoundary:
             current_revenue=cls._field(reverse_dcf, "current_revenue"),
             current_shares=cls._field(reverse_dcf, "current_shares"),
             current_net_debt=cls._field(reverse_dcf, "current_net_debt"),
-            terminal_multiple_guardrail=(
+            historical_terminal_multiple_range=(
                 cls._field(valuation, "ev_ebit_guardrail_low"),
-                guardrail_high,
+                historical_high,
             ),
             bundles=tuple(result.scenario_bundles),
             ranking_model=candidate.ranking_model,
             price_currency=cls._field(reverse_dcf, "price_currency"),
             financial_currency=cls._field(reverse_dcf, "financial_currency"),
+            current_terminal_multiple=current_multiple,
             base_terminal_multiple_ceiling=base_ceiling,
             bull_terminal_multiple_ceiling=bull_ceiling,
             demonstrated_revenue_cagr=demonstrated_growth,
@@ -898,6 +1677,10 @@ class AgentExecutionBoundary:
     def _validate_revenue_resilience(result):
         resilience = result.revenue_resilience
         if resilience.assessment == "unassessable":
+            if not resilience.limitations:
+                raise StockAnalysisValidationError(
+                    "unassessable revenue resilience requires a limitation"
+                )
             return
         if not resilience.source_ids:
             raise StockAnalysisValidationError(
@@ -908,6 +1691,79 @@ class AgentExecutionBoundary:
                 raise StockAnalysisValidationError(
                     f"revenue resilience requires {name.replace('_', ' ')}"
                 )
+        persistence_terms = re.compile(
+            r"\b(contract(?:ual)?|renew(?:al|s)?|retention|churn|persist(?:ence|ent)?|"
+            r"customer lifetime|net revenue retention)\b",
+            re.IGNORECASE,
+        )
+        variable_terms = re.compile(
+            r"\b(transaction\w*|usage\w*|project\w*|order\w*|volume\w*|"
+            r"product\w*|sales|one[- ]off|message\w*)\b",
+            re.IGNORECASE,
+        )
+        recurring_terms = re.compile(
+            r"\b(contract\w*|subscription\w*|renew\w*|retention|churn|recurring\w*)\b",
+            re.IGNORECASE,
+        )
+        if resilience.assessment == "resilient" and not persistence_terms.search(
+            resilience.recurring_driver
+        ):
+            raise StockAnalysisValidationError(
+                "resilient revenue resilience requires evidence of persistence"
+            )
+        if resilience.assessment == "mixed":
+            if not recurring_terms.search(resilience.recurring_driver):
+                raise StockAnalysisValidationError(
+                    "mixed revenue resilience requires a supported recurring driver"
+                )
+            if not variable_terms.search(resilience.variable_driver):
+                raise StockAnalysisValidationError(
+                    "mixed revenue resilience requires a supported variable driver"
+                )
+
+        profile = result.business_model_profile
+        recurring_models = {
+            "subscription",
+            "interest_spread",
+            "rental",
+        }
+        variable_models = {"transaction", "usage", "product_sales", "project"}
+        models = set(profile.revenue_model_types)
+        if models:
+            has_recurring_model = bool(models & recurring_models)
+            has_variable_model = bool(models & variable_models)
+            if resilience.assessment == "resilient" and not has_recurring_model:
+                raise StockAnalysisValidationError(
+                    "resilient revenue resilience conflicts with revenue model types"
+                )
+            if resilience.assessment == "mixed" and not (
+                has_recurring_model and has_variable_model
+            ):
+                raise StockAnalysisValidationError(
+                    "mixed revenue resilience requires recurring and variable revenue model types"
+                )
+            if resilience.assessment == "variable" and has_recurring_model:
+                raise StockAnalysisValidationError(
+                    "variable revenue resilience conflicts with recurring revenue model types"
+                )
+        if resilience.assessment in {"resilient", "mixed"} and not resilience.recurring_source_ids:
+            raise StockAnalysisValidationError(
+                f"{resilience.assessment} revenue resilience requires sourced recurring evidence"
+            )
+        if resilience.assessment == "mixed" and not resilience.variable_source_ids:
+            raise StockAnalysisValidationError(
+                "mixed revenue resilience requires sourced variable evidence"
+            )
+        if resilience.assessment in {"resilient", "mixed"} and (
+            profile.recurring_revenue_profile == "none"
+        ):
+            raise StockAnalysisValidationError(
+                "revenue resilience conflicts with recurring_revenue_profile=none"
+            )
+        if resilience.assessment == "variable" and profile.recurring_revenue_profile == "majority":
+            raise StockAnalysisValidationError(
+                "variable revenue resilience conflicts with recurring_revenue_profile=majority"
+            )
 
     @classmethod
     def _financial_reconciliation_limitations(cls, candidate):
@@ -922,68 +1778,9 @@ class AgentExecutionBoundary:
 
     @classmethod
     def _deterministic_source_aliases(cls, candidate):
-        aliases = {}
-
-        def visit(value, path):
-            if is_dataclass(value):
-                for field in fields(value):
-                    visit(getattr(value, field.name), [*path, field.name])
-                return
-            if isinstance(value, dict):
-                for key, nested in value.items():
-                    visit(nested, [*path, str(key)])
-                return
-            if isinstance(value, (list, tuple)):
-                for index, nested in enumerate(value):
-                    visit(nested, [*path, str(index)])
-                return
-            if not path:
-                return
-            source_id = "deterministic:" + ":".join(path)
-            aliases[source_id] = source_id
-            aliases["full_results." + ".".join(path)] = source_id
-            if (
-                path[-1] == "source_id"
-                or (len(path) >= 2 and path[-2] == "source_ids")
-            ) and isinstance(value, str):
-                aliases[value] = value
-
-        visit(candidate.full_results, [])
-        for path in (
-            ("financial_history", "half_year_comparison"),
-            ("insider",),
-            ("reverse_dcf", "required_return"),
-            ("reverse_dcf", "expectation_curve"),
-        ):
-            value = candidate.full_results
-            for part in path:
-                value = cls._field(value, part)
-                if value is None:
-                    break
-            if value is not None:
-                source_id = "deterministic:" + ":".join(path)
-                aliases[source_id] = source_id
-                aliases["full_results." + ".".join(path)] = source_id
-        reverse_dcf = candidate.full_results.get("reverse_dcf")
-        if cls._field(reverse_dcf, "normalization") is not None:
-            source_id = "deterministic:reverse_dcf:normalization"
-            aliases[source_id] = source_id
-            aliases["full_results.reverse_dcf.normalization"] = source_id
-        if cls._field(reverse_dcf, "operating_history") is not None:
-            source_id = "deterministic:reverse_dcf:operating_history"
-            aliases[source_id] = source_id
-            aliases["full_results.reverse_dcf.operating_history"] = source_id
-        if cls._field(reverse_dcf, "price_fundamental_attribution") is not None:
-            source_id = "deterministic:reverse_dcf:price_fundamental_attribution"
-            aliases[source_id] = source_id
-            aliases[
-                "full_results.reverse_dcf.price_fundamental_attribution"
-            ] = source_id
-        if cls._field(reverse_dcf, "missing_information") is not None:
-            source_id = "deterministic:reverse_dcf:missing_information"
-            aliases[source_id] = source_id
-            aliases["full_results.reverse_dcf.missing_information"] = source_id
-        return aliases
+        return build_evidence_catalog(
+            candidate.full_results, candidate.research_evidence
+        )["aliases"]
 
     @staticmethod
     def _validate_management_sources(result, document_source_ids):
@@ -1042,42 +1839,28 @@ class AgentExecutionBoundary:
                     raise StockAnalysisValidationError(
                         "assessed management credibility claims require outcome_source_ids"
                     )
-            elif claim.observed_outcome or claim.outcome_source_ids:
-                raise StockAnalysisValidationError(
-                    "unverifiable management credibility claims cannot assert an outcome"
-                )
+            elif claim.result == "unverifiable":
+                claim.observed_outcome = None
+                claim.outcome_source_ids = []
+                claim.source_ids = list(claim.claim_source_ids)
 
         coverage = result.management_credibility_coverage
-        counts = (
-            coverage.eligible_claim_count,
-            coverage.assessed_claim_count,
-            coverage.pending_claim_count,
-            coverage.omitted_claim_count,
-        )
-        if any(
-            not isinstance(value, int) or isinstance(value, bool) or value < 0
-            for value in counts
+        if (
+            not isinstance(coverage.omitted_claim_count, int)
+            or isinstance(coverage.omitted_claim_count, bool)
+            or coverage.omitted_claim_count < 0
         ):
             raise StockAnalysisValidationError(
-                "management credibility coverage counts must be non-negative integers"
+                "management credibility omitted_claim_count must be a non-negative integer"
             )
 
         assessed_count = sum(claim.result in assessed_results for claim in ledger)
         pending_count = sum(claim.result == "unverifiable" for claim in ledger)
-        if coverage.assessed_claim_count != assessed_count:
-            raise StockAnalysisValidationError(
-                "management credibility assessed_claim_count does not match ledger"
-            )
-        if coverage.pending_claim_count != pending_count:
-            raise StockAnalysisValidationError(
-                "management credibility pending_claim_count does not match ledger"
-            )
-        if coverage.eligible_claim_count != (
+        coverage.assessed_claim_count = assessed_count
+        coverage.pending_claim_count = pending_count
+        coverage.eligible_claim_count = (
             assessed_count + pending_count + coverage.omitted_claim_count
-        ):
-            raise StockAnalysisValidationError(
-                "management credibility coverage counts do not reconcile"
-            )
+        )
         if coverage.omitted_claim_count and not coverage.omission_reasons:
             raise StockAnalysisValidationError(
                 "omitted management credibility claims require omission_reasons"
@@ -1102,7 +1885,9 @@ class AgentExecutionBoundary:
         }
 
     @staticmethod
-    def _normalize_assessment_claims(claims, source_aliases):
+    def _normalize_assessment_claims(
+        claims, source_aliases, full_results=None, research_evidence=None
+    ):
         for claim in claims:
             claim.statement = claim.statement.strip()
             if not claim.statement:
@@ -1114,7 +1899,12 @@ class AgentExecutionBoundary:
                     "assessment claims require source_ids"
                 )
             claim.source_ids = [
-                source_aliases.get(source_id, source_id)
+                AgentExecutionBoundary._resolve_source_alias(
+                    source_id,
+                    source_aliases,
+                    full_results,
+                    research_evidence,
+                )
                 for source_id in claim.source_ids
             ]
             if len(claim.source_ids) != len(set(claim.source_ids)):
@@ -1123,11 +1913,38 @@ class AgentExecutionBoundary:
                 )
 
     @staticmethod
-    def _validate_assessment_sections(
-        result, *, document_source_ids, insider_source_ids
+    def _resolve_source_alias(
+        source_id,
+        source_aliases,
+        full_results=None,
+        research_evidence=None,
     ):
+        if "canonical_source_ids" in source_aliases:
+            try:
+                return resolve_source_id(
+                    source_id,
+                    full_results,
+                    research_evidence,
+                    catalog=source_aliases,
+                )
+            except SourcePathError as exc:
+                raise StockAnalysisValidationError(
+                    f"unknown evidence source: {source_id}"
+                ) from exc
+        return source_aliases.get(source_id, source_id)
+
+    @staticmethod
+    def _validate_assessment_sections(
+        result,
+        *,
+        document_source_ids,
+        insider_source_ids,
+        ownership_liquidity_source_ids,
+        ownership_liquidity,
+    ):
+        violations = []
         if result.management_assessment.strip() and not result.management_claims:
-            raise StockAnalysisValidationError(
+            violations.append(
                 "management assessment requires structured management claims"
             )
         management_sources = {
@@ -1139,13 +1956,41 @@ class AgentExecutionBoundary:
             management_sources - document_source_ids
         )
         if unknown_management_sources:
-            raise StockAnalysisValidationError(
+            violations.append(
                 "management claims must cite supplied documents: "
                 + ", ".join(unknown_management_sources)
             )
 
+        if (
+            ownership_liquidity_source_ids
+            and result.ownership_and_flow_assessment.strip()
+            and not result.ownership_claims
+        ):
+            violations.append(
+                "ownership and flow assessment requires structured ownership claims"
+            )
+        ownership_sources = {
+            source_id
+            for claim in result.ownership_claims
+            for source_id in claim.source_ids
+        }
+        unknown_ownership_sources = sorted(
+            ownership_sources - ownership_liquidity_source_ids
+        )
+        if unknown_ownership_sources:
+            violations.append(
+                "ownership claims must cite supplied ownership/liquidity evidence: "
+                + ", ".join(unknown_ownership_sources)
+            )
+        try:
+            AgentExecutionBoundary._validate_supported_ownership_claims(
+                result.ownership_claims, ownership_liquidity
+            )
+        except StockAnalysisValidationError as exc:
+            violations.extend(getattr(exc, "violations", (str(exc),)))
+
         if insider_source_ids and result.insider_assessment.strip() and not result.insider_claims:
-            raise StockAnalysisValidationError(
+            violations.append(
                 "insider assessment requires structured insider claims"
             )
         insider_sources = {
@@ -1154,12 +1999,42 @@ class AgentExecutionBoundary:
             for source_id in claim.source_ids
         }
         if insider_sources and not insider_sources.intersection(insider_source_ids):
-            raise StockAnalysisValidationError(
+            violations.append(
                 "insider claims must cite at least one supplied insider transaction"
             )
+        _raise_validation_violations(violations)
 
     @staticmethod
-    def _validate_portfolio_eligibility(result):
+    def _validate_supported_ownership_claims(claims, evidence):
+        ownership = evidence.get("ownership") or {}
+        changes = evidence.get("changes") or {}
+        field_groups = (
+            (("free float", "free-float"), ownership, (
+                "free_float_pct", "free_float_shares", "free_float_market_cap"
+            )),
+            (("institutional ownership",), ownership, ("institutional_pct",)),
+            (("holder concentration", "capital concentration"), ownership, (
+                "top_1_capital_pct", "top_3_capital_pct", "top_10_capital_pct"
+            )),
+            (("voting control", "voting ownership"), ownership, ("top_1_voting_pct",)),
+            (("ownership change", "ownership broadening", "ownership concentration"), changes, (
+                "quarter", "year"
+            )),
+        )
+        for claim in claims:
+            statement = claim.statement.casefold()
+            if not re.search(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?\s*%?", statement):
+                continue
+            for phrases, values, fields_to_check in field_groups:
+                if any(phrase in statement for phrase in phrases) and not any(
+                    values.get(field) is not None for field in fields_to_check
+                ):
+                    raise StockAnalysisValidationError(
+                        "precise ownership claim requires a supplied deterministic field"
+                    )
+
+    @staticmethod
+    def _validate_portfolio_eligibility(result, *, require_scenario=True):
         if result.portfolio_eligibility == "investable":
             if result.verdict != "activated_case":
                 raise StockAnalysisValidationError(
@@ -1173,7 +2048,7 @@ class AgentExecutionBoundary:
                 raise StockAnalysisValidationError(
                     "investable cases cannot have a reconsideration trigger"
                 )
-            if (
+            if require_scenario and (
                 result.forward_scenario_analysis is None
                 or result.forward_scenario_analysis.status != "available"
             ):
@@ -1207,3 +2082,149 @@ class AgentExecutionBoundary:
             raise StockAnalysisValidationError(
                 "activated_case requires deterministic reverse-DCF expectations"
             )
+
+    @classmethod
+    def _validate_verdict_coherence(
+        cls, result, candidate, *, require_forward_scenario=True
+    ):
+        """Validate the model verdict against deterministic valuation outputs.
+
+        This method only rejects a contradictory model verdict. It never changes
+        the verdict or promotes a case.
+        """
+        reverse_dcf = candidate.full_results.get("reverse_dcf")
+        reverse_status = cls._field(reverse_dcf, "status")
+        normalization = cls._field(reverse_dcf, "normalization")
+        reverse_assessment = result.reverse_dcf_expectation_assessment
+        forward = result.forward_scenario_analysis
+        base = forward.band("base") if forward is not None else None
+        required_return = cls._selected_required_return(result, candidate)
+        checks = {
+            "reverse_dcf_available": reverse_status == "available",
+            "reverse_dcf_assessment": reverse_assessment,
+            "forward_scenario_available": bool(
+                forward is not None and forward.status == "available"
+            ),
+            "base_annualized_return_range": (
+                [base.low_annualized_return, base.high_annualized_return]
+                if base is not None
+                else None
+            ),
+            "required_return": required_return,
+            "normalization_confidence": cls._field(normalization, "confidence"),
+            "latent_case_type": result.latent_case_type,
+            "activation_trigger_present": bool(
+                (result.activation_trigger or "").strip()
+            ),
+        }
+
+        def reject(message):
+            error = StockAnalysisValidationError(
+                "verdict coherence conflict: " + message
+            )
+            error.deterministic_output_diagnostic = {
+                "type": "verdict_coherence",
+                "verdict": result.verdict,
+                "latent_case_type": result.latent_case_type,
+                "base_annualized_return_range": checks[
+                    "base_annualized_return_range"
+                ],
+                "required_return": required_return,
+                "conflict": message,
+            }
+            raise error
+
+        if result.verdict == "activated_case":
+            if reverse_status != "available":
+                reject("activated_case requires reverse_dcf.status=available")
+            if reverse_assessment == "unsupported":
+                reject("activated_case cannot use unsupported reverse DCF")
+            if require_forward_scenario:
+                if forward is None or forward.status != "available":
+                    reject("activated_case requires an available forward scenario")
+                if base is None or required_return is None:
+                    reject(
+                        "activated_case requires a base annualized-return range and required_return"
+                    )
+                if base.low_annualized_return < required_return:
+                    reject(
+                        "activated_case base lower-bound return is below required_return"
+                    )
+            if any(
+                evidence.status == "unresolved"
+                for evidence in result.activation_trigger_evidence
+            ):
+                reject("activated_case cannot retain unresolved activation trigger evidence")
+        elif result.verdict == "operating-latent":
+            # Kept as an internal spelling guard in case a caller bypasses the
+            # contract type; public cards use latent_case_type=operating.
+            reject("operating-latent is not a public verdict")
+        elif result.verdict == "latent_case" and result.latent_case_type == "operating":
+            if reverse_status != "available":
+                reject("operating latent requires reverse_dcf.status=available")
+            if reverse_assessment == "unsupported":
+                reject("operating latent cannot use unsupported reverse DCF")
+            if require_forward_scenario:
+                if forward is None or forward.status != "available":
+                    reject("operating latent requires an available forward scenario")
+                if base is None or required_return is None:
+                    reject(
+                        "operating latent requires a base annualized-return range and required_return"
+                    )
+                if base.high_annualized_return < required_return:
+                    reject(
+                        "operating latent base upper-bound return is below required_return"
+                    )
+        elif result.verdict == "latent_case" and result.latent_case_type == "price":
+            trigger_text = " ".join(
+                (
+                    result.activation_trigger or "",
+                    result.activation_trigger_spec.observable_metric_or_event,
+                    result.activation_trigger_spec.threshold_or_direction,
+                )
+            ).lower()
+            if not re.search(r"\b(price|valuation|multiple|return|hurdle)\b", trigger_text):
+                reject("price latent requires a concrete price or valuation condition")
+            if (
+                base is not None
+                and required_return is not None
+                and base.low_annualized_return >= required_return
+            ):
+                reject(
+                    "price latent cannot claim economically sufficient current-price returns"
+                )
+
+        if result.verdict in {"activated_case"} or (
+            result.verdict == "latent_case" and result.latent_case_type == "operating"
+        ):
+            if base is not None and required_return is not None:
+                if base.high_annualized_return < required_return:
+                    reject(
+                        "base upper-bound return is below required_return for the selected verdict"
+                    )
+        return checks
+
+    @classmethod
+    def validate_verdict_coherence(
+        cls, result, candidate, *, require_forward_scenario=True
+    ):
+        """Validate a completed scenario against its qualitative verdict."""
+        return cls._validate_verdict_coherence(
+            result,
+            candidate,
+            require_forward_scenario=require_forward_scenario,
+        )
+
+
+def _raise_validation_violations(violations):
+    unique = list(dict.fromkeys(violations))
+    if not unique:
+        return
+    if len(unique) == 1:
+        raise StockAnalysisValidationError(unique[0])
+    details = "\n".join(f"- {message}" for message in unique)
+    error = StockAnalysisValidationError(
+        f"qualitative validation failed with {len(unique)} violations:\n{details}"
+    )
+    error.violations = tuple(unique)
+    raise error

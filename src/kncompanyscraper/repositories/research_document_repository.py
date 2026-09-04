@@ -38,6 +38,19 @@ class ResearchDocumentRepository(BaseRepository):
                 )
                 return cur.rowcount == 1
 
+    def update_metadata(self, document_id: int, metadata: dict) -> bool:
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE research_documents
+                    SET metadata = metadata || %s
+                    WHERE id = %s
+                    """,
+                    (Json(metadata), document_id),
+                )
+                return cur.rowcount == 1
+
     def list_for_company(
         self,
         company_id: int,

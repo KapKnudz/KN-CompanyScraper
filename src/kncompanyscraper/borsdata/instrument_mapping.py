@@ -16,6 +16,7 @@ class BorsdataInstrumentMappingService:
 
     def map_companies(self, companies: list) -> InstrumentMappingResult:
         instruments = self.client.get_instruments()
+        self.company_repository.upsert_borsdata_markets(self.client.get_markets())
         mapped = 0
         unresolved: list[str] = []
 
@@ -36,6 +37,8 @@ class BorsdataInstrumentMappingService:
                 instrument.sector_id,
                 instrument.branch_id,
                 report_currency=instrument.report_currency,
+                market_id=instrument.market_id,
+                listing_date=instrument.listing_date,
             )
             mapped += 1
 

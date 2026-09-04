@@ -6,8 +6,8 @@ from kncompanyscraper.analysis.agent.context_provenance import (
     deterministic_context_sha256,
 )
 from kncompanyscraper.analysis.agent.output_schema import (
-    THESIS_UPDATE_OUTPUT_CONTRACT,
-    thesis_update_json_schema,
+    QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
+    qualitative_thesis_update_json_schema,
 )
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt, AgentPromptBuilder
 
@@ -49,8 +49,18 @@ class ThesisUpdateContextBuilder:
             for item in evidence.get("insider_transactions", [])
             if item["source_id"] not in prior_source_ids
         ]
+        ownership_liquidity_source_ids = [
+            source_id
+            for source_id in evidence.get("ownership_liquidity", {}).get(
+                "source_ids", []
+            )
+            if source_id not in prior_source_ids
+        ]
         new_source_ids = tuple(
-            item["source_id"] for item in [*documents, *insider_transactions]
+            [
+                *(item["source_id"] for item in [*documents, *insider_transactions]),
+                *ownership_liquidity_source_ids,
+            ]
         )
         prior_document_source_ids = sorted(
             source_id
@@ -117,12 +127,16 @@ class ThesisUpdateContextBuilder:
         source_ids.update(timing.get("source_ids") or [])
         for catalyst in timing.get("catalysts") or []:
             source_ids.update(catalyst.get("source_ids") or [])
+        for evidence in content.get("activation_trigger_evidence") or []:
+            source_ids.update(evidence.get("source_ids") or [])
+        for claim in content.get("ownership_claims") or []:
+            source_ids.update(claim.get("source_ids") or [])
         return source_ids
 
 
 class ThesisUpdatePromptBuilder:
     POLICY_NAME = "nordic-thesis-update-policy"
-    POLICY_VERSION = "1.1.0-thesis-card"
+    POLICY_VERSION = "1.3.0-thesis-calibration"
 
     def build(self, context: ThesisUpdateContext) -> AgentPrompt:
         policy = AgentPromptBuilder._read_resource("resources/analyst_policy.md")
@@ -153,7 +167,7 @@ class ThesisUpdatePromptBuilder:
                 sort_keys=True,
             ),
             output_contract=json.dumps(
-                THESIS_UPDATE_OUTPUT_CONTRACT,
+                QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
                 ensure_ascii=False,
                 indent=2,
             ),
@@ -164,6 +178,6 @@ class ThesisUpdatePromptBuilder:
             policy_name=self.POLICY_NAME,
             policy_version=self.POLICY_VERSION,
             policy_sha256=policy_sha256,
-            output_schema=thesis_update_json_schema(),
+            output_schema=qualitative_thesis_update_json_schema(),
             schema_name="thesis_update",
         )

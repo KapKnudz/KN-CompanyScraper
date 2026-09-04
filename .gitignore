@@ -8,6 +8,7 @@ __pycache__/
 logs/
 agent-prompts*/
 analysis-results/
+.local_runs/
 .DS_Store
 dist/
 *.egg-info/

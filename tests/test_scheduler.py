@@ -109,6 +109,7 @@ def test_configure_schedule_adds_news_and_nightly_borsdata_jobs(monkeypatch):
     monkeypatch.setattr(scheduler.config, "SCRAPE_INTERVAL_MINUTES", 30)
     monkeypatch.setattr(scheduler.config, "BORSDATA_SYNC_TIME", "02:00")
     monkeypatch.setattr(scheduler.config, "BORSDATA_INSIDER_SYNC_TIME", "03:00")
+    monkeypatch.setattr(scheduler.config, "BORSDATA_HOLDINGS_SYNC_TIME", "03:30")
     monkeypatch.setattr(scheduler.config, "COMPARATIVE_RANKING_TIME", "04:00")
     monkeypatch.setattr(scheduler.config, "BENCHMARK_SYNC_TIME", "04:10")
     monkeypatch.setattr(scheduler.config, "RANKING_PERFORMANCE_TIME", "04:15")
@@ -118,10 +119,11 @@ def test_configure_schedule_adds_news_and_nightly_borsdata_jobs(monkeypatch):
         scheduler.configure_schedule()
         jobs = scheduler.schedule.get_jobs()
 
-        assert len(jobs) == 7
+        assert len(jobs) == 8
         assert any(job.job_func.func is scheduler.run_once for job in jobs)
         assert any(job.job_func.func is scheduler.run_borsdata_once for job in jobs)
         assert any(job.job_func.func is scheduler.run_borsdata_insiders_once for job in jobs)
+        assert any(job.job_func.func is scheduler.run_borsdata_holdings_once for job in jobs)
         assert any(job.job_func.func is scheduler.run_comparative_ranking_once for job in jobs)
         assert any(job.job_func.func is scheduler.run_benchmark_sync_once for job in jobs)
         assert any(job.job_func.func is scheduler.run_ranking_performance_once for job in jobs)
@@ -131,6 +133,7 @@ def test_configure_schedule_adds_news_and_nightly_borsdata_jobs(monkeypatch):
         )
         assert any(job.at_time == time(2, 0) for job in jobs)
         assert any(job.at_time == time(3, 0) for job in jobs)
+        assert any(job.at_time == time(3, 30) for job in jobs)
         assert any(job.at_time == time(4, 0) for job in jobs)
         assert any(job.at_time == time(4, 10) for job in jobs)
         assert any(job.at_time == time(4, 15) for job in jobs)

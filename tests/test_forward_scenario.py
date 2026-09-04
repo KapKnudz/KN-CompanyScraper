@@ -16,13 +16,12 @@ from kncompanyscraper.analysis.valuation.forward_scenario import (
 from kncompanyscraper.analysis.policy_versions import FORWARD_SCENARIO_POLICY_VERSION
 
 
-def assumption(value: float, *, exception: str | None = None) -> SourcedAssumption:
+def assumption(value: float) -> SourcedAssumption:
     return SourcedAssumption(
         value=value,
         source_ids=("report:2026-q2",),
         rationale="Bounded from reported history and the stated operating mechanism.",
         mechanism="The stated operating mechanism changes the modeled driver.",
-        guardrail_exception=exception,
     )
 
 
@@ -71,7 +70,7 @@ def valid_inputs() -> ForwardScenarioInputs:
         current_revenue=100,
         current_shares=10,
         current_net_debt=0,
-        terminal_multiple_guardrail=(5, 15),
+        historical_terminal_multiple_range=(5, 15),
         bundles=(
             bundle(
                 "bear",
@@ -263,6 +262,29 @@ def test_engine_requires_an_explicit_mechanism_for_zero_debt_change():
     assert "base.net_debt_change requires a mechanism" in result.methodology_flags
 
 
+def test_engine_requires_not_applicable_provenance_for_zero_debt_change():
+    inputs = valid_inputs()
+    broken = replace(
+        inputs.bundles[1],
+        net_debt_change=NetDebtChangeAssumption(
+            value=0,
+            source_ids=("report:2026-q2",),
+            rationale="No projected net-debt change.",
+            mechanism="No projected net-debt change.",
+            provenance_type="source_backed",
+        ),
+    )
+
+    result = ForwardScenarioEngine().analyze(
+        replace(inputs, bundles=(inputs.bundles[0], broken, inputs.bundles[2]))
+    )
+
+    assert result.status == "insufficient_evidence"
+    assert "base.zero net_debt_change must use not_applicable provenance" in (
+        result.methodology_flags
+    )
+
+
 def test_engine_rejects_cross_case_overlap_and_wide_base_band():
     def band(case, low_price=10, high_price=12, low_return=0, high_return=0.1):
         return ScenarioBandResult(
@@ -301,7 +323,7 @@ def test_engine_applies_plausibility_tolerance_and_bull_lever_limit():
         demonstrated_revenue_cagr=0.115,
         demonstrated_ebit_margin=0.125,
         bull_terminal_multiple_ceiling=10.0,
-        terminal_multiple_guardrail=(5, 20),
+        historical_terminal_multiple_range=(5, 20),
     )
     within_tolerance = replace(
         inputs,
@@ -352,6 +374,31 @@ def test_engine_keeps_unsupported_company_models_visible():
 
     assert result.status == "method_not_supported"
     assert "dedicated forward valuation method" in result.methodology_flags[0]
+
+
+def test_engine_allows_bear_multiple_below_history_and_warns_when_history_is_missing():
+    inputs = valid_inputs()
+    inputs = replace(
+        inputs,
+        historical_terminal_multiple_range=(None, None),
+        current_terminal_multiple=12.0,
+        base_terminal_multiple_ceiling=None,
+        bull_terminal_multiple_ceiling=None,
+        bundles=(
+            replace(
+                inputs.bundles[0],
+                terminal_ev_ebit_low=assumption(3.0),
+                terminal_ev_ebit_high=assumption(4.0),
+            ),
+            inputs.bundles[1],
+            inputs.bundles[2],
+        ),
+    )
+
+    result = ForwardScenarioEngine().analyze(inputs)
+
+    assert result.status == "available"
+    assert any("historical terminal multiple range is unavailable" in warning for warning in result.warnings)
 
 
 def analysis_with_returns(**returns) -> ForwardScenarioAnalysis:

@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
+from kncompanyscraper.analysis.agent.agent_packet import AgentCandidatePacket
 from kncompanyscraper.analysis.agent.agent_context_builder import AgentContextBuilder
 
 
@@ -30,6 +32,30 @@ def test_context_builder_preserves_deterministic_ranking_context():
     assert candidate.positives == ["Profitable"]
     assert candidate.negatives == ["Weak margin trend"]
     assert candidate.flags == ["low_data_quality"]
+
+
+def test_context_candidate_projects_to_explicit_agent_packet_without_losing_evidence():
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        full_results={"financial": {"source_ids": ["financial:annual:2025"]}},
+        research_evidence={
+            "documents": [{"source_id": "document:11", "text": "full report"}],
+            "insider_transactions": [{"source_id": "insider:1"}],
+        },
+    )
+
+    packet = AgentCandidatePacket.from_candidate(candidate)
+
+    assert packet.full_results == candidate.full_results
+    assert packet.research_evidence == candidate.research_evidence
+    assert packet.evidence_catalog["canonical_source_ids"] == [
+        "document:11",
+        "insider:1",
+        "financial:annual:2025",
+    ]
 
 
 def test_context_builder_injects_structured_financial_history():

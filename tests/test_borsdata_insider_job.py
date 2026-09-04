@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 from kncompanyscraper.jobs.borsdata_insider_job import BorsdataInsiderJob
 from kncompanyscraper.models.company import Company
+from kncompanyscraper.models.ownership_flow import HoldingsInstrumentResult
 
 
 def make_company(company_id: int) -> Company:
@@ -18,7 +19,9 @@ def make_company(company_id: int) -> Company:
 def test_insider_job_batches_requests_and_records_company_results():
     companies = [make_company(company_id) for company_id in range(1, 52)]
     client = MagicMock()
-    client.get_insider_transactions.side_effect = lambda ids: {instrument_id: [] for instrument_id in ids}
+    client.get_insider_transactions.side_effect = lambda ids: {
+        instrument_id: HoldingsInstrumentResult(instrument_id) for instrument_id in ids
+    }
     insider_repository = MagicMock()
     insider_repository.save_all.return_value = 0
     job_repository = MagicMock()
@@ -38,7 +41,10 @@ def test_insider_job_batches_requests_and_records_company_results():
 def test_insider_job_isolates_company_persistence_failure():
     companies = [make_company(1), make_company(2)]
     client = MagicMock()
-    client.get_insider_transactions.return_value = {10: [], 20: []}
+    client.get_insider_transactions.return_value = {
+        10: HoldingsInstrumentResult(10),
+        20: HoldingsInstrumentResult(20),
+    }
     insider_repository = MagicMock()
     insider_repository.save_all.side_effect = [RuntimeError("database error"), 3]
     job_repository = MagicMock()
@@ -55,3 +61,24 @@ def test_insider_job_isolates_company_persistence_failure():
         102,
         {"borsdata_id": 20, "transactions_inserted": 3},
     )
+
+
+def test_insider_job_does_not_persist_failed_or_omitted_coverage():
+    companies = [make_company(1), make_company(2)]
+    client = MagicMock()
+    client.get_insider_transactions.return_value = {
+        10: HoldingsInstrumentResult(10, error="NOT_ACTIVE"),
+        20: HoldingsInstrumentResult(
+            20, error="Börsdata insider response omitted instrument"
+        ),
+    }
+    insider_repository = MagicMock()
+    job_repository = MagicMock()
+    job_repository.start.side_effect = [101, 102]
+
+    result = BorsdataInsiderJob(client, insider_repository, job_repository).run(companies)
+
+    assert result.synced == 0
+    assert result.failed == 2
+    insider_repository.save_all.assert_not_called()
+    assert job_repository.fail.call_count == 2

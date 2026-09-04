@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from kncompanyscraper.borsdata.dividend import CashDividend
 from kncompanyscraper.repositories.dividend_repository import DividendRepository
 
 
@@ -90,3 +91,26 @@ def test_review_events_validates_decision(status, reason, message):
             evidence_url=None,
             source="borsdata:dividend_calendar",
         )
+
+
+def test_replace_calendar_upserts_matching_rows_instead_of_replacing_them():
+    cursor = MagicMock()
+    connection = connection_with_cursor(cursor)
+    dividend = CashDividend(date(2026, 3, 2), 2.0, "SEK", 0)
+
+    with patch(
+        "kncompanyscraper.repositories.base_repository.get_connection",
+        return_value=connection,
+    ):
+        DividendRepository().replace_calendar(
+            154,
+            [dividend],
+            covered_from=date(2020, 1, 1),
+            covered_through=date(2026, 8, 31),
+            source="borsdata:dividend_calendar",
+        )
+
+    statements = [call.args[0] for call in cursor.execute.call_args_list]
+    assert "NOT IN" in statements[0]
+    assert "ON CONFLICT" in statements[1]
+    assert "distribution_frequency = EXCLUDED.distribution_frequency" in statements[1]

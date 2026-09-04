@@ -5,7 +5,10 @@ from kncompanyscraper.analysis.agent.openai_responses import (
     OpenAIResponsesAdapter,
 )
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt
-from kncompanyscraper.analysis.agent.output_schema import stock_analysis_json_schema
+from kncompanyscraper.analysis.agent.output_schema import (
+    qualitative_stock_analysis_json_schema,
+    stock_analysis_json_schema,
+)
 from tests.test_agent_result_boundary import valid_response
 
 
@@ -47,6 +50,21 @@ def test_json_schema_is_strict_and_requires_all_contract_fields():
         "activated_case",
     ]
     assert schema["properties"]["case_horizon_months"]["type"] == ["integer", "null"]
+
+
+def test_json_schemas_use_json_null_for_nullable_enums():
+    expected = {
+        "anyOf": [
+            {"type": "string", "enum": ["price", "operating"]},
+            {"type": "null"},
+        ]
+    }
+
+    assert stock_analysis_json_schema()["properties"]["latent_case_type"] == expected
+    assert (
+        qualitative_stock_analysis_json_schema()["properties"]["latent_case_type"]
+        == expected
+    )
 
 
 def test_adapter_requests_strict_structured_output_without_api_storage():

@@ -43,9 +43,22 @@ second qualitative downside estimate here.
 
 Do not use unsupported precision. Give ranges when the evidence only supports ranges.
 
-For a `general` ranking model, populate `scenario_bundles` only when the supplied deterministic context includes positive current price, revenue, and shares, current net debt, and EV/EBIT guardrails. Supply exactly one bear, base, and bull bundle at one shared 24-, 36-, or 48-month horizon. Each bundle must state sourced revenue CAGR, EBIT margin, low/high terminal EV/EBIT multiples, net-debt change, full-horizon decimal-fraction share-count growth, cumulative distributions per share, and a concise operating `mechanism`. Every assumption requires source IDs and a rationale. The deterministic engine derives future net debt from current net debt plus `net_debt_change`; the deterministic engine derives diluted shares from current shares. Do not supply future absolute debt or shares. Every non-zero `net_debt_change` must include a concrete `mechanism` and classify `provenance_type` as `source_backed` or `analyst_sensitivity`; use `not_applicable` and an explicit no-change mechanism when the change is zero. Bear drivers may not improve on base and bull drivers may not worsen from base. Keep the displayed bands globally ordered and do not combine independent extremes. Base bundles must stay within demonstrated growth, margin, and base-multiple limits. A bull bundle may exceed at most one demonstrated growth, margin, or bull-multiple limit; use the versioned plausibility tolerance for authored growth and margin values. Leave the list empty when evidence is insufficient or the ranking model is bank/property; the deterministic boundary will preserve a visible insufficiency or unsupported-method result.
+The main model produces only the qualitative thesis. Forward scenario bundles are
+authored by a separate required scenario stage after this response. That stage
+receives the bounded deterministic readiness packet and must supply exactly one
+bear, base, and bull bundle at one shared 24-, 36-, or 48-month horizon for an
+eligible `general` company. Each bundle states sourced revenue CAGR, EBIT margin,
+low/high terminal EV/EBIT multiples, net-debt change, full-horizon decimal-fraction
+full-horizon decimal-fraction share-count growth, cumulative distributions per share, and a concise operating
+`mechanism`. Every assumption requires source IDs and a rationale. Historical
+multiple ranges are anchors and optimistic ceilings, not a hard downside floor;
+the scenario stage may place bear multiples below historical p10. Leave scenario
+authoring to the deterministic readiness boundary for bank/property companies
+or genuinely missing inputs; those analyses remain blocked rather than complete.
+Deterministic valuation limitations may still be present in the qualitative
+thesis; they do not make a ready general-company scenario optional.
 
-`forward_scenario_analysis` must be `null` in the model response. The execution boundary owns its calculation. Never state a point estimate or probability weight in prose.
+`forward_scenario_analysis` must be `null` in the model response. Forward scenario bundles are authored in a separate required stage after this qualitative response. The execution boundary owns all calculated prices and returns. Never state a point estimate or probability weight in prose.
 
 Use `full_results.reverse_dcf.price_fundamental_attribution` to explain material
 one-, three-, and five-year share-price moves. Separate the portions accompanied
@@ -58,6 +71,11 @@ returns, but do not call a move speculative when supplied fundamentals explain i
 Use `full_results.reverse_dcf.expectation_curve` as the primary explanation of what the current price requires. Each point sets year-one revenue growth, which fades linearly to mature terminal growth by year five, and solves the year-five EBIT margin reached linearly from the current reported margin. Present the curve as alternative fading growth–margin paths rather than one unique market forecast. Never describe either endpoint as a constant five-year assumption. Use the one-variable results under `full_results.reverse_dcf.implied_expectations` only as cross-checks; when a solve is outside bounds, report its `required_value_hint` instead of treating the bound as the answer. Terminal growth is diagnostic only and must not drive the verdict or ranking interpretation. Check `full_results.reverse_dcf.normalization` before relying on any solve; when confidence is low, show both supplied three- and five-year windows and explain the exact reliability flags.
 
 Populate `revenue_resilience` from supplied evidence. Distinguish contractual or subscription stickiness from message, transaction, usage, project, or order volume. Discuss observed revenue, margin, or cash-flow variability when supplied; order timing alone is not economic cyclicality evidence. Use `resilient`, `mixed`, or `variable` only with at least one cited fact and explain both recurring and variable drivers. Use `unassessable` when the evidence is insufficient and record the gap in `limitations` rather than inventing a confidence score.
+Use `resilient` only with sourced retention, renewal, contractual, or equivalent persistence evidence. Use `mixed` only when the structured recurring and variable drivers are both supported and the business-model profile contains both model types. Repeat demand, consumables, membership, or brand familiarity is not contractual recurrence.
+Record recurring and variable driver source IDs separately. A product-sales
+business with possible repeat purchases is `variable`, while a
+subscription-heavy business with sourced retention or renewal evidence may be
+`resilient`; a business with both evidenced mechanisms is `mixed`.
 
 The required return is a deterministic hurdle selected only by the market-cap bucket in `full_results.reverse_dcf.required_return`. The revenue-resilience assessment must not alter it. There is one hurdle, not a profile-specific sensitivity table.
 
@@ -114,9 +132,17 @@ substitute.
 
 ## 7. Assess ownership and timing
 
-Analyze insider activity, ownership changes, average traded value, free float, listing venue, known supply overhangs, and plausible fund or index eligibility. Keep insider activity as a directional signal separate from ownership or flow capacity. When free-float or holder coverage is unavailable, state that ownership-flow conclusions cannot be made and add the gap to `missing_information`.
+Analyze insider activity, executed buybacks, short-interest snapshots, ownership changes, average traded value, free float, listing venue, known supply overhangs, and plausible fund or index eligibility. Keep insider transactions, executed company buybacks, short-side positioning, and long-holder ownership analytically distinct; none is a proxy for another. Treat fields suffixed `_raw` as uninterpreted provider values and do not attach percentage, currency, or directional semantics beyond those explicitly supplied. When free-float or holder coverage is unavailable, state that long-ownership conclusions cannot be made and add the gap to `missing_information`.
 
 Use this evidence to modify confidence or timing. Do not allow it to replace the fundamental case.
+
+Repeat each material liquidity, executed-buyback, short-interest, or ownership
+conclusion in `ownership_claims` with an atomic statement, evidence kind, and
+the exact supplied ownership/liquidity source IDs. Do not state a precise
+free-float, holder, institutional, concentration, voting, or ownership-change
+value when the corresponding deterministic field is null. When no
+ownership/liquidity source IDs are supplied, leave the claims empty and use the
+deterministic no-data assessment.
 
 Populate `timing_assessment` with the fixed case horizon and observable catalyst
 windows: `0_12m`, `12_24m`, `24_48m`, or `uncertain`. Every catalyst must say what
@@ -138,13 +164,22 @@ If `insider_event_count` is zero, make no inference from the absence of stored t
 
 State the strongest contrary interpretation. Identify the evidence that would invalidate the revenue mechanism, peak margin, management assessment, financing assumptions, or valuation.
 
+Express the headline case in `falsifiable_case`, reconciled to the same
+statement and horizon used elsewhere. Select one sourced decisive item on each
+side in `strongest_confirming_evidence` and
+`strongest_disconfirming_evidence`. Define separate observable
+`thesis_break_tests` for revenue/demand, margin/execution, balance
+sheet/dilution, management credibility, valuation overshoot, and superior
+evidence/opportunity. Each test needs a current sourced baseline and an explicit
+`reassess`, `reduce`, or `sell` response.
+
 After sharp price moves, re-evaluate the evidence independently of the entry price and unrealized profit or loss.
 
 ## 9. Produce the verdict
 
-Return the required structured result. Use decimal fractions for rates, for example `0.15` for 15%. Use `null` for unavailable scalar values and list every material absence in `missing_information`.
+Return the required structured result. Use decimal fractions for rates, for example `0.15` for 15%. Use `null` for unavailable scalar values and list every absence in `missing_information`. For every listed absence, add one matching `missing_information_details` entry with `limitation_class` `core` or `supplemental` and a short explanation of its impact on the conclusion.
 
-Choose `reject`, `watch`, `latent_case`, or `activated_case`. Explain why the selected status is more appropriate than the next-more-positive status.
+Choose `reject`, `watch`, `latent_case`, or `activated_case`. Explain why the selected status is more appropriate than the next-more-positive status. When choosing `latent_case`, set exactly one `latent_case_type` and provide one primary `activation_trigger` plus its structured `activation_trigger_spec`. Use `price` only when the current price or valuation is the blocker; use `operating` only when the return range can clear the hurdle but a named operating mechanism remains unresolved.
 
 Populate the structured company fact ledger with concise, reusable observations rather than thesis prose. Each item must be atomic, identify whether it is a fact, management claim, or analyst inference, and cite original supplied evidence. Use an ISO date for `source_date` when the source date is known. Empty headings are preferable to unsupported entries.
 

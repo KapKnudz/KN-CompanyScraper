@@ -22,6 +22,11 @@ class MfnScraper:
         self.headless = headless
 
     def get_matched_articles(self) -> list[ScrapedArticle]:
+        matches = self.discover_feed()
+        return self.scrape_details(matches)
+
+    def discover_feed(self) -> list[dict]:
+        """Return feed metadata without visiting any release detail pages."""
         with sync_playwright() as p:
             logger.info("Launching browser")
             browser = p.chromium.launch(headless=self.headless)
@@ -31,16 +36,24 @@ class MfnScraper:
                 logger.info("Starting feed scrape")
                 matches = self._scrape_feed(page)
                 logger.info("Feed scrape finished. Matches: %d", len(matches))
-
-                logger.info("Starting detail scrape")
-                results = self._scrape_details(page, matches)
-                logger.info("Detail scrape finished. Results: %d", len(results))
             finally:
                 logger.info("Closing browser")
                 browser.close()
                 logger.info("Browser closed")
+        return matches
 
-        logger.info("Returning results")
+    def scrape_details(self, matches: list[dict]) -> list[ScrapedArticle]:
+        """Visit detail pages for the already-filtered feed matches only."""
+        if not matches:
+            return []
+        with sync_playwright() as p:
+            logger.info("Launching browser for %d detail pages", len(matches))
+            browser = p.chromium.launch(headless=self.headless)
+            try:
+                page = browser.new_page()
+                results = self._scrape_details(page, matches)
+            finally:
+                browser.close()
         return results
 
     def _scrape_feed(self, page: Page) -> list[dict]:
@@ -66,6 +79,7 @@ class MfnScraper:
                     "company": self.company.name,
                     "slug": item_author_slug,
                     "href": href,
+                    "url": urljoin(self.BASE_URL, href),
                     "title": title,
                 }
             )

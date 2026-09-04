@@ -7,6 +7,13 @@ from kncompanyscraper.repositories.base_repository import BaseRepository
 from kncompanyscraper.models.stored_analysis import StoredAnalysisDocument
 
 
+def _group_rows(rows):
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row["company_id"], []).append(row)
+    return grouped.items()
+
+
 class AnalysisRepository(BaseRepository):
     def save_stock_analysis_raw(
         self,
@@ -66,6 +73,35 @@ class AnalysisRepository(BaseRepository):
                 cur.execute(query, (analysis_id,))
                 row = cur.fetchone()
         return dict(row) if row else None
+
+    def get_thesis_revision_id(self, analysis_id: int) -> int | None:
+        """Return the thesis revision created from one persisted analysis."""
+        query = """
+            SELECT id
+            FROM company_thesis_revisions
+            WHERE source_analysis_id = %s
+        """
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (analysis_id,))
+                row = cur.fetchone()
+        return row[0] if row else None
+
+    def get_stock_analysis_for_job(self, job_id: int) -> int | None:
+        """Find a final analysis already committed for an orchestration job."""
+        query = """
+            SELECT id
+            FROM analysis
+            WHERE analysis_type = 'stock_analysis'
+              AND metadata->>'company_analysis_job_id' = %s
+            ORDER BY id DESC
+            LIMIT 1
+        """
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (str(job_id),))
+                row = cur.fetchone()
+        return row[0] if row else None
 
     def save_stock_analysis(
         self,
@@ -191,6 +227,35 @@ class AnalysisRepository(BaseRepository):
                 "metadata": row["metadata"] or {},
             })
             for row in rows
+        }
+
+    def get_validated_stock_analysis_revisions(self) -> dict[int, list[dict]]:
+        """Return accepted analysis history for diagnostic cohort audits."""
+        query = """
+            SELECT id, company_id, content, created_by, created_at, metadata
+            FROM analysis
+            WHERE analysis_type = 'stock_analysis'
+              AND metadata->>'validation_status' = 'accepted'
+            ORDER BY company_id, created_at ASC, id ASC
+        """
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query)
+                rows = cur.fetchall()
+
+        return {
+            company_id: [
+                {
+                    "analysis_id": row["id"],
+                    "company_id": row["company_id"],
+                    "content": json.loads(row["content"]),
+                    "created_by": row["created_by"],
+                    "created_at": row["created_at"].isoformat(),
+                    "metadata": row["metadata"] or {},
+                }
+                for row in company_rows
+            ]
+            for company_id, company_rows in _group_rows(rows)
         }
 
     def get_validated_stock_analyses_by_ids(

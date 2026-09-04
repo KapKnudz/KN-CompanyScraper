@@ -35,6 +35,22 @@ ReverseDcfExpectationAssessment = Literal[
     "unsupported",
     "unassessable",
 ]
+LimitationClass = Literal["core", "supplemental"]
+ThesisBreakType = Literal[
+    "revenue_or_demand",
+    "margin_or_execution",
+    "balance_sheet_or_dilution",
+    "management_credibility",
+    "valuation_overshoot",
+    "superior_evidence_or_opportunity",
+]
+ThesisBreakResponse = Literal["reassess", "reduce", "sell"]
+LatentCaseType = Literal["price", "operating"]
+ActivationTriggerEvidenceStatus = Literal[
+    "confirms",
+    "weakens",
+    "unresolved",
+]
 ThesisUpdateImpact = Literal[
     "no_material_change",
     "thesis_strengthened",
@@ -95,6 +111,31 @@ class EvidenceCitation:
 
 
 @dataclass
+class FalsifiableCase:
+    statement: str = ""
+    falsification_test: str = ""
+    horizon_months: int | None = None
+    source_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class DecisiveEvidence:
+    statement: str
+    why_it_matters: str
+    source_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ThesisBreakTest:
+    break_type: ThesisBreakType
+    condition: str
+    observable_metric_or_event: str
+    threshold_or_direction: str
+    response: ThesisBreakResponse
+    source_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
 class CompanyFact:
     statement: str
     evidence_kind: FactEvidenceKind
@@ -144,6 +185,8 @@ class RevenueResilience:
     variable_driver: str = ""
     cash_flow_observation: str = ""
     source_ids: list[str] = field(default_factory=list)
+    recurring_source_ids: list[str] = field(default_factory=list)
+    variable_source_ids: list[str] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
 
 
@@ -177,6 +220,31 @@ class TimingAssessment:
 
 
 @dataclass
+class MissingInformationItem:
+    item: str
+    limitation_class: LimitationClass
+    impact: str
+
+
+@dataclass
+class ActivationTriggerSpec:
+    unresolved_claim: str
+    observable_metric_or_event: str
+    threshold_or_direction: str
+    evidence_window: str
+    single_observation_sufficient: bool
+    observation_requirement: str
+
+
+@dataclass
+class ActivationTriggerEvidence:
+    evidence_item: str
+    status: ActivationTriggerEvidenceStatus
+    rationale: str
+    source_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
 class StockAnalysisResult:
     company_id: int
     ticker: str
@@ -184,6 +252,7 @@ class StockAnalysisResult:
     verdict: AnalysisVerdict
     confidence: Confidence
     one_sentence_thesis: str
+    falsifiable_case: FalsifiableCase = field(default_factory=FalsifiableCase)
     analysis_status: AnalysisStatus = "complete"
     thesis_card_version: str = "individual-thesis-card-v2"
     evidence_as_of: str | None = None
@@ -202,6 +271,11 @@ class StockAnalysisResult:
 
     case_horizon_months: int | None = None
     activation_trigger: str | None = None
+    latent_case_type: LatentCaseType | None = None
+    activation_trigger_spec: ActivationTriggerSpec | None = None
+    activation_trigger_evidence: list[ActivationTriggerEvidence] = field(
+        default_factory=list
+    )
     reverse_dcf_expectation_assessment: ReverseDcfExpectationAssessment = "unassessable"
     reverse_dcf_expectation_rationale: str = ""
     revenue_resilience: RevenueResilience = field(default_factory=RevenueResilience)
@@ -210,6 +284,9 @@ class StockAnalysisResult:
     peak_margin_evidence: list[str] = field(default_factory=list)
     scenario_bundles: list[ScenarioBundle] = field(default_factory=list)
     forward_scenario_analysis: ForwardScenarioAnalysis | None = None
+    historical_forecast_table: dict | None = None
+    peak_margin_bridge: dict | None = None
+    scenario_driver_attribution: dict | None = None
     management_assessment: str = ""
     management_claims: list[AssessmentClaim] = field(default_factory=list)
     management_credibility_ledger: list[ManagementClaimAssessment] = field(default_factory=list)
@@ -217,12 +294,19 @@ class StockAnalysisResult:
         default_factory=ManagementCredibilityCoverage
     )
     ownership_and_flow_assessment: str = ""
+    ownership_claims: list[AssessmentClaim] = field(default_factory=list)
     insider_assessment: str = ""
     insider_claims: list[AssessmentClaim] = field(default_factory=list)
     confirming_evidence: list[str] = field(default_factory=list)
     disconfirming_evidence: list[str] = field(default_factory=list)
     thesis_break_conditions: list[str] = field(default_factory=list)
+    strongest_confirming_evidence: DecisiveEvidence | None = None
+    strongest_disconfirming_evidence: DecisiveEvidence | None = None
+    thesis_break_tests: list[ThesisBreakTest] = field(default_factory=list)
     missing_information: list[str] = field(default_factory=list)
+    missing_information_details: list[MissingInformationItem] = field(
+        default_factory=list
+    )
     citations: list[EvidenceCitation] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -240,13 +324,20 @@ class ThesisUpdateResult:
         return asdict(self)
 
 
+class _NullableObjectContract(dict):
+    """Contract mapping that accepts either its object shape or null."""
+
+
+def _nullable_object_contract(properties: dict) -> _NullableObjectContract:
+    return _NullableObjectContract(properties)
+
+
 def _scenario_bundle_contract() -> dict:
     sourced_assumption = {
         "value": "number",
         "source_ids": ["string"],
         "rationale": "string",
         "mechanism": "string | null",
-        "guardrail_exception": "string | null",
     }
     net_debt_change = {
         **sourced_assumption,
@@ -277,6 +368,12 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     "verdict": "reject | watch | latent_case | activated_case",
     "confidence": "low | medium | high",
     "one_sentence_thesis": "string",
+    "falsifiable_case": {
+        "statement": "string",
+        "falsification_test": "string",
+        "horizon_months": "integer | null",
+        "source_ids": ["string"],
+    },
     "thesis_card_version": "individual-thesis-card-v2",
     "evidence_as_of": "string | null",
     "business_model_profile": {
@@ -358,6 +455,25 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     "reconsideration_trigger": "string | null",
     "case_horizon_months": "integer | null",
     "activation_trigger": "string | null",
+    "latent_case_type": "price | operating | null",
+    "activation_trigger_spec": _nullable_object_contract(
+        {
+            "unresolved_claim": "string",
+            "observable_metric_or_event": "string",
+            "threshold_or_direction": "string",
+            "evidence_window": "string",
+            "single_observation_sufficient": "boolean",
+            "observation_requirement": "string",
+        }
+    ),
+    "activation_trigger_evidence": [
+        {
+            "evidence_item": "string",
+            "status": "confirms | weakens | unresolved",
+            "rationale": "string",
+            "source_ids": ["string"],
+        }
+    ],
     "reverse_dcf_expectation_assessment": (
         "plausible | demanding | unsupported | unassessable"
     ),
@@ -368,6 +484,8 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
         "variable_driver": "string",
         "cash_flow_observation": "string",
         "source_ids": ["string"],
+        "recurring_source_ids": ["string"],
+        "variable_source_ids": ["string"],
         "limitations": ["string"],
     },
     "current_ebit_margin": "number | null",
@@ -375,6 +493,9 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     "peak_margin_evidence": ["string"],
     "scenario_bundles": [_scenario_bundle_contract()],
     "forward_scenario_analysis": "null",
+    "historical_forecast_table": "null",
+    "peak_margin_bridge": "null",
+    "scenario_driver_attribution": "null",
     "management_assessment": "string",
     "management_claims": [
         {
@@ -404,6 +525,14 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
         "omission_reasons": ["string"],
     },
     "ownership_and_flow_assessment": "string",
+    "ownership_claims": [
+        {
+            "statement": "string",
+            "evidence_kind": "fact | management_claim | analyst_inference",
+            "source_ids": ["string"],
+            "limitations": ["string"],
+        }
+    ],
     "insider_assessment": "string",
     "insider_claims": [
         {
@@ -416,13 +545,62 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     "confirming_evidence": ["string"],
     "disconfirming_evidence": ["string"],
     "thesis_break_conditions": ["string"],
+    "strongest_confirming_evidence": _nullable_object_contract(
+        {
+            "statement": "string",
+            "why_it_matters": "string",
+            "source_ids": ["string"],
+        }
+    ),
+    "strongest_disconfirming_evidence": _nullable_object_contract(
+        {
+            "statement": "string",
+            "why_it_matters": "string",
+            "source_ids": ["string"],
+        }
+    ),
+    "thesis_break_tests": [
+        {
+            "break_type": (
+                "revenue_or_demand | margin_or_execution | "
+                "balance_sheet_or_dilution | management_credibility | "
+                "valuation_overshoot | superior_evidence_or_opportunity"
+            ),
+            "condition": "string",
+            "observable_metric_or_event": "string",
+            "threshold_or_direction": "string",
+            "response": "reassess | reduce | sell",
+            "source_ids": ["string"],
+        }
+    ],
     "missing_information": ["string"],
+    "missing_information_details": [
+        {
+            "item": "string",
+            "limitation_class": "core | supplemental",
+            "impact": "string",
+        }
+    ],
     "citations": [
         {
             "source_id": "string",
             "claim": "string",
         }
     ],
+}
+
+
+QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT = {
+    key: value
+    for key, value in STOCK_ANALYSIS_OUTPUT_CONTRACT.items()
+    if key
+    not in {
+        "scenario_bundles",
+        "forward_scenario_analysis",
+        "historical_forecast_table",
+        "peak_margin_bridge",
+        "scenario_driver_attribution",
+    }
 }
 
 
@@ -454,17 +632,61 @@ THESIS_UPDATE_OUTPUT_CONTRACT = {
 }
 
 
+QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT = {
+    key: value
+    for key, value in THESIS_UPDATE_OUTPUT_CONTRACT.items()
+    if key != "thesis"
+}
+QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT["thesis"] = (
+    QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT
+)
+
+
+SCENARIO_AUTHORING_OUTPUT_CONTRACT = {
+    "case_horizon_months": "integer",
+    "scenario_bundles": [_scenario_bundle_contract()],
+}
+
+
 def stock_analysis_json_schema() -> dict:
     return _contract_to_json_schema(STOCK_ANALYSIS_OUTPUT_CONTRACT)
+
+
+def qualitative_stock_analysis_json_schema() -> dict:
+    return _contract_to_json_schema(QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT)
 
 
 def thesis_update_json_schema() -> dict:
     return _contract_to_json_schema(THESIS_UPDATE_OUTPUT_CONTRACT)
 
 
+def qualitative_thesis_update_json_schema() -> dict:
+    return _contract_to_json_schema(QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT)
+
+
+def scenario_authoring_json_schema() -> dict:
+    schema = _contract_to_json_schema(SCENARIO_AUTHORING_OUTPUT_CONTRACT)
+    net_debt_change = schema["properties"]["scenario_bundles"]["items"][
+        "properties"
+    ]["net_debt_change"]
+    net_debt_change["description"] = (
+        "Projected net-debt change. If value is exactly zero, "
+        "provenance_type must be not_applicable; non-zero values must be "
+        "source_backed or analyst_sensitivity. Always provide a mechanism."
+    )
+    net_debt_change["properties"]["value"]["description"] = (
+        "Use zero only with provenance_type not_applicable."
+    )
+    net_debt_change["properties"]["provenance_type"]["description"] = (
+        "Use not_applicable for exactly zero; use source_backed or "
+        "analyst_sensitivity for non-zero changes."
+    )
+    return schema
+
+
 def _contract_to_json_schema(specification) -> dict:
     if isinstance(specification, dict):
-        return {
+        schema = {
             "type": "object",
             "properties": {
                 key: _contract_to_json_schema(value) for key, value in specification.items()
@@ -472,6 +694,9 @@ def _contract_to_json_schema(specification) -> dict:
             "required": list(specification),
             "additionalProperties": False,
         }
+        if isinstance(specification, _NullableObjectContract):
+            return {"anyOf": [schema, {"type": "null"}]}
+        return schema
 
     if isinstance(specification, list):
         if not specification:
@@ -482,9 +707,17 @@ def _contract_to_json_schema(specification) -> dict:
         }
 
     options = specification.split(" | ")
-    primitive_types = {"integer", "number", "string", "null"}
+    primitive_types = {"boolean", "integer", "number", "string", "null"}
     if all(option in primitive_types for option in options):
         types = [option for option in options]
         return {"type": types[0] if len(types) == 1 else types}
+
+    if "null" in options:
+        return {
+            "anyOf": [
+                {"type": "string", "enum": [item for item in options if item != "null"]},
+                {"type": "null"},
+            ]
+        }
 
     return {"type": "string", "enum": options}

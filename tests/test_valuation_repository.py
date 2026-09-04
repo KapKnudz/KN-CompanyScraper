@@ -33,7 +33,7 @@ def test_save_snapshot_preserves_daily_observation():
 def test_save_stock_prices_upserts_company_date_and_currency():
     cursor = MagicMock()
     connection = _mock_connection(cursor)
-    price = StockPrice(date(2026, 8, 1), 125.5)
+    price = StockPrice(date(2026, 8, 1), 125.5, volume=1_000)
 
     with patch(
         "kncompanyscraper.repositories.base_repository.get_connection",
@@ -43,7 +43,37 @@ def test_save_stock_prices_upserts_company_date_and_currency():
 
     sql, params = cursor.execute.call_args[0]
     assert "INSERT INTO stock_prices" in sql
-    assert params == (7, date(2026, 8, 1), 125.5, "SEK")
+    assert "ON CONFLICT (company_id, price_date)" in sql
+    assert "DELETE FROM stock_prices" not in sql
+    assert "volume" in sql
+    assert params == (7, date(2026, 8, 1), 125.5, "SEK", 1_000)
+
+
+def test_liquidity_prices_are_as_of_safe_and_map_volume():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [
+        {
+            "price_date": date(2026, 8, 1),
+            "close": 125.5,
+            "currency": "SEK",
+            "volume": 1_000,
+        }
+    ]
+    connection = _mock_connection(cursor)
+
+    with patch(
+        "kncompanyscraper.repositories.base_repository.get_connection",
+        return_value=connection,
+    ):
+        result = ValuationRepository().get_liquidity_prices_as_of(
+            7, date(2026, 8, 2), limit=120
+        )
+
+    sql, params = cursor.execute.call_args.args
+    assert "price_date <= %s" in sql
+    assert "volume IS NOT NULL" in sql
+    assert params == (7, date(2026, 8, 2), 120)
+    assert result == [StockPrice(date(2026, 8, 1), 125.5, "SEK", 1_000)]
 
 
 def test_get_latest_stock_price_maps_database_row():

@@ -104,21 +104,24 @@ class TestLiveKpiHistory:
 # ---------------------------------------------------------------------------
 
 class TestLiveReports:
-    def test_get_reports_returns_list(self, client):
-        result = client.get_reports(TEST_INSTRUMENT_ID, max_count=5)
-        assert isinstance(result, list)
-        if result:
-            assert all(isinstance(r, Report) for r in result)
+    def test_get_report_bundles_returns_report_lists(self, client):
+        result = client.get_report_bundles([TEST_INSTRUMENT_ID], max_year_count=5)
+        assert TEST_INSTRUMENT_ID in result
+        reports = result[TEST_INSTRUMENT_ID].annual
+        if reports:
+            assert all(isinstance(r, Report) for r in reports)
             # Latest report should have sensible values
-            latest = result[0]
+            latest = reports[0]
             assert latest.revenue > 0
             assert latest.shares_outstanding > 0
 
-    def test_get_reports_quarterly(self, client):
-        result = client.get_reports(TEST_INSTRUMENT_ID, report_type="quarter", max_count=4)
-        assert isinstance(result, list)
-        if result:
-            assert all(isinstance(r, Report) for r in result)
+    def test_get_report_bundles_includes_quarterly_reports(self, client):
+        result = client.get_report_bundles([TEST_INSTRUMENT_ID], max_r12q_count=4)
+        assert isinstance(result[TEST_INSTRUMENT_ID].quarterly, tuple)
+        assert all(
+            isinstance(report, Report)
+            for report in result[TEST_INSTRUMENT_ID].quarterly
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -154,8 +157,17 @@ class TestResponseShape:
     def test_report_has_expected_fields(self, client):
         """The report JSON should contain the fields _report_from_json reads."""
         # Use _get directly to inspect the raw JSON
-        data = client._get(f"/v1/instruments/{TEST_INSTRUMENT_ID}/reports/year", {"maxCount": 1})
-        reports = data.get("reports") or []
+        data = client._get(
+            "/v1/instruments/reports",
+            {
+                "instList": str(TEST_INSTRUMENT_ID),
+                "maxYearCount": 1,
+                "maxR12QCount": 1,
+                "original": 0,
+            },
+        )
+        report_list = data.get("reportList") or []
+        reports = report_list[0].get("reportsYear") if report_list else []
         if reports:
             r = reports[0]
             # Fields used by _report_from_json

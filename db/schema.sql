@@ -160,6 +160,18 @@ CREATE TABLE public.benchmark_prices (
 
 
 --
+-- Name: borsdata_markets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.borsdata_markets (
+    id integer NOT NULL,
+    name text,
+    exchange_name text,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: companies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -178,7 +190,9 @@ CREATE TABLE public.companies (
     sector_id integer,
     branch_id integer,
     stock_price_currency character varying(3),
-    report_currency character varying(3)
+    report_currency character varying(3),
+    market_id integer,
+    listing_date date
 );
 
 
@@ -200,6 +214,25 @@ CREATE SEQUENCE public.companies_id_seq
 --
 
 ALTER SEQUENCE public.companies_id_seq OWNED BY public.companies.id;
+
+
+--
+-- Name: company_buyback_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.company_buyback_events (
+    company_id integer NOT NULL,
+    event_date date NOT NULL,
+    change_shares bigint NOT NULL,
+    change_pct_raw numeric,
+    reported_price numeric,
+    currency character varying(3),
+    treasury_shares bigint,
+    treasury_shares_pct_raw numeric,
+    source text NOT NULL,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL,
+    raw_payload jsonb NOT NULL
+);
 
 
 --
@@ -310,6 +343,31 @@ CREATE TABLE public.company_profiles (
     headquarters character varying(255),
     ceo character varying(255),
     board_members text[]
+);
+
+
+--
+-- Name: company_short_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.company_short_snapshots (
+    company_id integer NOT NULL,
+    observation_date date NOT NULL,
+    short_pct_raw numeric,
+    reported_holder_count numeric,
+    average_short_pct_raw numeric,
+    short_value_millions_raw numeric,
+    average_short_value_millions_raw numeric,
+    last_transaction_date date,
+    days_to_cover_sum numeric,
+    days_to_cover_average numeric,
+    trend_1w numeric,
+    trend_1m numeric,
+    trend_3m numeric,
+    trend_6m numeric,
+    source text NOT NULL,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL,
+    raw_payload jsonb NOT NULL
 );
 
 
@@ -500,7 +558,11 @@ CREATE TABLE public.financials (
     raw_payload jsonb,
     fetched_at timestamp with time zone DEFAULT now(),
     gross_income numeric(15,2),
-    operating_cash_flow numeric(15,2)
+    operating_cash_flow numeric(15,2),
+    investing_cash_flow numeric(15,2),
+    financing_cash_flow numeric(15,2),
+    report_date date,
+    broken_fiscal_year boolean
 );
 
 
@@ -638,6 +700,20 @@ CREATE TABLE public.kpi_snapshots (
     kpi_id integer NOT NULL,
     value numeric,
     fetched_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: mfn_feed_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mfn_feed_checks (
+    company_id integer NOT NULL,
+    checked_at timestamp with time zone NOT NULL,
+    discovered_count integer NOT NULL,
+    unseen_count integer NOT NULL,
+    CONSTRAINT mfn_feed_checks_discovered_count_check CHECK ((discovered_count >= 0)),
+    CONSTRAINT mfn_feed_checks_unseen_count_check CHECK ((unseen_count >= 0))
 );
 
 
@@ -960,7 +1036,9 @@ CREATE TABLE public.stock_prices (
     price_date date NOT NULL,
     close numeric(18,6) NOT NULL,
     currency character varying(3),
-    fetched_at timestamp with time zone DEFAULT now() NOT NULL
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL,
+    volume bigint,
+    CONSTRAINT stock_prices_volume_check CHECK ((volume >= 0))
 );
 
 
@@ -1263,6 +1341,14 @@ ALTER TABLE ONLY public.benchmark_prices
 
 
 --
+-- Name: borsdata_markets borsdata_markets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.borsdata_markets
+    ADD CONSTRAINT borsdata_markets_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: companies companies_borsdata_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1292,6 +1378,14 @@ ALTER TABLE ONLY public.companies
 
 ALTER TABLE ONLY public.companies
     ADD CONSTRAINT companies_ticker_key UNIQUE (ticker);
+
+
+--
+-- Name: company_buyback_events company_buyback_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_buyback_events
+    ADD CONSTRAINT company_buyback_events_pkey PRIMARY KEY (company_id, event_date, source);
 
 
 --
@@ -1340,6 +1434,14 @@ ALTER TABLE ONLY public.company_facts
 
 ALTER TABLE ONLY public.company_profiles
     ADD CONSTRAINT company_profiles_pkey PRIMARY KEY (company_id);
+
+
+--
+-- Name: company_short_snapshots company_short_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_short_snapshots
+    ADD CONSTRAINT company_short_snapshots_pkey PRIMARY KEY (company_id, observation_date, source);
 
 
 --
@@ -1452,6 +1554,14 @@ ALTER TABLE ONLY public.kpi_snapshot_history
 
 ALTER TABLE ONLY public.kpi_snapshots
     ADD CONSTRAINT kpi_snapshots_pkey PRIMARY KEY (company_id, kpi_id);
+
+
+--
+-- Name: mfn_feed_checks mfn_feed_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfn_feed_checks
+    ADD CONSTRAINT mfn_feed_checks_pkey PRIMARY KEY (company_id);
 
 
 --
@@ -1875,6 +1985,22 @@ ALTER TABLE ONLY public.annual_reports
 
 
 --
+-- Name: companies companies_market_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.companies
+    ADD CONSTRAINT companies_market_id_fkey FOREIGN KEY (market_id) REFERENCES public.borsdata_markets(id);
+
+
+--
+-- Name: company_buyback_events company_buyback_events_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_buyback_events
+    ADD CONSTRAINT company_buyback_events_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
 -- Name: company_cyclicality_consensus company_cyclicality_consensus_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1912,6 +2038,14 @@ ALTER TABLE ONLY public.company_facts
 
 ALTER TABLE ONLY public.company_profiles
     ADD CONSTRAINT company_profiles_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: company_short_snapshots company_short_snapshots_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_short_snapshots
+    ADD CONSTRAINT company_short_snapshots_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
 
 
 --
@@ -2016,6 +2150,14 @@ ALTER TABLE ONLY public.kpi_snapshot_history
 
 ALTER TABLE ONLY public.kpi_snapshots
     ADD CONSTRAINT kpi_snapshots_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: mfn_feed_checks mfn_feed_checks_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfn_feed_checks
+    ADD CONSTRAINT mfn_feed_checks_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
 
 
 --
@@ -2164,4 +2306,8 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260818160000'),
     ('20260818170000'),
     ('20260824120000'),
-    ('20260829135000');
+    ('20260829135000'),
+    ('20260830100000'),
+    ('20260831120000'),
+    ('20260831130000'),
+    ('20260902100000');

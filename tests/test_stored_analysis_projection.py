@@ -64,6 +64,10 @@ def test_thesis_summary_only_projects_persisted_v2_values():
         "status": "available",
         "bands": [asdict(band) for band in analysis.bands],
     }
+    document.content["scenario_driver_attribution"] = {
+        "status": "available",
+        "policy_version": "scenario-driver-attribution-shapley-v1",
+    }
 
     summary = document.thesis_summary
 
@@ -75,6 +79,7 @@ def test_thesis_summary_only_projects_persisted_v2_values():
     assert summary["scenarios"]["base"]["horizon_months"] == 36
     assert summary["scenarios"]["base"]["annualized_return_range"] == [0.12, 0.16]
     assert summary["scenarios"]["base"]["explanation"] == "Stable operating leverage."
+    assert summary["scenario_driver_attribution"]["status"] == "available"
     assert summary["scenarios"]["base"]["capital_allocation"]["projected_shares"] == 21.0
     assert summary["capital_allocation_limitations"] == ["Distribution data is missing."]
     assert summary["reverse_dcf"]["selected_curve_points"] == [

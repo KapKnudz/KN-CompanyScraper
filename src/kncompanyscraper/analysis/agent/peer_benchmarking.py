@@ -183,7 +183,12 @@ class PeerComparisonBuilder:
             overflow = included[self.max_peers :]
             included = included[: self.max_peers]
             excluded.extend(
-                self._exclusion(peer, "peer set limit reached")
+                PeerExclusion(
+                    peer.company_id,
+                    peer.ticker,
+                    peer.name,
+                    "peer set limit reached",
+                )
                 for peer in overflow
             )
 

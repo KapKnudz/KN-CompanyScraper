@@ -32,8 +32,9 @@ class ThesisUpdateOutcome:
 class ThesisUpdateExecutionBoundary:
     VALIDATION_VERSION = "thesis-update-boundary-v1"
 
-    def __init__(self, stock_analysis_boundary):
+    def __init__(self, stock_analysis_boundary, scenario_authoring_service=None):
         self.stock_analysis_boundary = stock_analysis_boundary
+        self.scenario_authoring_service = scenario_authoring_service
 
     def persist_response(self, raw_response, context, created_by, metadata=None):
         update = parse_thesis_update_result(raw_response)
@@ -55,6 +56,7 @@ class ThesisUpdateExecutionBoundary:
             raise StockAnalysisValidationError(
                 "v1 theses require a full reassessment before incremental updates"
             )
+        self._validate_trigger_progress(update, context)
         if update.impact == "no_material_change":
             current_content["forward_scenario_analysis"] = None
             current_content.setdefault("confidence_limitations", [])
@@ -87,6 +89,12 @@ class ThesisUpdateExecutionBoundary:
                 },
             )
             updated_content = update.thesis.to_dict()
+            # A no-material-change response does not invoke the authoring model;
+            # carry forward the last accepted assumptions so the stock boundary
+            # can recalculate the enriched analysis without dropping scenarios.
+            updated_content["scenario_bundles"] = current_content.get(
+                "scenario_bundles", []
+            )
             if (
                 updated_content.get("company_fact_ledger")
                 != current_content.get("company_fact_ledger")
@@ -101,12 +109,37 @@ class ThesisUpdateExecutionBoundary:
                 changed_fields = sorted(
                     key
                     for key in set(current_content) | set(updated_content)
-                    if current_content.get(key) != updated_content.get(key)
+                    if (
+                        current_content.get(key) != updated_content.get(key)
+                        and key != "activation_trigger_evidence"
+                    )
                 )
-                raise StockAnalysisValidationError(
-                    "no_material_change must preserve the current thesis; changed fields: "
-                    + ", ".join(changed_fields)
+                if changed_fields:
+                    raise StockAnalysisValidationError(
+                        "no_material_change must preserve the current thesis; changed fields: "
+                        + ", ".join(changed_fields)
+                    )
+        elif self.scenario_authoring_service is not None:
+            def validate(qualitative_result, horizon, bundles):
+                qualitative_result.case_horizon_months = horizon
+                qualitative_result.scenario_bundles = list(bundles)
+                return self.stock_analysis_boundary.calculate_forward_scenario(
+                    qualitative_result, context.candidate
                 )
+
+            authored = self.scenario_authoring_service.author(
+                context.candidate,
+                update.thesis,
+                validate,
+            )
+            update.thesis.case_horizon_months = authored.case_horizon_months
+            update.thesis.scenario_bundles = list(authored.scenario_bundles)
+            if metadata is None:
+                metadata = {}
+            metadata["scenario_authoring_attempts"] = authored.attempts
+            metadata["scenario_authoring_raw_analysis_ids"] = list(
+                authored.raw_analysis_ids
+            )
         if update.impact not in {
             "no_material_change",
             "full_reassessment_required",
@@ -135,6 +168,70 @@ class ThesisUpdateExecutionBoundary:
             metadata=validation_metadata,
         )
         return PersistedThesisUpdate(update=update, persisted_analysis=persisted)
+
+    @staticmethod
+    def _validate_trigger_progress(update, context):
+        """Require incremental updates to evaluate, not silently roll, a trigger."""
+        current = context.current_thesis.get("content") or {}
+        if current.get("verdict") != "latent_case" or not current.get(
+            "activation_trigger_spec"
+        ):
+            return
+        if update.impact == "full_reassessment_required":
+            return
+        if not context.new_source_ids and not context.deterministic_context_changed:
+            return
+
+        entries = update.thesis.activation_trigger_evidence
+        new_source_ids = set(context.new_source_ids)
+        evaluated_entries = [
+            entry
+            for entry in entries
+            if new_source_ids.intersection(entry.source_ids)
+            or any(
+                source_id.startswith(("full_results.", "deterministic:", "valuation:"))
+                for source_id in entry.source_ids
+            )
+        ]
+        if not evaluated_entries:
+            raise StockAnalysisValidationError(
+                "incremental update must evaluate the stored activation trigger with new evidence"
+            )
+
+        current_spec = current["activation_trigger_spec"]
+        updated_spec = update.thesis.activation_trigger_spec
+        same_trigger = (
+            updated_spec is not None
+            and ThesisUpdateExecutionBoundary._trigger_identity(current_spec)
+            == ThesisUpdateExecutionBoundary._trigger_identity(updated_spec)
+        )
+        timing_changed = (
+            updated_spec is not None
+            and any(
+                current_spec.get(field) != getattr(updated_spec, field)
+                for field in ("evidence_window", "observation_requirement")
+            )
+        )
+        if same_trigger and timing_changed and any(
+            entry.status == "unresolved" for entry in evaluated_entries
+        ):
+            raise StockAnalysisValidationError(
+                "incremental update cannot roll an unresolved activation trigger into an equivalent new waiting period"
+            )
+        if (
+            same_trigger
+            and update.thesis.verdict == "latent_case"
+            and any(entry.status == "confirms" for entry in evaluated_entries)
+        ):
+            raise StockAnalysisValidationError(
+                "resolved activation trigger requires activation or a revised thesis"
+            )
+    @staticmethod
+    def _trigger_identity(spec):
+        fields = ("unresolved_claim", "observable_metric_or_event", "threshold_or_direction")
+        if isinstance(spec, dict):
+            return tuple(spec.get(field) for field in fields)
+        return tuple(getattr(spec, field) for field in fields)
 
 
 class ThesisUpdateService:

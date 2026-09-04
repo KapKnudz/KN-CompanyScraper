@@ -27,13 +27,30 @@ ForwardScenarioStatus = Literal[
 RankingTier = Literal["A", "B", "C", "IE", "RESEARCH"]
 
 
+ForwardScenarioReadinessStatus = Literal[
+    "required",
+    "blocked",
+    "method_not_supported",
+]
+
+
+@dataclass(frozen=True)
+class ForwardScenarioReadiness:
+    status: ForwardScenarioReadinessStatus
+    missing_inputs: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+    @property
+    def required(self) -> bool:
+        return self.status == "required"
+
+
 @dataclass(frozen=True)
 class SourcedAssumption:
     value: float
     source_ids: tuple[str, ...]
     rationale: str
     mechanism: str | None = None
-    guardrail_exception: str | None = None
 
 
 @dataclass(frozen=True)
@@ -43,7 +60,6 @@ class NetDebtChangeAssumption:
     rationale: str
     mechanism: str
     provenance_type: NetDebtChangeProvenance
-    guardrail_exception: str | None = None
 
 
 @dataclass(frozen=True)
@@ -66,11 +82,12 @@ class ForwardScenarioInputs:
     current_revenue: float | None
     current_shares: float | None
     current_net_debt: float | None
-    terminal_multiple_guardrail: tuple[float | None, float | None]
+    historical_terminal_multiple_range: tuple[float | None, float | None]
     bundles: tuple[ScenarioBundle, ...]
     ranking_model: RankingModel = RankingModel.GENERAL
     price_currency: str | None = None
     financial_currency: str | None = None
+    current_terminal_multiple: float | None = None
     base_terminal_multiple_ceiling: float | None = None
     bull_terminal_multiple_ceiling: float | None = None
     demonstrated_revenue_cagr: float | None = None
@@ -134,6 +151,57 @@ class ForwardScenarioEngine:
     CASES: tuple[ScenarioCase, ...] = ("bear", "base", "bull")
     PLAUSIBILITY_TOLERANCE = 0.005
 
+    @classmethod
+    def assess_readiness(
+        cls, inputs: ForwardScenarioInputs
+    ) -> ForwardScenarioReadiness:
+        if inputs.ranking_model != RankingModel.GENERAL:
+            return ForwardScenarioReadiness(
+                status="method_not_supported",
+                warnings=(
+                    f"{inputs.ranking_model} requires a dedicated forward valuation method",
+                ),
+            )
+
+        missing = []
+        for name, value in (
+            ("current_price", inputs.current_price),
+            ("current_revenue", inputs.current_revenue),
+            ("current_shares", inputs.current_shares),
+        ):
+            if not cls._positive(value):
+                missing.append(name)
+        if not cls._finite(inputs.current_net_debt):
+            missing.append("current_net_debt")
+        price_currency = cls._currency(inputs.price_currency)
+        financial_currency = cls._currency(inputs.financial_currency)
+        if price_currency is None:
+            missing.append("price_currency")
+        if financial_currency is None:
+            missing.append("financial_currency")
+        if price_currency and financial_currency and price_currency != financial_currency:
+            missing.append("matching_currency")
+        if not cls._positive(inputs.current_terminal_multiple):
+            missing.append("current_ev_ebit")
+
+        warnings = []
+        historical_low, historical_high = inputs.historical_terminal_multiple_range
+        if historical_low is None or historical_high is None:
+            warnings.append(
+                "historical terminal multiple range is unavailable; "
+                "current EV/EBIT is the only multiple anchor"
+            )
+        if missing:
+            return ForwardScenarioReadiness(
+                status="blocked",
+                missing_inputs=tuple(dict.fromkeys(missing)),
+                warnings=tuple(warnings),
+            )
+        return ForwardScenarioReadiness(
+            status="required",
+            warnings=tuple(warnings),
+        )
+
     def analyze(self, inputs: ForwardScenarioInputs) -> ForwardScenarioAnalysis:
         if inputs.ranking_model != RankingModel.GENERAL:
             return ForwardScenarioAnalysis(
@@ -193,13 +261,20 @@ class ForwardScenarioEngine:
         if not self._finite(inputs.current_net_debt):
             flags.append("current_net_debt must be finite")
 
-        guardrail_low, guardrail_high = inputs.terminal_multiple_guardrail
-        if not (
-            self._positive(guardrail_low)
-            and self._positive(guardrail_high)
-            and guardrail_low <= guardrail_high
+        historical_low, historical_high = inputs.historical_terminal_multiple_range
+        if historical_low is None or historical_high is None:
+            warnings.append(
+                "historical terminal multiple range is unavailable; "
+                "bear multiples are not floored by history"
+            )
+        elif not (
+            self._positive(historical_low)
+            and self._positive(historical_high)
+            and historical_low <= historical_high
         ):
-            flags.append("terminal multiple guardrail must be finite, positive, and ordered")
+            flags.append(
+                "historical terminal multiple range must be finite, positive, and ordered"
+            )
 
         by_case = {bundle.case: bundle for bundle in inputs.bundles}
         if len(by_case) != len(inputs.bundles):
@@ -225,8 +300,6 @@ class ForwardScenarioEngine:
             self._validate_bundle(
                 inputs,
                 bundle,
-                guardrail_low,
-                guardrail_high,
                 flags,
                 warnings,
             )
@@ -247,8 +320,6 @@ class ForwardScenarioEngine:
         cls,
         inputs: ForwardScenarioInputs,
         bundle: ScenarioBundle,
-        guardrail_low: float | None,
-        guardrail_high: float | None,
         flags: list[str],
         warnings: list[str],
     ) -> None:
@@ -325,12 +396,6 @@ class ForwardScenarioEngine:
             flags.append(f"{prefix}.terminal multiple range must be positive")
         if low.value > high.value:
             flags.append(f"{prefix}.terminal multiple range must be ordered")
-        if guardrail_low is not None and guardrail_high is not None:
-            for name, multiple in (("low", low), ("high", high)):
-                if not guardrail_low <= multiple.value <= guardrail_high:
-                    flags.append(
-                        f"{prefix}.terminal_ev_ebit_{name} is outside historical guardrails"
-                    )
         if not cls._finite(inputs.current_net_debt):
             return
         if not cls._finite(inputs.current_net_debt + change.value):
@@ -401,11 +466,16 @@ class ForwardScenarioEngine:
                 "base uses assumptions beyond demonstrated bounds: "
                 + ", ".join(beyond)
             )
-        elif bundle.case == "bull" and len(beyond) > 1:
-            flags.append(
-                "bull combines "
-                f"{len(beyond)} unprecedented operating levers"
-            )
+        elif bundle.case == "bull":
+            if "multiple" in beyond:
+                flags.append(
+                    "bull terminal multiple exceeds the supported ceiling"
+                )
+            if len(beyond) > 1:
+                flags.append(
+                    "bull combines "
+                    f"{len(beyond)} unprecedented operating levers"
+                )
 
     @classmethod
     def _calculate_band(

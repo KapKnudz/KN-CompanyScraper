@@ -46,6 +46,19 @@ class StoredAnalysisDocument(dict):
         )
 
     @property
+    def is_enriched_forward_scenario(self) -> bool:
+        forward = self.forward_scenario
+        return (
+            self.is_current_forward_scenario
+            and isinstance(forward, dict)
+            and forward.get("status") == "available"
+            and isinstance(self.content.get("scenario_bundles"), list)
+            and len(self.content["scenario_bundles"]) == 3
+            and isinstance(forward.get("bands"), list)
+            and len(forward["bands"]) == 3
+        )
+
+    @property
     def policy_version(self) -> str | None:
         return self.metadata.get("policy_version")
 
@@ -92,6 +105,11 @@ class StoredAnalysisDocument(dict):
     @property
     def verdict(self) -> str:
         return self.content["verdict"]
+
+    @property
+    def latent_case_type(self) -> str | None:
+        """Return the explicit subtype, or null for legacy v2 cards."""
+        return self.content.get("latent_case_type")
 
     @property
     def required_return(self) -> float | None:
@@ -157,10 +175,22 @@ class StoredAnalysisDocument(dict):
         curve = provenance.get("expectation_curve") or []
         return {
             "verdict": self.verdict,
+            "verdict_label": (
+                f"{self.latent_case_type}-latent"
+                if self.verdict == "latent_case" and self.latent_case_type
+                else self.verdict
+            ),
+            "latent_case_type": self.latent_case_type,
+            "activation_trigger": self.content.get("activation_trigger"),
+            "activation_trigger_spec": self.content.get("activation_trigger_spec"),
+            "activation_trigger_evidence": list(
+                self.content.get("activation_trigger_evidence", [])
+            ),
             "confidence": self.confidence,
             "current_price": provenance.get("current_price"),
             "horizon_months": self.content.get("case_horizon_months"),
             "one_sentence_thesis": self.one_sentence_thesis,
+            "falsifiable_case": self.content.get("falsifiable_case"),
             "revenue_resilience": self.revenue_resilience,
             "reverse_dcf": {
                 "assessment": self.reverse_dcf_expectation_assessment,
@@ -170,11 +200,27 @@ class StoredAnalysisDocument(dict):
                 "selected_curve_points": curve,
             },
             "scenarios": scenarios,
+            "scenario_driver_attribution": self.content.get(
+                "scenario_driver_attribution"
+            ),
             "why_now": timing.get("why_now", ""),
+            "strongest_confirming_evidence": self.content.get(
+                "strongest_confirming_evidence"
+            ),
+            "strongest_disconfirming_evidence": self.content.get(
+                "strongest_disconfirming_evidence"
+            ),
             "thesis_break_conditions": list(self.thesis_break_conditions),
+            "thesis_break_tests": list(
+                self.content.get("thesis_break_tests", [])
+            ),
             "material_missing_information": list(
                 self.content.get("missing_information", [])
             ),
+            "missing_information_details": list(
+                self.content.get("missing_information_details", [])
+            ),
+            "confidence_cap": (self.metadata.get("confidence_cap") or {}).get("cap"),
             "capital_allocation_limitations": list(
                 self.forward_scenario_metadata.get(
                     "capital_allocation_limitations", []

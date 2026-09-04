@@ -31,6 +31,41 @@ class NewsRepository(BaseRepository):
                 )
                 return cur.fetchone() is not None
 
+    def list_urls_for_company(self, company_id: int) -> set[str]:
+        """Return stored release URLs for one company."""
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT url FROM news_releases WHERE company_id = %s",
+                    (company_id,),
+                )
+                return {row[0] for row in cur.fetchall()}
+
+    def record_feed_check(
+        self,
+        company_id: int,
+        checked_at: datetime,
+        *,
+        discovered_count: int,
+        unseen_count: int,
+    ) -> None:
+        """Persist the latest successful MFN feed check, including zero deltas."""
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO mfn_feed_checks (
+                        company_id, checked_at, discovered_count, unseen_count
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (company_id) DO UPDATE SET
+                        checked_at = EXCLUDED.checked_at,
+                        discovered_count = EXCLUDED.discovered_count,
+                        unseen_count = EXCLUDED.unseen_count
+                    """,
+                    (company_id, checked_at, discovered_count, unseen_count),
+                )
+
     def save(self, article: ScrapedArticle, company_id: int) -> None:
         """Save a new article to the database."""
         with self._get_conn() as conn:
