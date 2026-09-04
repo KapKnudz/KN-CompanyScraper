@@ -1,0 +1,188 @@
+{
+  "fixture_version": "deterministic-contract-failures-v1",
+  "source_snapshot_date": "2026-09-04",
+  "privacy_note": "Minimal synthetic shapes only; no live prompt text, report prose, or raw provider output is copied.",
+  "cases": [
+    {
+      "ticker": "GULD",
+      "company_id": 149,
+      "family": "ownership_claims",
+      "expected_message": "qualitative validation failed with 2 violations:\n- ownership claims must cite supplied ownership/liquidity evidence: document:3, news:408\n- precise ownership claim requires a supplied deterministic field",
+      "candidate": {
+        "documents": [
+          "document:3",
+          "news:408"
+        ],
+        "ownership_liquidity_source_ids": []
+      },
+      "shape": {
+        "ownership_claims": [
+          {
+            "statement": "A named holder has 12% free float exposure.",
+            "source_ids": [
+              "document:3",
+              "news:408"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "ticker": "CLAS B",
+      "company_id": 4,
+      "family": "ownership_claims",
+      "expected_message": "ownership claims must cite supplied ownership/liquidity evidence: document:106, document:315",
+      "candidate": {
+        "documents": [
+          "document:106",
+          "document:315"
+        ],
+        "ownership_liquidity_source_ids": []
+      },
+      "shape": {
+        "ownership_claims": [
+          {
+            "statement": "Documents describe large-holder context.",
+            "source_ids": [
+              "document:106",
+              "document:315"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "ticker": "NELLY",
+      "company_id": 128,
+      "family": "ownership_claims",
+      "expected_message": "ownership claims must cite supplied ownership/liquidity evidence: news:587, research:missing_information",
+      "candidate": {
+        "documents": [
+          "news:587"
+        ],
+        "ownership_liquidity_source_ids": []
+      },
+      "shape": {
+        "ownership_claims": [
+          {
+            "statement": "A release and missing-information marker are used as ownership evidence.",
+            "source_ids": [
+              "news:587",
+              "research:missing_information"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "ticker": "BETS B",
+      "company_id": 37,
+      "family": "verdict_triggers",
+      "expected_message": "verdict coherence conflict: operating latent requires reverse_dcf.status=available",
+      "candidate": {
+        "documents": [
+          "news:21"
+        ],
+        "reverse_dcf_status": "unavailable"
+      },
+      "shape": {
+        "verdict": "latent_case",
+        "latent_case_type": "operating",
+        "activation_trigger": "Operating recovery confirmation is required.",
+        "activation_trigger_spec": {
+          "unresolved_claim": "The operating recovery is durable.",
+          "observable_metric_or_event": "Reported EBIT margin.",
+          "threshold_or_direction": "Increases above the supplied baseline.",
+          "evidence_window": "Next regular report.",
+          "single_observation_sufficient": true,
+          "observation_requirement": "One report resolves the operating condition."
+        },
+        "reverse_dcf_expectation_assessment": "unassessable"
+      }
+    },
+    {
+      "ticker": "VUXEN",
+      "company_id": 151,
+      "family": "verdict_triggers",
+      "expected_message": "verdict coherence conflict: price latent requires a concrete price or valuation condition",
+      "candidate": {
+        "documents": [
+          "news:21"
+        ],
+        "reverse_dcf_status": "available"
+      },
+      "shape": {
+        "verdict": "latent_case",
+        "latent_case_type": "price",
+        "activation_trigger": "Wait for clearer execution evidence.",
+        "activation_trigger_spec": {
+          "unresolved_claim": "The setup needs confirmation.",
+          "observable_metric_or_event": "Reported EBIT margin.",
+          "threshold_or_direction": "Increases above the current baseline.",
+          "evidence_window": "Next regular report.",
+          "single_observation_sufficient": true,
+          "observation_requirement": "One report resolves the condition."
+        },
+        "reverse_dcf_expectation_assessment": "plausible"
+      }
+    },
+    {
+      "ticker": "LIME",
+      "company_id": 101,
+      "family": "verdict_triggers",
+      "expected_message": "verdict coherence conflict: price latent requires a concrete price or valuation condition",
+      "candidate": {
+        "documents": [
+          "news:21"
+        ],
+        "reverse_dcf_status": "available"
+      },
+      "shape": {
+        "verdict": "latent_case",
+        "latent_case_type": "price",
+        "activation_trigger": "Wait for stronger operating evidence.",
+        "activation_trigger_spec": {
+          "unresolved_claim": "The setup needs confirmation.",
+          "observable_metric_or_event": "Reported revenue growth in the next report.",
+          "threshold_or_direction": "Increases above the current baseline.",
+          "evidence_window": "Next regular report.",
+          "single_observation_sufficient": true,
+          "observation_requirement": "One report resolves the condition."
+        },
+        "reverse_dcf_expectation_assessment": "plausible"
+      }
+    },
+    {
+      "ticker": "BYGGP",
+      "company_id": 110,
+      "family": "revenue_model_coherence",
+      "expected_message": "variable revenue resilience conflicts with recurring revenue model types",
+      "candidate": {
+        "documents": [
+          "news:21"
+        ]
+      },
+      "shape": {
+        "business_model_profile": {
+          "revenue_model_types": [
+            "subscription",
+            "project"
+          ],
+          "recurring_revenue_profile": "partial"
+        },
+        "revenue_resilience": {
+          "assessment": "variable",
+          "recurring_driver": "No recurring driver is relied on.",
+          "variable_driver": "Project order volumes vary.",
+          "cash_flow_observation": "Cash flow varies with projects.",
+          "source_ids": [
+            "news:21"
+          ],
+          "variable_source_ids": [
+            "news:21"
+          ]
+        }
+      }
+    }
+  ]
+}
