@@ -674,7 +674,7 @@ def test_qualitative_validation_aggregates_assessment_source_violations():
 
     message = str(exc_info.value)
     assert "management claims must cite supplied documents" in message
-    assert "ownership claims must cite supplied ownership/liquidity evidence" in message
+    assert "must use a typed ownership claim" in message
 
 
 def test_mixed_resilience_requires_separately_sourced_drivers():
@@ -1324,25 +1324,34 @@ def test_execution_boundary_accepts_cited_liquidity_claim():
             "ownership_liquidity": {
                 "source_ids": [source_id],
                 "liquidity": {"status": "available", "adtv_20": 1_200_000},
+                "source_ids_by_measure": {"adtv_20": [source_id]},
                 "ownership": {"status": "unavailable"},
             },
         },
     )
     payload = valid_result()
-    payload.ownership_and_flow_assessment = "The 20-day ADTV proxy is 1.2 million."
+    payload.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
     payload.ownership_claims = [
-        AssessmentClaim(
-            statement="The 20-day ADTV proxy is 1.2 million.",
-            evidence_kind="fact",
-            source_ids=[source_id],
+        OwnershipClaim(
+            claim_kind="liquidity",
+            subject_role="market",
+            measure="adtv_20",
+            binding=OwnershipBinding(
+                source_ids=[source_id],
+                deterministic_field=(
+                    "research_evidence.ownership_liquidity.liquidity.adtv_20"
+                ),
+                asserted_value=1_200_000,
+                asserted_unit="currency",
+            ),
         )
     ]
 
     persisted = AgentExecutionBoundary(repository).persist_response(
-        json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        _v3_qualitative_response(payload), candidate, created_by="test-model"
     )
 
-    assert persisted.result.ownership_claims[0].source_ids == [source_id]
+    assert persisted.result.ownership_claims[0].binding.source_ids == [source_id]
 
 
 def test_execution_boundary_drops_unsupported_ownership_claim_when_supported_remains():
@@ -1416,7 +1425,7 @@ def test_execution_boundary_rejects_precise_unsupported_ownership_claim():
         )
     ]
 
-    with pytest.raises(StockAnalysisValidationError, match="deterministic field"):
+    with pytest.raises(StockAnalysisValidationError, match="typed ownership claim"):
         AgentExecutionBoundary(repository).persist_response(
             json.dumps(payload.to_dict()), candidate, created_by="test-model"
         )
@@ -2134,6 +2143,73 @@ def test_v3_ownership_binding_requires_complete_multi_source_set():
         "buyback:borsdata:42:2026-08-20",
         "buyback:borsdata:42:2026-06-01",
     ]
+
+
+def test_v3_ownership_binding_rejects_boolean_numeric_alias():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    result.ownership_claims = [
+        OwnershipClaim(
+            claim_kind="long_holder_ownership",
+            subject_role="long_holder",
+            measure="index_eligibility",
+            binding=OwnershipBinding(
+                source_ids=["ownership:borsdata:42:2026-08-31"],
+                deterministic_field=(
+                    "research_evidence.ownership_liquidity.ownership.index_eligibility"
+                ),
+                asserted_value=1,
+                asserted_unit="status",
+            ),
+        )
+    ]
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={
+            "documents": [{"source_id": "news:21"}],
+            "ownership_liquidity": {
+                "ownership": {"index_eligibility": True},
+                "source_ids_by_measure": {
+                    "index_eligibility": ["ownership:borsdata:42:2026-08-31"]
+                },
+            },
+        },
+    )
+
+    with pytest.raises(StockAnalysisValidationError, match="packet value type"):
+        AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+            _v3_qualitative_response(result), candidate
+        )
+
+
+def test_v3_ownership_claim_rejects_natural_language_limitation_code():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    result.ownership_claims = [
+        OwnershipClaim(
+            claim_kind="liquidity",
+            subject_role="market",
+            measure="adtv_20",
+            binding=OwnershipBinding(
+                source_ids=["liquidity:borsdata:42:2026-08-31:20d"],
+                deterministic_field=(
+                    "research_evidence.ownership_liquidity.liquidity.adtv_20"
+                ),
+                asserted_value=1_200_000,
+                asserted_unit="currency",
+            ),
+            limitation_codes=["The founder owns 20%."],
+        )
+    ]
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="ownership limitation codes must be code identifiers",
+    ):
+        parse_qualitative_stock_analysis_result(_v3_qualitative_response(result))
 
 
 def test_documentary_management_and_capital_allocation_facts_are_not_ownership_claims():

@@ -246,7 +246,7 @@ def test_export_thesis_summaries_exports_only_enriched_v2_analyses(tmp_path, cap
 
     exported = json.loads(output.read_text(encoding="utf-8"))
     assert list(exported) == []
-    assert "validated v2 thesis summaries" in capsys.readouterr().out
+    assert "validated v3 thesis summaries" in capsys.readouterr().out
 
 
 def test_sync_agent_evidence_handles_companies_without_explicit_mfn_slug(capsys):

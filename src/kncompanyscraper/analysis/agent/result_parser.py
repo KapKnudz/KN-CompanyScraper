@@ -203,6 +203,7 @@ def _parse_contract(raw_response: str, contract: dict, label: str) -> dict:
         _normalize_ownership_claim_contract(payload, contract)
         _reject_v3_legacy_ownership_claims(payload, contract)
         _validate_value(payload, contract, "result")
+        _validate_ownership_claim_identifiers(payload)
         if payload.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
             _validate_structured_claim_identifiers(payload["structured_conclusions"])
         elif isinstance(payload.get("thesis"), dict) and payload["thesis"].get(
@@ -256,6 +257,24 @@ def _validate_structured_claim_identifiers(value) -> None:
     elif isinstance(value, list):
         for child in value:
             _validate_structured_claim_identifiers(child)
+
+
+def _validate_ownership_claim_identifiers(payload: dict) -> None:
+    cards = [payload]
+    thesis = payload.get("thesis") if isinstance(payload, dict) else None
+    if isinstance(thesis, dict):
+        cards.append(thesis)
+    for card in cards:
+        if card.get("thesis_card_version") != (
+            "individual-thesis-card-v3-structured-conclusions"
+        ):
+            continue
+        for claim in card.get("ownership_claims") or []:
+            for limitation_code in claim.get("limitation_codes", []):
+                if not _STRUCTURED_CLAIM_ID.fullmatch(limitation_code):
+                    raise StockAnalysisValidationError(
+                        "ownership limitation codes must be code identifiers"
+                    )
 
 
 def _normalize_thesis_card_fields(payload: dict) -> None:

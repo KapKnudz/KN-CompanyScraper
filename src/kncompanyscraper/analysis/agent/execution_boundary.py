@@ -2129,14 +2129,13 @@ class AgentExecutionBoundary:
                     )
             else:
                 ownership_sources.update(claim.source_ids)
-                if not claim.source_ids or set(claim.source_ids) - ownership_liquidity_source_ids:
-                    violations.append(
-                        f'ownership_claims[{index}] offending statement '
-                        f'{claim.statement!r} requires an approved ownership/liquidity source; '
-                        "documentary citations cannot be relabeled as ownership evidence; "
-                        "changing a documentary citation into an ownership citation is not permitted; "
-                        "omit the claim."
-                    )
+                violations.append(
+                    f'ownership_claims[{index}] offending statement '
+                    f'{claim.statement!r} must use a typed ownership claim; '
+                    "documentary citations cannot be relabeled as ownership evidence; "
+                    "changing a documentary citation into an ownership citation is not permitted; "
+                    "omit the claim."
+                )
         unknown_ownership_sources = sorted(
             ownership_sources - ownership_liquidity_source_ids
         )
@@ -2145,14 +2144,6 @@ class AgentExecutionBoundary:
                 "ownership claims must cite supplied ownership/liquidity evidence: "
                 + ", ".join(unknown_ownership_sources)
             )
-        try:
-            AgentExecutionBoundary._validate_supported_ownership_claims(
-                [claim for claim in result.ownership_claims if not isinstance(claim, OwnershipClaim)],
-                ownership_liquidity,
-            )
-        except StockAnalysisValidationError as exc:
-            violations.extend(getattr(exc, "violations", (str(exc),)))
-
         if insider_source_ids and result.insider_assessment.strip() and not result.insider_claims:
             violations.append(
                 "insider assessment requires structured insider claims"
@@ -2197,13 +2188,9 @@ class AgentExecutionBoundary:
             raise StockAnalysisValidationError(
                 f"measure {claim.measure} has no supplied deterministic field"
             )
-        if (
-            isinstance(expected, (int, float))
-            and not isinstance(expected, bool)
-            and isinstance(claim.binding.asserted_value, bool)
-        ):
+        if isinstance(expected, bool) != isinstance(claim.binding.asserted_value, bool):
             raise StockAnalysisValidationError(
-                f"asserted value for {claim.measure} must be numeric"
+                f"asserted value for {claim.measure} must match the packet value type"
             )
         if claim.binding.asserted_value != expected:
             raise StockAnalysisValidationError(
@@ -2216,35 +2203,6 @@ class AgentExecutionBoundary:
                 f"source IDs {list(claim.binding.source_ids)!r} must equal the exact "
                 f"generated source set {list(supplied)!r} for measure {claim.measure}"
             )
-
-    @staticmethod
-    def _validate_supported_ownership_claims(claims, evidence):
-        ownership = evidence.get("ownership") or {}
-        changes = evidence.get("changes") or {}
-        field_groups = (
-            (("free float", "free-float"), ownership, (
-                "free_float_pct", "free_float_shares", "free_float_market_cap"
-            )),
-            (("institutional ownership",), ownership, ("institutional_pct",)),
-            (("holder concentration", "capital concentration"), ownership, (
-                "top_1_capital_pct", "top_3_capital_pct", "top_10_capital_pct"
-            )),
-            (("voting control", "voting ownership"), ownership, ("top_1_voting_pct",)),
-            (("ownership change", "ownership broadening", "ownership concentration"), changes, (
-                "quarter", "year"
-            )),
-        )
-        for claim in claims:
-            statement = claim.statement.casefold()
-            if not re.search(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?\s*%?", statement):
-                continue
-            for phrases, values, fields_to_check in field_groups:
-                if any(phrase in statement for phrase in phrases) and not any(
-                    values.get(field) is not None for field in fields_to_check
-                ):
-                    raise StockAnalysisValidationError(
-                        "precise ownership claim requires a supplied deterministic field"
-                    )
 
     @staticmethod
     def _validate_portfolio_eligibility(result, *, require_scenario=True):
