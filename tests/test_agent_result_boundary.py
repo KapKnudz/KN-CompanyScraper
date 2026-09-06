@@ -1636,7 +1636,7 @@ def test_v3_structured_trigger_projects_activation_contract():
     payload["structured_conclusions"]["trigger"] = {
         "claim_id": "operating_trigger",
         "trigger_type": "operating",
-        "unresolved_claim_code": "durable_recovery",
+        "unresolved_claim_code": "margin_recovery",
         "observable_metric_code": "ebit_margin",
         "threshold_code": "above_10_percent",
         "evidence_window": "0_12m",
@@ -1649,12 +1649,69 @@ def test_v3_structured_trigger_projects_activation_contract():
     parsed = parse_qualitative_stock_analysis_result(json.dumps(payload))
 
     assert parsed.latent_case_type == "operating"
-    assert parsed.activation_trigger == (
-        "Resolve durable recovery when ebit margin above 10 percent."
-    )
+    assert parsed.activation_trigger == "Resolve margin recovery when ebit margin above 10 percent."
     assert parsed.activation_trigger_spec.observable_metric_or_event == "ebit margin"
     assert parsed.activation_trigger_spec.threshold_or_direction == "above 10 percent"
     AgentExecutionBoundary._validate_activation_trigger(parsed)
+
+
+def test_v3_trigger_rejects_ownership_like_code():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["structured_conclusions"]["trigger"] = {
+        "claim_id": "operating_trigger",
+        "trigger_type": "operating",
+        "unresolved_claim_code": "founder_owns_20_percent",
+        "observable_metric_code": "ebit_margin",
+        "threshold_code": "above_10_percent",
+        "evidence_window": "0_12m",
+        "single_observation_sufficient": True,
+        "observation_requirement": "single_observation",
+        "source_ids": [],
+        "limitation_codes": [],
+    }
+
+    with pytest.raises(StockAnalysisValidationError, match="must match"):
+        parse_qualitative_stock_analysis_result(json.dumps(payload))
+
+
+def test_v3_typed_facts_reject_cross_section_domain_codes():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["structured_conclusions"]["company_facts"] = [
+        {
+            "claim_id": "misrouted_fact",
+            "fact_code": "tenure",
+            "domain": "management",
+            "predicate": "observation",
+            "value": 12,
+            "source_ids": ["news:21"],
+            "limitation_codes": [],
+        }
+    ]
+
+    with pytest.raises(StockAnalysisValidationError, match="must match"):
+        parse_qualitative_stock_analysis_result(json.dumps(payload))
+
+
+def test_operating_latent_rejects_price_only_structured_trigger():
+    result = valid_result()
+    result.verdict = "latent_case"
+    result.latent_case_type = "operating"
+    result.activation_trigger = "Share price reaches the entry level."
+    result.activation_trigger_spec = ActivationTriggerSpec(
+        unresolved_claim="The operating recovery is unresolved.",
+        observable_metric_or_event="Share price reaches the entry level.",
+        threshold_or_direction="Below the entry level.",
+        evidence_window="0-12 months.",
+        single_observation_sufficient=True,
+        observation_requirement="One observation resolves the condition.",
+    )
+
+    with pytest.raises(StockAnalysisValidationError, match="operating metric"):
+        AgentExecutionBoundary._validate_activation_trigger(result)
 
 
 def test_v3_ownership_claim_uses_exact_packet_field_and_source_binding():

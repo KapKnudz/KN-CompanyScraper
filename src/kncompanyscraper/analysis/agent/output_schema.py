@@ -641,12 +641,8 @@ _TYPED_CLAIM = {
 }
 _TYPED_FACT = {
     "claim_id": "string",
-    "fact_code": (
-        "cash_balance | debt_balance | working_capital | acquisition | capex | "
-        "buyback | dividend | dilution | capital_allocation_policy | tenure | "
-        "incentive_alignment | execution | governance | guidance | management_change"
-    ),
-    "domain": "balance_sheet | management",
+    "fact_code": "string",
+    "domain": "string",
     "predicate": "observation | outcome | relation | status",
     "value": (
         "number | boolean | null | observed | supported | unsupported | unavailable | "
@@ -656,12 +652,36 @@ _TYPED_FACT = {
     "source_ids": ["string"],
     "limitation_codes": ["string"],
 }
+_CAPITAL_ALLOCATION_FACT = dict(_TYPED_FACT)
+_CAPITAL_ALLOCATION_FACT["fact_code"] = (
+    "cash_balance | debt_balance | working_capital | acquisition | capex | "
+    "buyback | dividend | dilution | capital_allocation_policy"
+)
+_CAPITAL_ALLOCATION_FACT["domain"] = "balance_sheet"
+_MANAGEMENT_FACT = dict(_TYPED_FACT)
+_MANAGEMENT_FACT["fact_code"] = (
+    "tenure | incentive_alignment | execution | governance | guidance | management_change"
+)
+_MANAGEMENT_FACT["domain"] = "management"
 _STRUCTURED_TRIGGER = {
     "claim_id": "string",
     "trigger_type": "price | operating",
-    "unresolved_claim_code": "string",
-    "observable_metric_code": "string",
-    "threshold_code": "string",
+    "unresolved_claim_code": (
+        "revenue_recovery | margin_recovery | cash_flow_recovery | "
+        "customer_retention | balance_sheet_deleveraging | operating_execution | "
+        "valuation_entry"
+    ),
+    "observable_metric_code": (
+        "arr | mrr | revenue | sales | ebit | ebitda | gross_margin | ebit_margin | "
+        "free_cash_flow | operating_cash_flow | customers | churn | retention | "
+        "renewals | orders | volume | share_price | valuation | multiple | net_debt | "
+        "working_capital | backlog | bookings | margin"
+    ),
+    "threshold_code": (
+        "above_0_percent | above_5_percent | above_10_percent | above_15_percent | "
+        "below_5_percent | below_10_percent | below_15_percent | reaches_entry_level | "
+        "exceeds_baseline | maintains_positive | remains_positive | improves | declines"
+    ),
     "evidence_window": "0_12m | 12_24m | 24_48m | uncertain",
     "single_observation_sufficient": "boolean",
     "observation_requirement": "single_observation | repeated_observations",
@@ -688,9 +708,9 @@ _STRUCTURED_CONCLUSIONS = {
     },
     "evidence_claims": [_TYPED_CLAIM],
     "break_tests": [_TYPED_CLAIM],
-    "management_claims": [_TYPED_FACT],
-    "management_ledger": [_TYPED_FACT],
-    "company_facts": [_TYPED_FACT],
+    "management_claims": [_MANAGEMENT_FACT],
+    "management_ledger": [_MANAGEMENT_FACT],
+    "company_facts": [_CAPITAL_ALLOCATION_FACT],
     "business_model_facts": [_TYPED_CLAIM],
     "margin_facts": [_TYPED_CLAIM],
     "timing_facts": [_TYPED_CLAIM],

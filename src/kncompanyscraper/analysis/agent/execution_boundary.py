@@ -1197,6 +1197,14 @@ class AgentExecutionBoundary:
             raise StockAnalysisValidationError(
                 "activation triggers must name a company-specific metric or event"
             )
+        if result.latent_case_type == "operating" and re.search(
+            r"\b(?:share price|valuation|multiple)\b",
+            observable_text,
+            re.IGNORECASE,
+        ):
+            raise StockAnalysisValidationError(
+                "operating latent triggers must name an operating metric or event"
+            )
         if not re.search(
             r"\b(?:above|below|at least|at most|no more than|maintain|maintains?|"
             r"remain|reaches?|exceeds?|replace|replaces?|renew|renews?|increase|"
