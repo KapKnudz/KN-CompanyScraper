@@ -3,8 +3,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from kncompanyscraper.analysis.agent.comparative_review import ComparativeReviewService
+from kncompanyscraper.analysis.agent.comparative_review import (
+    ComparativeReviewPromptBuilder,
+    ComparativeReviewService,
+)
 from kncompanyscraper.analysis.agent.openai_responses import OpenAIModelResponse
+from tests.test_agent_result_boundary import _v3_qualitative_response, valid_result
 from tests.test_comparative_ranking import stored_analysis
 from tests.test_forward_scenario import analysis_with_returns
 
@@ -95,6 +99,18 @@ def test_comparative_review_calibrates_confidence_then_uses_deterministic_ranker
     repository.accept.assert_called_once()
     attach = repository.attach_to_ranking_run.call_args.kwargs
     assert attach["review_id"] == 70
+
+
+def test_comparative_prompt_projects_v3_thesis_fields_at_read_time():
+    stored = stored_analysis(1, analysis_with_returns(), confidence="high")
+    thesis = valid_result()
+    thesis.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    stored["content"].update(json.loads(_v3_qualitative_response(thesis)))
+
+    prompt = ComparativeReviewPromptBuilder().build(ranking_run(), {1: stored})
+    packet = json.loads(prompt.user)
+
+    assert packet["cases"][0]["one_sentence_thesis"].startswith("Fundamental case")
 
 
 def test_comparative_review_rejects_unknown_company_source():

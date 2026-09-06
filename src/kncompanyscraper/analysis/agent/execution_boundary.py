@@ -1993,8 +1993,15 @@ class AgentExecutionBoundary:
                     if (
                         "claim_id" in value
                         and not ids
-                        and value.get("predicate") != "source_gap"
-                        and value.get("value") not in {None, "unavailable", "unassessable"}
+                        and (
+                            "trigger_type" in value
+                            or "trigger_code" in value
+                            or (
+                                value.get("predicate") != "source_gap"
+                                and value.get("value")
+                                not in {None, "unavailable", "unassessable"}
+                            )
+                        )
                     ):
                         raise StockAnalysisValidationError(
                             f"structured conclusion {path} requires source_ids"

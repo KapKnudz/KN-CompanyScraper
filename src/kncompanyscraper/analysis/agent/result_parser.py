@@ -49,7 +49,8 @@ class StockAnalysisValidationError(ValueError):
 
 def parse_stock_analysis_result(raw_response: str) -> StockAnalysisResult:
     raw_response = _normalize_missing_scenario_fields(raw_response)
-    payload = _parse_contract(raw_response, STOCK_ANALYSIS_OUTPUT_CONTRACT, "stock-analysis")
+    contract = _contract_for_payload(raw_response)
+    payload = _parse_contract(raw_response, contract, "stock-analysis")
     return _stock_analysis_from_payload(payload)
 
 

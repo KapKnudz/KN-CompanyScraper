@@ -12,7 +12,7 @@ class LiquidityEvidence:
     observed_days_20: int
     observed_days_60: int
     observed_days_120: int
-    zero_volume_days_120: int
+    zero_volume_days_120: int | None
     calculation_method: str = "close_times_volume_proxy"
 
 
@@ -166,7 +166,11 @@ class OwnershipLiquidityEvidenceBuilder:
                 observed_days_20=observed[20],
                 observed_days_60=observed[60],
                 observed_days_120=observed[120],
-                zero_volume_days_120=sum(price.volume == 0 for price in prices[:120]),
+                zero_volume_days_120=(
+                    sum(price.volume == 0 for price in prices[:120])
+                    if "zero_volume_days_120" in source_ids_by_measure
+                    else None
+                ),
             ),
             flow_signals=flow_signals,
             ownership={"status": "unavailable", "source_ids": []},

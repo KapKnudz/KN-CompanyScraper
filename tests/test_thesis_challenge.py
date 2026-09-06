@@ -6,6 +6,7 @@ import pytest
 from kncompanyscraper.analysis.agent.openai_responses import OpenAIModelResponse
 from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
 from kncompanyscraper.analysis.agent.thesis_challenge import (
+    ThesisChallengeResponsePromptBuilder,
     ThesisChallengeResponseService,
     ThesisChallengeService,
 )
@@ -128,6 +129,23 @@ def challenged_thesis():
         "content": valid_result().to_dict(),
         "metadata": {"evidence_source_ids": ["report:1"]},
     }
+
+
+def test_v3_challenge_response_uses_v3_update_contract():
+    context = MagicMock()
+    context.current_thesis = {
+        "content": {
+            "thesis_card_version": "individual-thesis-card-v3-structured-conclusions"
+        }
+    }
+    context.current_facts = []
+    context.candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
+
+    prompt = ThesisChallengeResponsePromptBuilder().build(
+        open_challenge(), context, {"documents": []}
+    )
+
+    assert "structured_conclusions" in prompt.output_schema["properties"]["thesis"]["properties"]
 
 
 def response_candidate():

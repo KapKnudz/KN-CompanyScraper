@@ -129,6 +129,20 @@ def test_binds_listing_date_without_market_id():
     assert "market_id" not in evidence.source_ids_by_measure
 
 
+def test_filtered_zero_volume_measure_is_unavailable_without_binding():
+    filter_ids = {
+        "liquidity:borsdata:42:2026-08-31:20d",
+        "liquidity:borsdata:42:2026-08-31:60d",
+        "listing:borsdata:42",
+    }
+    evidence = OwnershipLiquidityEvidenceBuilder(
+        CompanyRepository(), ValuationRepository(_prices())
+    ).build(42, date(2026, 8, 31), filter_ids=filter_ids)
+
+    assert evidence.liquidity.zero_volume_days_120 is None
+    assert "zero_volume_days_120" not in evidence.source_ids_by_measure
+
+
 def _buyback(event_date, change_shares, treasury_shares):
     return StoredBuybackEvent(
         42, event_date, change_shares, -0.25, 42.5, "SEK",

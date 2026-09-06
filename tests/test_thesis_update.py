@@ -12,6 +12,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
 )
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
+    parse_stock_analysis_result,
     parse_thesis_update_result,
 )
 from kncompanyscraper.analysis.agent.thesis_update import (
@@ -158,6 +159,16 @@ def test_incremental_result_parser_builds_nested_thesis():
 
     assert update.impact == "thesis_strengthened"
     assert update.thesis.company_id == 42
+
+
+def test_full_result_parser_accepts_v3_persisted_thesis():
+    thesis = valid_result()
+    thesis.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+
+    parsed = parse_stock_analysis_result(_v3_qualitative_response(thesis))
+
+    assert parsed.thesis_card_version == "individual-thesis-card-v3-structured-conclusions"
+    assert parsed.structured_conclusions is not None
 
 
 def test_context_builder_supplies_only_new_sources_and_detects_unchanged_context():
@@ -475,6 +486,25 @@ def test_v3_incremental_update_must_evaluate_structured_trigger():
     )
 
     assert accepted.persisted_analysis.analysis_id == 22
+
+
+def test_v3_incremental_update_cannot_downgrade_to_v2():
+    current = valid_result()
+    current.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    context = ThesisUpdateContext(
+        candidate=AgentCandidate(1, 42, "TEST", "Testbolaget"),
+        current_thesis={"id": 9, "content": current.to_dict()},
+        current_facts=[],
+        prior_source_ids=(),
+        new_source_ids=(),
+        deterministic_context_sha256="hash",
+        deterministic_context_changed=False,
+    )
+
+    with pytest.raises(StockAnalysisValidationError, match="require v3"):
+        ThesisUpdateExecutionBoundary(MagicMock()).persist_response(
+            update_response(), context, "test-model"
+        )
 
 
 def test_v3_incremental_update_rejects_unchecked_structured_trigger():

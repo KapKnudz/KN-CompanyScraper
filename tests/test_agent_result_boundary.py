@@ -90,6 +90,16 @@ def test_parser_builds_nested_result_dataclasses():
     assert result.management_credibility_ledger[0].result == "unverifiable"
 
 
+def test_parser_accepts_v3_persisted_result():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+
+    parsed = parse_stock_analysis_result(_v3_qualitative_response(result))
+
+    assert parsed.thesis_card_version == "individual-thesis-card-v3-structured-conclusions"
+    assert parsed.structured_conclusions is not None
+
+
 def test_parser_builds_falsifiable_case_decisive_evidence_and_break_tests():
     payload = valid_result()
     payload.case_horizon_months = 36
@@ -1842,6 +1852,7 @@ def test_v3_structured_trigger_projects_activation_contract():
     result = valid_result()
     result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
     payload = json.loads(_v3_qualitative_response(result))
+    payload["verdict"] = "latent_case"
     payload["structured_conclusions"]["trigger"] = {
         "claim_id": "operating_trigger",
         "trigger_type": "operating",
@@ -1862,6 +1873,37 @@ def test_v3_structured_trigger_projects_activation_contract():
     assert parsed.activation_trigger_spec.observable_metric_or_event == "ebit margin"
     assert parsed.activation_trigger_spec.threshold_or_direction == "above 10 percent"
     AgentExecutionBoundary._validate_activation_trigger(parsed)
+
+
+def test_v3_rejects_unsourced_structured_trigger():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["verdict"] = "latent_case"
+    payload["structured_conclusions"]["trigger"] = {
+        "claim_id": "operating_trigger",
+        "trigger_type": "operating",
+        "unresolved_claim_code": "margin_recovery",
+        "observable_metric_code": "ebit_margin",
+        "threshold_code": "above_10_percent",
+        "evidence_window": "0_12m",
+        "single_observation_sufficient": True,
+        "observation_requirement": "single_observation",
+        "source_ids": [],
+        "limitation_codes": [],
+    }
+
+    with pytest.raises(StockAnalysisValidationError, match="requires source_ids"):
+        AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+            json.dumps(payload),
+            AgentCandidate(
+                rank=1,
+                company_id=42,
+                ticker="TEST",
+                name="Testbolaget",
+                research_evidence={"documents": [{"source_id": "news:21"}]},
+            ),
+        )
 
 
 def test_v3_requires_decisive_evidence_when_sources_are_citable():

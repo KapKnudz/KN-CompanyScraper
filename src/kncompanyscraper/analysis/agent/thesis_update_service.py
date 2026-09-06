@@ -60,6 +60,15 @@ class ThesisUpdateExecutionBoundary:
             raise StockAnalysisValidationError(
                 "v1 theses require a full reassessment before incremental updates"
             )
+        if (
+            current_content.get("thesis_card_version")
+            == "individual-thesis-card-v3-structured-conclusions"
+            and update.thesis.thesis_card_version
+            != "individual-thesis-card-v3-structured-conclusions"
+        ):
+            raise StockAnalysisValidationError(
+                "v3 theses require v3 incremental updates"
+            )
         self._validate_trigger_progress(update, context)
         if update.impact == "no_material_change":
             current_content["forward_scenario_analysis"] = None

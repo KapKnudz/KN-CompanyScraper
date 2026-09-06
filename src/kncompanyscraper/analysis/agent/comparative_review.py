@@ -12,6 +12,7 @@ from kncompanyscraper.analysis.comparative_ranking import (
 )
 from kncompanyscraper.analysis.valuation.forward_scenario import ForwardRank
 from kncompanyscraper.analysis.policy_versions import comparative_ranking_policy_version
+from kncompanyscraper.models.stored_analysis import as_stored_analysis
 
 
 COMPARATIVE_REVIEW_CONTRACT = {
@@ -84,7 +85,7 @@ class ComparativeReviewPromptBuilder:
         ]
         for company_id in ordered_company_ids:
             stored = analyses_by_company[company_id]
-            content = stored["content"]
+            content = as_stored_analysis(stored)._projected_content()
             cases.append(
                 {
                     "company_id": company_id,
@@ -308,7 +309,7 @@ class ComparativeReviewService:
 
 
 def _known_source_ids(stored: dict) -> set[str]:
-    content = stored["content"]
+    content = as_stored_analysis(stored)._projected_content()
     source_ids = set((stored.get("metadata") or {}).get("evidence_source_ids") or [])
     source_ids.update(
         citation["source_id"]
