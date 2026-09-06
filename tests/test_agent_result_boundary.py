@@ -1634,6 +1634,39 @@ def test_v3_projection_preserves_management_and_capital_facts():
             "limitation_codes": [],
         }
     ]
+    structured["business_model_facts"] = [
+        {
+            "claim_id": "business_model_observation",
+            "domain": "business_model",
+            "predicate": "observation",
+            "value": "supported",
+            "source_ids": ["news:21"],
+            "limitation_codes": [],
+        }
+    ]
+    structured["margin_facts"] = [
+        {
+            "claim_id": "margin_observation",
+            "domain": "margin",
+            "predicate": "observation",
+            "value": "improving",
+            "source_ids": ["news:21"],
+            "limitation_codes": [],
+        }
+    ]
+    structured["timing_facts"] = [
+        {
+            "claim_id": "timing_observation",
+            "domain": "timing",
+            "predicate": "observation",
+            "value": "observed",
+            "source_ids": ["news:21"],
+            "limitation_codes": [],
+        }
+    ]
+    structured["falsifiable_case"]["falsification"]["claim_id"] = (
+        "founder_owns_20_percent"
+    )
 
     persisted = AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
         json.dumps(payload),
@@ -1660,6 +1693,21 @@ def test_v3_projection_preserves_management_and_capital_facts():
     assert summary["management_claims"][0]["statement"] == (
         "management tenure: 12"
     )
+    assert summary["company_fact_ledger"]["business_model"][0]["statement"] == (
+        "business_model observation: supported"
+    )
+    assert summary["business_model_profile"]["summary"] == (
+        "business_model observation: supported"
+    )
+    assert summary["margin_expansion_case"]["mechanism"] == (
+        "margin observation: improving"
+    )
+    assert summary["timing_assessment"]["why_now"] == (
+        "timing observation: observed"
+    )
+    assert "founder_owns_20_percent" not in summary["falsifiable_case"][
+        "falsification_test"
+    ]
     assert persisted.management_credibility_ledger[0].claim == (
         "management execution: confirmed"
     )
@@ -1694,6 +1742,26 @@ def test_v3_structured_trigger_projects_activation_contract():
     assert parsed.activation_trigger_spec.observable_metric_or_event == "ebit margin"
     assert parsed.activation_trigger_spec.threshold_or_direction == "above 10 percent"
     AgentExecutionBoundary._validate_activation_trigger(parsed)
+
+
+def test_v3_requires_decisive_evidence_when_sources_are_citable():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["structured_conclusions"]["strongest_confirming_evidence"] = None
+    payload["structured_conclusions"]["strongest_disconfirming_evidence"] = None
+
+    with pytest.raises(StockAnalysisValidationError, match="typed decisive evidence"):
+        AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+            json.dumps(payload),
+            AgentCandidate(
+                rank=1,
+                company_id=42,
+                ticker="TEST",
+                name="Testbolaget",
+                research_evidence={"documents": [{"source_id": "news:21"}]},
+            ),
+        )
 
 
 def test_v3_trigger_rejects_ownership_like_code():

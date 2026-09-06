@@ -123,7 +123,7 @@ class StoredAnalysisDocument(dict):
 
     @property
     def reconsideration_trigger(self):
-        return self.content.get("reconsideration_trigger")
+        return self._projected_content().get("reconsideration_trigger")
 
     @property
     def verdict(self) -> str:
@@ -132,7 +132,7 @@ class StoredAnalysisDocument(dict):
     @property
     def latent_case_type(self) -> str | None:
         """Return the explicit subtype, or null for legacy v2 cards."""
-        return self.content.get("latent_case_type")
+        return self._projected_content().get("latent_case_type")
 
     @property
     def required_return(self) -> float | None:
@@ -195,7 +195,13 @@ class StoredAnalysisDocument(dict):
                         None,
                     ),
                 }
-        timing = self.content.get("timing_assessment") or {}
+        timing = content.get("timing_assessment") or {}
+        ownership_claims = content.get("ownership_claims") or []
+        ownership_assessment = (
+            render_ownership_claims(ownership_claims)
+            if isinstance(self.content.get("structured_conclusions"), dict)
+            else content.get("ownership_and_flow_assessment", "")
+        )
         curve = provenance.get("expectation_curve") or []
         return {
             "verdict": self.verdict,
@@ -215,13 +221,14 @@ class StoredAnalysisDocument(dict):
             "horizon_months": content.get("case_horizon_months"),
             "one_sentence_thesis": self.one_sentence_thesis,
             "company_fact_ledger": content.get("company_fact_ledger", {}),
+            "business_model_profile": content.get("business_model_profile", {}),
+            "margin_expansion_case": content.get("margin_expansion_case", {}),
+            "timing_assessment": timing,
             "management_claims": content.get("management_claims", []),
             "management_credibility_ledger": content.get(
                 "management_credibility_ledger", []
             ),
-            "ownership_and_flow_assessment": render_ownership_claims(
-                content.get("ownership_claims") or []
-            ),
+            "ownership_and_flow_assessment": ownership_assessment,
             "falsifiable_case": content.get("falsifiable_case"),
             "revenue_resilience": self.revenue_resilience,
             "reverse_dcf": {

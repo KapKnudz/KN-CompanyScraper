@@ -119,6 +119,32 @@ def test_thesis_summary_omits_unavailable_bands():
     assert document.thesis_summary["scenarios"] == {}
 
 
+def test_legacy_ownership_summary_remains_audit_output():
+    document = StoredAnalysisDocument(
+        {
+            "analysis_id": 7,
+            "content": {
+                "confidence": "medium",
+                "verdict": "watch",
+                "one_sentence_thesis": "Evidence is incomplete.",
+                "ownership_and_flow_assessment": "Historical ownership assessment.",
+                "ownership_claims": [
+                    {
+                        "statement": "The founder owns 20%.",
+                        "source_ids": ["news:21"],
+                    }
+                ],
+                "scenario_bundles": [],
+            },
+            "metadata": {},
+        }
+    )
+
+    assert document.thesis_summary["ownership_and_flow_assessment"] == (
+        "Historical ownership assessment."
+    )
+
+
 def test_thesis_summary_uses_bear_base_bull_order():
     document = StoredAnalysisDocument(
         {

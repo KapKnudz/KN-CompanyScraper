@@ -302,6 +302,15 @@ def project_structured_conclusions(
         _project_trigger_evidence(entry)
         for entry in conclusions["trigger_evidence"]
     ]
+    business_model_summary, business_model_source_ids, business_model_limitations = (
+        _project_claim_bundle(conclusions["business_model_facts"])
+    )
+    margin_summary, margin_source_ids, margin_limitations = _project_claim_bundle(
+        conclusions["margin_facts"]
+    )
+    timing_summary, timing_source_ids, timing_limitations = _project_claim_bundle(
+        conclusions["timing_facts"]
+    )
     resilience = conclusions["revenue_resilience"]
     trigger = conclusions.get("trigger")
     trigger_projection = _project_trigger(trigger) if trigger is not None else {
@@ -315,17 +324,17 @@ def project_structured_conclusions(
             "statement": render_structured_headline(conclusions),
             "falsification_test": (
                 "Typed falsification condition: "
-                + falsifiable["falsification"]["claim_id"]
+                + _claim_text(falsifiable["falsification"])
             ),
             "horizon_months": falsifiable["horizon_months"],
             "source_ids": falsifiable["baseline_refs"]
             or falsifiable["falsification"].get("source_ids", []),
         },
         "business_model_profile": {
-            "summary": "",
+            "summary": business_model_summary,
             "customer_and_need": "",
             "offering": "",
-            "revenue_mechanics": "",
+            "revenue_mechanics": business_model_summary,
             "sales_and_distribution": "",
             "cost_structure": "",
             "reinvestment_requirements": "",
@@ -338,24 +347,24 @@ def project_structured_conclusions(
             "capital_intensity": "unassessable",
             "operating_leverage": "unassessable",
             "circle_of_competence": "unassessable",
-            "source_ids": [],
-            "limitations": [],
+            "source_ids": business_model_source_ids,
+            "limitations": business_model_limitations,
         },
         "margin_expansion_case": {
-            "status": "unassessable",
-            "mechanism": "",
+            "status": "early_evidence" if margin_summary else "unassessable",
+            "mechanism": margin_summary,
             "required_operating_changes": [],
-            "source_ids": [],
+            "source_ids": margin_source_ids,
             "contrary_source_ids": [],
-            "limitations": [],
+            "limitations": margin_limitations,
         },
         "timing_assessment": {
-            "horizon_months": None,
-            "why_now": "",
-            "confidence": "low",
+            "horizon_months": headline["horizon_months"],
+            "why_now": timing_summary,
+            "confidence": "medium" if timing_summary else "low",
             "catalysts": [],
-            "source_ids": [],
-            "limitations": [],
+            "source_ids": timing_source_ids,
+            "limitations": timing_limitations,
         },
         "confidence_limitations": list(conclusions["limitation_codes"]),
         "company_fact_ledger": company_fact_ledger,
@@ -543,6 +552,17 @@ def _project_facts(claims: list[dict]) -> list[dict]:
         }
         for claim in claims
     ]
+
+
+def _project_claim_bundle(claims: list[dict]) -> tuple[str, list[str], list[str]]:
+    statements = [_claim_text(claim) for claim in claims]
+    source_ids = list(dict.fromkeys(
+        source_id for claim in claims for source_id in claim["source_ids"]
+    ))
+    limitations = list(dict.fromkeys(
+        code for claim in claims for code in claim["limitation_codes"]
+    ))
+    return "; ".join(statements), source_ids, limitations
 
 
 def render_ownership_claims(claims: list[dict]) -> str:

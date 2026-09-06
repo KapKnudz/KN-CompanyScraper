@@ -970,6 +970,25 @@ class AgentExecutionBoundary:
             )
 
         decisive_source_ids = set()
+        available_citable_source_ids = set(
+            source_aliases.get("canonical_source_ids", ())
+        )
+        if result.structured_conclusions is not None and available_citable_source_ids and (
+            result.strongest_confirming_evidence is None
+            or result.strongest_disconfirming_evidence is None
+        ):
+            missing_sides = [
+                label
+                for label, evidence in (
+                    ("strongest confirming evidence", result.strongest_confirming_evidence),
+                    ("strongest disconfirming evidence", result.strongest_disconfirming_evidence),
+                )
+                if evidence is None
+            ]
+            raise StockAnalysisValidationError(
+                "citable evidence requires typed decisive evidence: "
+                + ", ".join(missing_sides)
+            )
         for label, evidence in (
             ("strongest confirming evidence", result.strongest_confirming_evidence),
             ("strongest disconfirming evidence", result.strongest_disconfirming_evidence),
