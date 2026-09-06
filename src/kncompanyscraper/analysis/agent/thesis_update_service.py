@@ -111,6 +111,12 @@ class ThesisUpdateExecutionBoundary:
                 context.candidate.research_evidence.get("as_of")
             )
             current_content.setdefault("scenario_bundles", [])
+            if is_v3:
+                current_content["case_horizon_months"] = (
+                    current_content["structured_conclusions"]["headline_case"][
+                        "horizon_months"
+                    ]
+                )
             updated_content = update.thesis.to_dict()
             # A no-material-change response does not invoke the authoring model;
             # carry forward the last accepted assumptions so the stock boundary
@@ -118,6 +124,16 @@ class ThesisUpdateExecutionBoundary:
             updated_content["scenario_bundles"] = current_content.get(
                 "scenario_bundles", []
             )
+            ignored_fields = {"activation_trigger_evidence"}
+            if is_v3:
+                ignored_fields.update(
+                    {
+                        "forward_scenario_analysis",
+                        "historical_forecast_table",
+                        "peak_margin_bridge",
+                        "scenario_driver_attribution",
+                    }
+                )
             if not is_v3 and (
                 updated_content.get("company_fact_ledger")
                 != current_content.get("company_fact_ledger")
@@ -145,7 +161,7 @@ class ThesisUpdateExecutionBoundary:
                             ensure_ascii=False,
                             default=str,
                         )
-                        and key != "activation_trigger_evidence"
+                        and key not in ignored_fields
                     )
                 )
                 if changed_fields:

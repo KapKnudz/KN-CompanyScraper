@@ -332,6 +332,7 @@ def _known_source_ids(stored: dict) -> set[str]:
     def collect_structured_source_ids(value):
         if isinstance(value, dict):
             source_ids.update(value.get("source_ids") or [])
+            source_ids.update(value.get("baseline_refs") or [])
             for child in value.values():
                 collect_structured_source_ids(child)
         elif isinstance(value, (list, tuple)):

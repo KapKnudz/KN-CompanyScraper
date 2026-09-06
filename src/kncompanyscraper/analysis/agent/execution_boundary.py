@@ -984,6 +984,7 @@ class AgentExecutionBoundary:
             falsifiable.horizon_months is not None
             and result.case_horizon_months is not None
             and falsifiable.horizon_months != result.case_horizon_months
+            and result.structured_conclusions is None
         ):
             raise StockAnalysisValidationError(
                 "falsifiable-case horizon must match case_horizon_months"
@@ -1970,6 +1971,15 @@ class AgentExecutionBoundary:
         if any(not claim.source_ids for claim in structured.break_tests):
             raise StockAnalysisValidationError(
                 "structured break tests must cite the evidence establishing the baseline"
+            )
+        if (
+            structured.headline_case.case_ref
+            != structured.falsifiable_case.case_ref
+            or structured.headline_case.horizon_months
+            != structured.falsifiable_case.horizon_months
+        ):
+            raise StockAnalysisValidationError(
+                "structured headline and falsifiable case must share the case reference and horizon"
             )
         payload = asdict(structured)
         source_ids = set()

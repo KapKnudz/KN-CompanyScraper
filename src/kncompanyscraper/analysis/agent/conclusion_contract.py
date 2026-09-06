@@ -252,6 +252,19 @@ def render_structured_headline(conclusions: dict) -> str:
     )
 
 
+def _management_ledger_result(value: object) -> str:
+    return {
+        "confirmed": "kept",
+        "positive": "kept",
+        "improving": "kept",
+        "observed": "kept",
+        "supported": "kept",
+        "unchanged": "kept",
+        "negative": "missed",
+        "deteriorating": "changed",
+    }.get(value, "unverifiable")
+
+
 def project_structured_conclusions(
     conclusions: dict, ownership_claims: list[dict] | None = None
 ) -> dict:
@@ -266,11 +279,19 @@ def project_structured_conclusions(
             "date": "",
             "claim": _claim_text(claim),
             "expected_timing": None,
-            "observed_outcome": None,
-            "result": "unverifiable",
+            "observed_outcome": (
+                _claim_text(claim)
+                if _management_ledger_result(claim["value"]) != "unverifiable"
+                else None
+            ),
+            "result": _management_ledger_result(claim["value"]),
             "source_ids": list(claim["source_ids"]),
             "claim_source_ids": list(claim["source_ids"]),
-            "outcome_source_ids": [],
+            "outcome_source_ids": (
+                list(claim["source_ids"])
+                if _management_ledger_result(claim["value"]) != "unverifiable"
+                else []
+            ),
         }
         for claim in conclusions["management_ledger"]
     ]
@@ -330,6 +351,8 @@ def project_structured_conclusions(
     }
     return {
         "one_sentence_thesis": render_structured_headline(conclusions),
+        "case_horizon_months": headline["horizon_months"],
+        "reverse_dcf_expectation_assessment": conclusions["reverse_dcf_assessment"],
         "falsifiable_case": {
             "statement": render_structured_headline(conclusions),
             "falsification_test": (
@@ -393,7 +416,14 @@ def project_structured_conclusions(
             "source_ids": list(resilience["source_ids"]),
             "recurring_source_ids": [],
             "variable_source_ids": [],
-            "limitations": list(conclusions["limitation_codes"]),
+            "limitations": list(
+                dict.fromkeys(
+                    [
+                        *conclusions["limitation_codes"],
+                        *resilience["limitation_codes"],
+                    ]
+                )
+            ),
         },
         "peak_margin_evidence": [],
         "management_assessment": (

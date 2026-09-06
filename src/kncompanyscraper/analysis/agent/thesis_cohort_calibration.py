@@ -45,7 +45,8 @@ def build_cohort_calibration_audit(
 
 def _row(company_id: int, value: dict) -> dict:
     stored = as_stored_analysis(value)
-    content = stored.content
+    content = stored._projected_content()
+    raw_content = stored.content
     metadata = stored.metadata
     forward = stored.forward_scenario or {}
     bands = {
@@ -58,7 +59,7 @@ def _row(company_id: int, value: dict) -> dict:
     packet_hash = (
         metadata.get("deterministic_context_sha256")
         or metadata.get("packet_sha256")
-        or _legacy_packet_hash(content)
+        or _legacy_packet_hash(raw_content)
     )
     return {
         "company_id": company_id,
