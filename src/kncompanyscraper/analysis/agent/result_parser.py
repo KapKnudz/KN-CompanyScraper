@@ -247,6 +247,10 @@ def _validate_structured_claim_identifiers(value) -> None:
                 raise StockAnalysisValidationError(
                     "structured expectation references must be code identifiers"
                 )
+            if not reference.startswith("valuation:reverse_dcf:"):
+                raise StockAnalysisValidationError(
+                    "structured expectation references must use the valuation:reverse_dcf namespace"
+                )
         for child in value.values():
             _validate_structured_claim_identifiers(child)
     elif isinstance(value, list):

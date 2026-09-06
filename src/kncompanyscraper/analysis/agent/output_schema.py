@@ -671,6 +671,12 @@ _MARGIN_CLAIM = dict(_TYPED_CLAIM)
 _MARGIN_CLAIM["domain"] = "margin"
 _TIMING_CLAIM = dict(_TYPED_CLAIM)
 _TIMING_CLAIM["domain"] = "timing"
+_REVENUE_RESILIENCE_CLAIM = dict(_TYPED_CLAIM)
+_REVENUE_RESILIENCE_CLAIM["domain"] = "revenue"
+_REVENUE_RESILIENCE_CLAIM["predicate"] = "assessment"
+_REVENUE_RESILIENCE_CLAIM["value"] = (
+    "resilient | mixed | variable | unassessable"
+)
 _STRUCTURED_TRIGGER = {
     "claim_id": "string",
     "trigger_type": "price | operating",
@@ -793,7 +799,7 @@ _STRUCTURED_CONCLUSIONS = {
     "trigger_evidence": [_STRUCTURED_TRIGGER_EVIDENCE],
     "limitation_codes": ["string"],
     "trigger": _NullableObjectContract(_STRUCTURED_TRIGGER),
-    "revenue_resilience": _TYPED_CLAIM,
+    "revenue_resilience": _REVENUE_RESILIENCE_CLAIM,
     "reverse_dcf_assessment": "plausible | demanding | unsupported | unassessable",
 }
 V3_STOCK_ANALYSIS_OUTPUT_CONTRACT = dict(STOCK_ANALYSIS_OUTPUT_CONTRACT)

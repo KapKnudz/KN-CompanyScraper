@@ -71,40 +71,46 @@ class ThesisUpdateExecutionBoundary:
             )
         self._validate_trigger_progress(update, context)
         if update.impact == "no_material_change":
-            current_content["forward_scenario_analysis"] = None
-            current_content.setdefault("confidence_limitations", [])
-            current_content.setdefault(
-                "thesis_card_version",
-                current_content.get(
-                    "thesis_card_version",
-                    "individual-thesis-card-v3-structured-conclusions",
-                )
+            is_v3 = (
+                current_content.get("thesis_card_version")
+                == "individual-thesis-card-v3-structured-conclusions"
             )
+            if not is_v3:
+                current_content["forward_scenario_analysis"] = None
+                current_content.setdefault("confidence_limitations", [])
+                current_content.setdefault(
+                    "thesis_card_version",
+                    current_content.get(
+                        "thesis_card_version",
+                        "individual-thesis-card-v3-structured-conclusions",
+                    )
+                )
+                current_content.setdefault(
+                    "business_model_profile", asdict(BusinessModelProfile())
+                )
+                current_content.setdefault(
+                    "margin_expansion_case", asdict(MarginExpansionCase())
+                )
+                current_content.setdefault(
+                    "timing_assessment", asdict(TimingAssessment())
+                )
+                current_content.setdefault(
+                    "company_fact_ledger",
+                    {
+                        "business_model": [],
+                        "revenue_drivers": [],
+                        "margins_and_operating_leverage": [],
+                        "balance_sheet_and_capital_allocation": [],
+                        "management_and_execution": [],
+                        "ownership_and_insiders": [],
+                        "valuation_expectations": [],
+                        "risks_and_disconfirming_evidence": [],
+                    },
+                )
             current_content["evidence_as_of"] = (
                 context.candidate.research_evidence.get("as_of")
             )
-            current_content.setdefault(
-                "business_model_profile", asdict(BusinessModelProfile())
-            )
-            current_content.setdefault(
-                "margin_expansion_case", asdict(MarginExpansionCase())
-            )
-            current_content.setdefault(
-                "timing_assessment", asdict(TimingAssessment())
-            )
-            current_content.setdefault(
-                "company_fact_ledger",
-                {
-                    "business_model": [],
-                    "revenue_drivers": [],
-                    "margins_and_operating_leverage": [],
-                    "balance_sheet_and_capital_allocation": [],
-                    "management_and_execution": [],
-                    "ownership_and_insiders": [],
-                    "valuation_expectations": [],
-                    "risks_and_disconfirming_evidence": [],
-                },
-            )
+            current_content.setdefault("scenario_bundles", [])
             updated_content = update.thesis.to_dict()
             # A no-material-change response does not invoke the authoring model;
             # carry forward the last accepted assumptions so the stock boundary
@@ -112,7 +118,7 @@ class ThesisUpdateExecutionBoundary:
             updated_content["scenario_bundles"] = current_content.get(
                 "scenario_bundles", []
             )
-            if (
+            if not is_v3 and (
                 updated_content.get("company_fact_ledger")
                 != current_content.get("company_fact_ledger")
             ):
@@ -127,7 +133,18 @@ class ThesisUpdateExecutionBoundary:
                     key
                     for key in set(current_content) | set(updated_content)
                     if (
-                        current_content.get(key) != updated_content.get(key)
+                        json.dumps(
+                            current_content.get(key),
+                            sort_keys=True,
+                            ensure_ascii=False,
+                            default=str,
+                        )
+                        != json.dumps(
+                            updated_content.get(key),
+                            sort_keys=True,
+                            ensure_ascii=False,
+                            default=str,
+                        )
                         and key != "activation_trigger_evidence"
                     )
                 )

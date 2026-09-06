@@ -2187,6 +2187,14 @@ class AgentExecutionBoundary:
             raise StockAnalysisValidationError(
                 f"measure {claim.measure} has no supplied deterministic field"
             )
+        if (
+            isinstance(expected, (int, float))
+            and not isinstance(expected, bool)
+            and isinstance(claim.binding.asserted_value, bool)
+        ):
+            raise StockAnalysisValidationError(
+                f"asserted value for {claim.measure} must be numeric"
+            )
         if claim.binding.asserted_value != expected:
             raise StockAnalysisValidationError(
                 f"asserted value for {claim.measure} must equal the supplied packet value"

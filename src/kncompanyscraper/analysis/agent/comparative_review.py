@@ -328,6 +328,17 @@ def _known_source_ids(stored: dict) -> set[str]:
         for assumption in bundle.values():
             if isinstance(assumption, dict):
                 source_ids.update(assumption.get("source_ids") or [])
+
+    def collect_structured_source_ids(value):
+        if isinstance(value, dict):
+            source_ids.update(value.get("source_ids") or [])
+            for child in value.values():
+                collect_structured_source_ids(child)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                collect_structured_source_ids(child)
+
+    collect_structured_source_ids(content.get("structured_conclusions"))
     return source_ids
 
 

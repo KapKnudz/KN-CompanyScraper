@@ -386,10 +386,7 @@ def project_structured_conclusions(
             + conclusions["reverse_dcf_assessment"]
         ),
         "revenue_resilience": {
-            "assessment": resilience["value"]
-            if resilience["value"]
-            in {"resilient", "mixed", "variable", "unassessable"}
-            else "unassessable",
+            "assessment": resilience["value"],
             "recurring_driver": "",
             "variable_driver": "",
             "cash_flow_observation": "",
