@@ -1782,6 +1782,34 @@ def test_v3_rejects_unsourced_structured_break_claims():
         )
 
 
+def test_v3_rejects_unsourced_structured_evidence_claims():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["structured_conclusions"]["evidence_claims"] = [
+        {
+            "claim_id": "unsourced_evidence",
+            "domain": "evidence",
+            "predicate": "observation",
+            "value": "supported",
+            "source_ids": [],
+            "limitation_codes": [],
+        }
+    ]
+
+    with pytest.raises(StockAnalysisValidationError, match="requires source_ids"):
+        AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+            json.dumps(payload),
+            AgentCandidate(
+                rank=1,
+                company_id=42,
+                ticker="TEST",
+                name="Testbolaget",
+                research_evidence={"documents": [{"source_id": "news:21"}]},
+            ),
+        )
+
+
 def test_v3_rejects_claims_cross_routed_into_business_model_facts():
     result = valid_result()
     result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"

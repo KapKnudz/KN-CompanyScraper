@@ -113,11 +113,12 @@ class OwnershipLiquidityEvidenceBuilder:
             ),
         }
         listing_source_id = f"listing:borsdata:{company_id}"
-        if listing_payload["market_id"] is not None:
+        if has_listing:
             if filter_ids is None or listing_source_id in filter_ids:
                 source_ids.append(listing_source_id)
                 for measure in ("market_id", "venue", "listing_date"):
-                    source_ids_by_measure[measure] = [listing_source_id]
+                    if listing_payload[measure] is not None:
+                        source_ids_by_measure[measure] = [listing_source_id]
             else:
                 listing_payload = {
                     "status": "unavailable",

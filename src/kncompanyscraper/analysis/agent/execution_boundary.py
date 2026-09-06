@@ -1975,7 +1975,7 @@ class AgentExecutionBoundary:
         source_ids = set()
         claim_ids = set()
 
-        def visit(value):
+        def visit(value, path="structured_conclusions"):
             if isinstance(value, dict):
                 if "claim_id" in value:
                     claim_id = value["claim_id"]
@@ -1990,12 +1990,21 @@ class AgentExecutionBoundary:
                         raise StockAnalysisValidationError(
                             "structured claim contains duplicate source IDs"
                         )
+                    if (
+                        "claim_id" in value
+                        and not ids
+                        and value.get("predicate") != "source_gap"
+                        and value.get("value") not in {None, "unavailable", "unassessable"}
+                    ):
+                        raise StockAnalysisValidationError(
+                            f"structured conclusion {path} requires source_ids"
+                        )
                     source_ids.update(ids)
-                for child in value.values():
-                    visit(child)
+                for key, child in value.items():
+                    visit(child, f"{path}.{key}")
             elif isinstance(value, (list, tuple)):
-                for child in value:
-                    visit(child)
+                for index, child in enumerate(value):
+                    visit(child, f"{path}[{index}]")
 
         visit(payload)
         return source_ids

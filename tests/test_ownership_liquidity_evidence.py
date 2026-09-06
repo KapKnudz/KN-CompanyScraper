@@ -19,6 +19,15 @@ class CompanyRepository:
         }
 
 
+class PartialListingCompanyRepository(CompanyRepository):
+    def get_listing_identity(self, company_id):
+        return {
+            "market_id": None,
+            "venue": None,
+            "listing_date": date(2020, 2, 3),
+        }
+
+
 class ValuationRepository:
     def __init__(self, prices):
         self.prices = prices
@@ -101,6 +110,23 @@ def test_rejects_incomplete_windows_and_excludes_future_prices():
     assert evidence.liquidity.status == "partial"
     assert evidence.liquidity.observed_days_60 == 20
     assert any("60-day proxy requires 60 observations" in item for item in evidence.limitations)
+
+
+def test_binds_listing_date_without_market_id():
+    evidence = OwnershipLiquidityEvidenceBuilder(
+        PartialListingCompanyRepository(), ValuationRepository(_prices())
+    ).build(42, date(2026, 8, 31))
+
+    assert evidence.listing == {
+        "status": "available",
+        "market_id": None,
+        "venue": None,
+        "listing_date": "2020-02-03",
+    }
+    assert evidence.source_ids_by_measure["listing_date"] == [
+        "listing:borsdata:42"
+    ]
+    assert "market_id" not in evidence.source_ids_by_measure
 
 
 def _buyback(event_date, change_shares, treasury_shares):
