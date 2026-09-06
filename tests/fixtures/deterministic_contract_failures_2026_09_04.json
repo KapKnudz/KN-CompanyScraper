@@ -7,7 +7,7 @@
       "ticker": "GULD",
       "company_id": 149,
       "family": "ownership_claims",
-      "expected_message": "qualitative validation failed with 3 violations:\n- ownership_claims[0] offending statement 'A named holder has 12% free float exposure.' requires an approved ownership/liquidity source; documentary citations cannot be relabeled as ownership evidence; changing a documentary citation into an ownership citation is not permitted; omit the claim.\n- ownership claims must cite supplied ownership/liquidity evidence: document:3, news:408\n- precise ownership claim requires a supplied deterministic field",
+      "expected_message": "qualitative validation failed with 2 violations:\n- ownership_claims[0] offending statement 'A named holder has 12% free float exposure.' must use a typed ownership claim; documentary citations cannot be relabeled as ownership evidence; changing a documentary citation into an ownership citation is not permitted; omit the claim.\n- ownership claims must cite supplied ownership/liquidity evidence: document:3, news:408",
       "candidate": {
         "documents": [
           "document:3",
@@ -31,7 +31,7 @@
       "ticker": "CLAS B",
       "company_id": 4,
       "family": "ownership_claims",
-      "expected_message": "qualitative validation failed with 2 violations:\n- ownership_claims[0] offending statement 'Documents describe large-holder context.' requires an approved ownership/liquidity source; documentary citations cannot be relabeled as ownership evidence; changing a documentary citation into an ownership citation is not permitted; omit the claim.\n- ownership claims must cite supplied ownership/liquidity evidence: document:106, document:315",
+      "expected_message": "qualitative validation failed with 2 violations:\n- ownership_claims[0] offending statement 'Documents describe large-holder context.' must use a typed ownership claim; documentary citations cannot be relabeled as ownership evidence; changing a documentary citation into an ownership citation is not permitted; omit the claim.\n- ownership claims must cite supplied ownership/liquidity evidence: document:106, document:315",
       "candidate": {
         "documents": [
           "document:106",
@@ -55,7 +55,7 @@
       "ticker": "NELLY",
       "company_id": 128,
       "family": "ownership_claims",
-      "expected_message": "qualitative validation failed with 2 violations:\n- ownership_claims[0] offending statement 'A release and missing-information marker are used as ownership evidence.' requires an approved ownership/liquidity source; documentary citations cannot be relabeled as ownership evidence; changing a documentary citation into an ownership citation is not permitted; omit the claim.\n- ownership claims must cite supplied ownership/liquidity evidence: news:587, research:missing_information",
+      "expected_message": "qualitative validation failed with 2 violations:\n- ownership_claims[0] offending statement 'A release and missing-information marker are used as ownership evidence.' must use a typed ownership claim; documentary citations cannot be relabeled as ownership evidence; changing a documentary citation into an ownership citation is not permitted; omit the claim.\n- ownership claims must cite supplied ownership/liquidity evidence: news:587, research:missing_information",
       "candidate": {
         "documents": [
           "news:587"

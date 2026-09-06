@@ -378,12 +378,14 @@ raw stage artifact IDs, policy versions, model-call counts, packet sizes, and
 named stage timings for reproducibility and rollout diagnostics.
 
 Each accepted stock analysis also creates a versioned company-thesis revision.
-The response is an `individual-thesis-card-v2` with one shared schema for
-general, property, and bank candidates. Its evidence packet includes the latest
-ten annual reports, twelve quarterly reports, and latest rolling-12-month report
-as structured financial records, in addition to calculated financial results and
-textual primary-source evidence. Each structured report has a stable
-`financial:*` source ID.
+The current response is an `individual-thesis-card-v3-structured-conclusions`
+with one shared schema for general, property, and bank candidates. V3 stores a
+closed typed conclusion graph and renders readable projections at read time;
+legacy v2 cards remain immutable audit-only records. Its evidence packet
+includes the latest ten annual reports, twelve quarterly reports, and latest
+rolling-12-month report as structured financial records, in addition to
+calculated financial results and textual primary-source evidence. Each
+structured report has a stable `financial:*` source ID.
 
 The card normalizes the business model across revenue model, customer types,
 recurring-revenue economics, pricing power, capital intensity, operating
@@ -393,7 +395,7 @@ margin-expansion mechanism from deterministic scenario arithmetic and defines
 timing through sourced, observable catalyst windows. See
 `docs/individual_thesis_card.md` for the field policy.
 
-Export the consumer-facing projections from accepted, current v2 analyses
+Export the consumer-facing projections from accepted, current v3 analyses
 without exposing raw model responses:
 
 ```
