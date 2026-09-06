@@ -150,8 +150,14 @@ class ThesisUpdateContextBuilder:
 class ThesisUpdatePromptBuilder:
     POLICY_NAME = "nordic-thesis-update-policy"
     POLICY_VERSION = "1.4.0-thesis-calibration-ownership-source-contract"
+    V3_THESIS_CARD_VERSION = "individual-thesis-card-v3-structured-conclusions"
 
     def build(self, context: ThesisUpdateContext) -> AgentPrompt:
+        current_content = context.current_thesis.get("content") or {}
+        if current_content.get("thesis_card_version") != self.V3_THESIS_CARD_VERSION:
+            raise ValueError(
+                "only v3 theses support incremental updates; v2 theses require a full reassessment"
+            )
         policy = AgentPromptBuilder._read_resource("resources/analyst_policy.md")
         workflow = AgentPromptBuilder._read_resource("resources/analysis_workflow.md")
         incremental_workflow = AgentPromptBuilder._read_resource(

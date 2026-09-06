@@ -1741,6 +1741,12 @@ def test_v3_projection_preserves_management_and_capital_facts():
     assert persisted.management_credibility_ledger[0].claim == (
         "management execution: confirmed"
     )
+    assert persisted.management_credibility_ledger[0].result == "unverifiable"
+    assert persisted.management_credibility_ledger[0].observed_outcome is None
+    assert persisted.management_credibility_ledger[0].outcome_source_ids == []
+    assert serialized["structured_conclusions"]["management_ledger"][0]["value"] == (
+        "confirmed"
+    )
     assert persisted.strongest_confirming_evidence.why_it_matters == (
         "It establishes the current baseline for the case."
     )

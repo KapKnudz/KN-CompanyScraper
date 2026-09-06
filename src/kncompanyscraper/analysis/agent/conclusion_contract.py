@@ -252,19 +252,6 @@ def render_structured_headline(conclusions: dict) -> str:
     )
 
 
-def _management_ledger_result(value: object) -> str:
-    return {
-        "confirmed": "kept",
-        "positive": "kept",
-        "improving": "kept",
-        "observed": "kept",
-        "supported": "kept",
-        "unchanged": "kept",
-        "negative": "missed",
-        "deteriorating": "changed",
-    }.get(value, "unverifiable")
-
-
 def project_structured_conclusions(
     conclusions: dict, ownership_claims: list[dict] | None = None
 ) -> dict:
@@ -279,19 +266,11 @@ def project_structured_conclusions(
             "date": "",
             "claim": _claim_text(claim),
             "expected_timing": None,
-            "observed_outcome": (
-                _claim_text(claim)
-                if _management_ledger_result(claim["value"]) != "unverifiable"
-                else None
-            ),
-            "result": _management_ledger_result(claim["value"]),
+            "observed_outcome": None,
+            "result": "unverifiable",
             "source_ids": list(claim["source_ids"]),
             "claim_source_ids": list(claim["source_ids"]),
-            "outcome_source_ids": (
-                list(claim["source_ids"])
-                if _management_ledger_result(claim["value"]) != "unverifiable"
-                else []
-            ),
+            "outcome_source_ids": [],
         }
         for claim in conclusions["management_ledger"]
     ]

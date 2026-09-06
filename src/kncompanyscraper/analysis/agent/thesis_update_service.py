@@ -1,17 +1,11 @@
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import json
 
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
-    parse_stock_analysis_result,
     parse_thesis_update_result,
 )
 from kncompanyscraper.analysis.agent.thesis_update import ThesisUpdatePromptBuilder
-from kncompanyscraper.analysis.agent.output_schema import (
-    BusinessModelProfile,
-    MarginExpansionCase,
-    TimingAssessment,
-)
 from kncompanyscraper.constants import RAW_RESPONSE_TRANSIENT_METADATA_KEYS
 
 
@@ -49,74 +43,27 @@ class ThesisUpdateExecutionBoundary:
                 "no_material_change cannot contain changed sections"
             )
         current_content = dict(context.current_thesis.get("content") or {})
-        if (
-            current_content.get("thesis_card_version")
-            not in {
-                "individual-thesis-card-v2",
-                "individual-thesis-card-v3-structured-conclusions",
-            }
-            and update.impact != "full_reassessment_required"
+        if current_content.get("thesis_card_version") != (
+            ThesisUpdatePromptBuilder.V3_THESIS_CARD_VERSION
         ):
+            if update.impact == "full_reassessment_required":
+                return PersistedThesisUpdate(update=update, persisted_analysis=None)
             raise StockAnalysisValidationError(
-                "v1 theses require a full reassessment before incremental updates"
+                "v2 theses are audit-only and require a full reassessment before incremental updates"
             )
-        if (
-            current_content.get("thesis_card_version")
-            == "individual-thesis-card-v3-structured-conclusions"
-            and update.thesis.thesis_card_version
-            != "individual-thesis-card-v3-structured-conclusions"
-        ):
+        if update.thesis.thesis_card_version != ThesisUpdatePromptBuilder.V3_THESIS_CARD_VERSION:
             raise StockAnalysisValidationError(
                 "v3 theses require v3 incremental updates"
             )
         self._validate_trigger_progress(update, context)
         if update.impact == "no_material_change":
-            is_v3 = (
-                current_content.get("thesis_card_version")
-                == "individual-thesis-card-v3-structured-conclusions"
-            )
-            if not is_v3:
-                current_content["forward_scenario_analysis"] = None
-                current_content.setdefault("confidence_limitations", [])
-                current_content.setdefault(
-                    "thesis_card_version",
-                    current_content.get(
-                        "thesis_card_version",
-                        "individual-thesis-card-v3-structured-conclusions",
-                    )
-                )
-                current_content.setdefault(
-                    "business_model_profile", asdict(BusinessModelProfile())
-                )
-                current_content.setdefault(
-                    "margin_expansion_case", asdict(MarginExpansionCase())
-                )
-                current_content.setdefault(
-                    "timing_assessment", asdict(TimingAssessment())
-                )
-                current_content.setdefault(
-                    "company_fact_ledger",
-                    {
-                        "business_model": [],
-                        "revenue_drivers": [],
-                        "margins_and_operating_leverage": [],
-                        "balance_sheet_and_capital_allocation": [],
-                        "management_and_execution": [],
-                        "ownership_and_insiders": [],
-                        "valuation_expectations": [],
-                        "risks_and_disconfirming_evidence": [],
-                    },
-                )
             current_content["evidence_as_of"] = (
                 context.candidate.research_evidence.get("as_of")
             )
             current_content.setdefault("scenario_bundles", [])
-            if is_v3:
-                current_content["case_horizon_months"] = (
-                    current_content["structured_conclusions"]["headline_case"][
-                        "horizon_months"
-                    ]
-                )
+            current_content["case_horizon_months"] = current_content[
+                "structured_conclusions"
+            ]["headline_case"]["horizon_months"]
             updated_content = update.thesis.to_dict()
             # A no-material-change response does not invoke the authoring model;
             # carry forward the last accepted assumptions so the stock boundary
@@ -125,26 +72,26 @@ class ThesisUpdateExecutionBoundary:
                 "scenario_bundles", []
             )
             ignored_fields = {"activation_trigger_evidence"}
-            if is_v3:
-                ignored_fields.update(
-                    {
-                        "forward_scenario_analysis",
-                        "historical_forecast_table",
-                        "peak_margin_bridge",
-                        "scenario_driver_attribution",
-                    }
-                )
-            if not is_v3 and (
-                updated_content.get("company_fact_ledger")
-                != current_content.get("company_fact_ledger")
+            ignored_fields.update(
+                {
+                    "forward_scenario_analysis",
+                    "historical_forecast_table",
+                    "peak_margin_bridge",
+                    "scenario_driver_attribution",
+                }
+            )
+            comparison_content = dict(updated_content)
+            current_structured = current_content.get("structured_conclusions")
+            comparison_structured = comparison_content.get("structured_conclusions")
+            if isinstance(current_structured, dict) and isinstance(
+                comparison_structured, dict
             ):
-                updated_content["company_fact_ledger"] = current_content[
-                    "company_fact_ledger"
-                ]
-                update.thesis = parse_stock_analysis_result(
-                    json.dumps(updated_content, ensure_ascii=False)
+                comparison_structured = dict(comparison_structured)
+                comparison_structured["trigger_evidence"] = current_structured.get(
+                    "trigger_evidence", []
                 )
-            if updated_content != current_content:
+                comparison_content["structured_conclusions"] = comparison_structured
+            if comparison_content != current_content:
                 changed_fields = sorted(
                     key
                     for key in set(current_content) | set(updated_content)
@@ -156,7 +103,7 @@ class ThesisUpdateExecutionBoundary:
                             default=str,
                         )
                         != json.dumps(
-                            updated_content.get(key),
+                            comparison_content.get(key),
                             sort_keys=True,
                             ensure_ascii=False,
                             default=str,
