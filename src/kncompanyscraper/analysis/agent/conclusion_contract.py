@@ -110,6 +110,7 @@ class StructuredConclusions:
     management_claims: tuple[TypedFact, ...]
     management_ledger: tuple[TypedFact, ...]
     company_facts: tuple[TypedFact, ...]
+    insider_claims: tuple[TypedClaim, ...]
     business_model_facts: tuple[TypedClaim, ...]
     margin_facts: tuple[TypedClaim, ...]
     timing_facts: tuple[TypedClaim, ...]
@@ -268,6 +269,10 @@ def project_structured_conclusions(
         }
         for claim in conclusions["management_ledger"]
     ]
+    insider_claims = [
+        _project_claim(claim, "insider_transaction")
+        for claim in conclusions["insider_claims"]
+    ]
     company_fact_ledger = {
         "business_model": _project_facts(conclusions["business_model_facts"]),
         "revenue_drivers": _project_facts(conclusions["timing_facts"]),
@@ -404,8 +409,10 @@ def project_structured_conclusions(
         "ownership_and_flow_assessment": render_ownership_claims(
             ownership_claims or []
         ),
-        "insider_assessment": "",
-        "insider_claims": [],
+        "insider_assessment": (
+            insider_claims[0]["statement"] if insider_claims else ""
+        ),
+        "insider_claims": insider_claims,
         "confirming_evidence": [
             _claim_text(claim) for claim in conclusions["evidence_claims"]
         ],

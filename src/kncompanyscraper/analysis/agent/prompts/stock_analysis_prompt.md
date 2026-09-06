@@ -67,6 +67,9 @@ are not supplied. Keep insider transactions, executed company buybacks,
 short-interest snapshots, and long-holder ownership distinct. Cite the exact
 flow source IDs for any supplied flow assertion, and describe `_raw` fields
 without adding percentage, currency, or trend interpretations.
+Put supplied insider-transaction observations in
+`structured_conclusions.insider_claims` with domain `insider` and exact insider
+event source IDs; do not use ownership claims as a proxy for insider evidence.
 `ownership_claims` is a closed typed union. Each item contains only
 `claim_kind`, `subject_role`, `measure`, `binding`, and `limitation_codes`;
 `binding` must use the exact canonical `deterministic_field`, packet value,

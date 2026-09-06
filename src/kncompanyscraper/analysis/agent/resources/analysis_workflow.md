@@ -157,7 +157,7 @@ An assumption horizon alone is not a timing catalyst.
 
 Insider transactions are deliberately supplied as raw events with subsequent unadjusted price returns. Do not convert them into a mechanical score. Compare like-for-like transaction types, roles, sizes, repeated behavior, and the outcomes visible at the evidence cutoff. Do not treat missing future horizons as failed outcomes.
 
-Repeat each material insider conclusion in `insider_claims` with an atomic
+Repeat each material insider conclusion in `structured_conclusions.insider_claims` with an atomic
 statement, an evidence kind, and the exact insider event source IDs supporting
 it. Analyst inferences must cite the underlying events. If there are no insider
 events, leave the claims empty and use the deterministic no-data wording.

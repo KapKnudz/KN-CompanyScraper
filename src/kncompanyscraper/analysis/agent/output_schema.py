@@ -663,6 +663,8 @@ _MANAGEMENT_FACT["fact_code"] = (
     "tenure | incentive_alignment | execution | governance | guidance | management_change"
 )
 _MANAGEMENT_FACT["domain"] = "management"
+_INSIDER_CLAIM = dict(_TYPED_CLAIM)
+_INSIDER_CLAIM["domain"] = "insider"
 _STRUCTURED_TRIGGER = {
     "claim_id": "string",
     "trigger_type": "price | operating",
@@ -767,6 +769,7 @@ _STRUCTURED_CONCLUSIONS = {
     "management_claims": [_MANAGEMENT_FACT],
     "management_ledger": [_MANAGEMENT_FACT],
     "company_facts": [_CAPITAL_ALLOCATION_FACT],
+    "insider_claims": [_INSIDER_CLAIM],
     "business_model_facts": [_TYPED_CLAIM],
     "margin_facts": [_TYPED_CLAIM],
     "timing_facts": [_TYPED_CLAIM],

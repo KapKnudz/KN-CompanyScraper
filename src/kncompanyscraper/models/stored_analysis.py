@@ -225,6 +225,7 @@ class StoredAnalysisDocument(dict):
             "margin_expansion_case": content.get("margin_expansion_case", {}),
             "timing_assessment": timing,
             "management_claims": content.get("management_claims", []),
+            "insider_claims": content.get("insider_claims", []),
             "management_credibility_ledger": content.get(
                 "management_credibility_ledger", []
             ),

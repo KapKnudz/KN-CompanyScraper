@@ -200,6 +200,7 @@ def _parse_contract(raw_response: str, contract: dict, label: str) -> dict:
         _normalize_thesis_card_fields(payload)
         _normalize_management_ledger_contract(payload)
         _normalize_ownership_claim_contract(payload, contract)
+        _reject_v3_legacy_ownership_claims(payload, contract)
         _validate_value(payload, contract, "result")
         if payload.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
             _validate_structured_claim_identifiers(payload["structured_conclusions"])
@@ -348,6 +349,7 @@ def _structured_conclusions_from_payload(value: dict) -> StructuredConclusions:
         management_claims=tuple(_typed_fact(item) for item in value["management_claims"]),
         management_ledger=tuple(_typed_fact(item) for item in value["management_ledger"]),
         company_facts=tuple(_typed_fact(item) for item in value["company_facts"]),
+        insider_claims=tuple(_typed_claim(item) for item in value["insider_claims"]),
         business_model_facts=tuple(_typed_claim(item) for item in value["business_model_facts"]),
         margin_facts=tuple(_typed_claim(item) for item in value["margin_facts"]),
         timing_facts=tuple(_typed_claim(item) for item in value["timing_facts"]),
@@ -462,6 +464,28 @@ def _normalize_ownership_claim_contract(payload: dict, contract: dict) -> None:
             thesis.setdefault("ownership_claims", [])
     elif "ownership_claims" in contract:
         payload.setdefault("ownership_claims", [])
+
+
+def _reject_v3_legacy_ownership_claims(payload: dict, contract: dict) -> None:
+    cards = []
+    if contract.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
+        cards.append(payload)
+    thesis = payload.get("thesis")
+    if (
+        isinstance(thesis, dict)
+        and thesis.get("thesis_card_version")
+        == "individual-thesis-card-v3-structured-conclusions"
+    ):
+        cards.append(thesis)
+    for card in cards:
+        for claim in card.get("ownership_claims") or []:
+            if isinstance(claim, dict) and "statement" in claim:
+                statement = claim.get("statement", "")
+                raise StockAnalysisValidationError(
+                    f'ownership claim offending statement {statement!r} requires an approved '
+                    "ownership/liquidity source; changing a documentary citation into an "
+                    "ownership citation is not permitted; omit the claim."
+                )
 
 
 def _stock_analysis_from_payload(payload: dict) -> StockAnalysisResult:

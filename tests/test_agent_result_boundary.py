@@ -1474,7 +1474,8 @@ def _v3_qualitative_response(result):
         "falsifiable_case": {"case_ref": "fundamental_case", "horizon_months": 36,
             "baseline_refs": [], "falsification": claim("falsification", source_ids=["news:21"])},
         "evidence_claims": [], "break_tests": [], "management_claims": [],
-        "management_ledger": [], "company_facts": [], "business_model_facts": [],
+        "management_ledger": [], "company_facts": [], "insider_claims": [],
+        "business_model_facts": [],
         "margin_facts": [], "timing_facts": [], "limitation_codes": ["missing_revenue_evidence"],
         "strongest_confirming_evidence": {
             "claim": claim("confirming", "revenue", "observation", "supported", ["news:21"]),
@@ -1530,7 +1531,10 @@ def test_v3_schema_rejects_legacy_free_text_ownership_claims():
         )
     ]
 
-    with pytest.raises(StockAnalysisValidationError, match="missing fields:"):
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="The founder owns 20%.*changing a documentary citation into an ownership citation is not permitted",
+    ):
         AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
             qualitative_response(result),
             AgentCandidate(
@@ -1634,6 +1638,16 @@ def test_v3_projection_preserves_management_and_capital_facts():
             "limitation_codes": [],
         }
     ]
+    structured["insider_claims"] = [
+        {
+            "claim_id": "insider_transaction_observation",
+            "domain": "insider",
+            "predicate": "event",
+            "value": "confirmed",
+            "source_ids": ["insider:1"],
+            "limitation_codes": [],
+        }
+    ]
     structured["business_model_facts"] = [
         {
             "claim_id": "business_model_observation",
@@ -1675,7 +1689,10 @@ def test_v3_projection_preserves_management_and_capital_facts():
             company_id=42,
             ticker="TEST",
             name="Testbolaget",
-            research_evidence={"documents": [{"source_id": "news:21"}]},
+            research_evidence={
+                "documents": [{"source_id": "news:21"}],
+                "insider_transactions": [{"source_id": "insider:1"}],
+            },
         ),
     )
 
@@ -1692,6 +1709,9 @@ def test_v3_projection_preserves_management_and_capital_facts():
     ] == "balance_sheet cash balance: 1250"
     assert summary["management_claims"][0]["statement"] == (
         "management tenure: 12"
+    )
+    assert summary["insider_claims"][0]["statement"] == (
+        "insider event: confirmed"
     )
     assert summary["company_fact_ledger"]["business_model"][0]["statement"] == (
         "business_model observation: supported"
@@ -1762,6 +1782,25 @@ def test_v3_requires_decisive_evidence_when_sources_are_citable():
                 research_evidence={"documents": [{"source_id": "news:21"}]},
             ),
         )
+
+
+def test_v3_rejects_legacy_ownership_statement_with_repair_feedback():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["ownership_claims"] = [
+        {
+            "statement": "The founder owns 20%.",
+            "evidence_kind": "fact",
+            "source_ids": ["news:21"],
+        }
+    ]
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="The founder owns 20%.*changing a documentary citation into an ownership citation is not permitted",
+    ):
+        parse_qualitative_stock_analysis_result(json.dumps(payload))
 
 
 def test_v3_trigger_rejects_ownership_like_code():
