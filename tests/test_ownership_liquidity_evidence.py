@@ -78,6 +78,12 @@ def test_builds_deterministic_adtv_windows_and_listing_packet():
         "liquidity:borsdata:42:2026-08-31:120d",
         "listing:borsdata:42",
     ]
+    assert evidence.source_ids_by_measure["adtv_20"] == [
+        "liquidity:borsdata:42:2026-08-31:20d"
+    ]
+    assert evidence.source_ids_by_measure["listing_date"] == [
+        "listing:borsdata:42"
+    ]
 
 
 def test_rejects_incomplete_windows_and_excludes_future_prices():
@@ -202,3 +208,6 @@ def test_original_filter_recalculates_buybacks_from_exact_source_ids():
         "buyback:borsdata:42:2026-06-01"
     ]
     assert evidence.flow_signals["shorts"]["source_ids"] == []
+    assert evidence.source_ids_by_measure["trailing_3_month_change_shares_raw"] == [
+        "buyback:borsdata:42:2026-06-01"
+    ]

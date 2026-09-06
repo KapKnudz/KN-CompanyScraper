@@ -8,6 +8,8 @@ from kncompanyscraper.analysis.agent.execution_boundary import AgentExecutionBou
 from kncompanyscraper.analysis.agent.agent_packet import build_evidence_catalog
 from kncompanyscraper.analysis.agent.output_schema import (
     AssessmentClaim,
+    OwnershipBinding,
+    OwnershipClaim,
     BusinessModelProfile,
     CompanyFact,
     DecisiveEvidence,
@@ -784,7 +786,7 @@ def test_execution_boundary_persists_valid_response():
     assert saved.args == (persisted.result,)
     assert saved.kwargs["created_by"] == "test-model"
     assert saved.kwargs["metadata"]["validation_version"] == (
-        "agent-boundary-v22-thesis-calibration"
+        "agent-boundary-v23-ownership-source-contract"
     )
     assert saved.kwargs["metadata"]["forward_scenario"]["status"] == (
         "insufficient_evidence"
@@ -1369,13 +1371,10 @@ def test_execution_boundary_drops_unsupported_ownership_claim_when_supported_rem
         ),
     ]
 
-    persisted = AgentExecutionBoundary(repository).persist_response(
-        json.dumps(payload.to_dict()), candidate, created_by="test-model"
-    )
-
-    assert [claim.source_ids for claim in persisted.result.ownership_claims] == [
-        [source_id]
-    ]
+    with pytest.raises(StockAnalysisValidationError, match="news:21"):
+        AgentExecutionBoundary(repository).persist_response(
+            json.dumps(payload.to_dict()), candidate, created_by="test-model"
+        )
 
 
 def test_execution_boundary_rejects_precise_unsupported_ownership_claim():
@@ -1434,10 +1433,207 @@ def test_execution_boundary_rejects_unknown_ownership_claim_source():
         )
     ]
 
-    with pytest.raises(StockAnalysisValidationError, match="unknown evidence source"):
+    with pytest.raises(StockAnalysisValidationError, match="ownership_claims") as raised:
         AgentExecutionBoundary(repository).persist_response(
             json.dumps(payload.to_dict()), candidate, created_by="test-model"
         )
+
+    assert "Liquidity is relevant." in str(raised.value)
+    assert "changing a documentary citation into an ownership citation is not permitted" in str(
+        raised.value
+    )
+
+
+def _v3_qualitative_response(result):
+    payload = result.to_dict()
+    for key in (
+        "one_sentence_thesis", "falsifiable_case", "business_model_profile",
+        "margin_expansion_case", "timing_assessment", "confidence_limitations",
+        "company_fact_ledger", "reconsideration_trigger", "activation_trigger",
+        "latent_case_type", "activation_trigger_spec", "activation_trigger_evidence",
+        "reverse_dcf_expectation_rationale", "revenue_resilience", "peak_margin_evidence",
+        "management_assessment", "management_claims", "management_credibility_ledger",
+        "management_credibility_coverage", "ownership_and_flow_assessment",
+        "insider_assessment", "insider_claims", "confirming_evidence",
+        "disconfirming_evidence", "thesis_break_conditions",
+        "strongest_confirming_evidence", "strongest_disconfirming_evidence",
+        "thesis_break_tests", "missing_information", "missing_information_details",
+        "citations", "scenario_bundles", "forward_scenario_analysis",
+    ):
+        payload.pop(key, None)
+    def claim(claim_id, domain="risk", predicate="source_gap", value=None, source_ids=None, limitation_codes=None):
+        return {"claim_id": claim_id, "domain": domain, "predicate": predicate,
+                "value": value, "source_ids": source_ids or [],
+                "limitation_codes": limitation_codes or []}
+    payload["structured_conclusions"] = {
+        "headline_case": {"case_ref": "case-1", "horizon_months": 36,
+            "revenue_mechanism": "organic_growth", "profitability_state": "profitable",
+            "expectation_refs": [], "break_condition": claim("break")},
+        "falsifiable_case": {"case_ref": "case-1", "horizon_months": 36,
+            "baseline_refs": [], "falsification": claim("falsification", source_ids=["news:21"])},
+        "evidence_claims": [], "break_tests": [], "management_claims": [],
+        "management_ledger": [], "company_facts": [], "business_model_facts": [],
+        "margin_facts": [], "timing_facts": [], "limitation_codes": ["missing_revenue_evidence"],
+        "trigger": None,
+        "revenue_resilience": claim("resilience", "revenue", "assessment", "unassessable"),
+        "reverse_dcf_assessment": "unassessable",
+    }
+    return json.dumps(payload)
+
+
+def test_v3_schema_rejects_legacy_free_text_ownership_claims():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    result.ownership_claims = [
+        AssessmentClaim(
+            statement="The founder owns 20%.",
+            evidence_kind="fact",
+            source_ids=["news:21"],
+        )
+    ]
+
+    with pytest.raises(StockAnalysisValidationError, match="unexpected fields:"):
+        AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+            qualitative_response(result),
+            AgentCandidate(
+                rank=1,
+                company_id=42,
+                ticker="TEST",
+                name="Testbolaget",
+                research_evidence={"documents": [{"source_id": "news:21"}]},
+            ),
+        )
+
+
+def test_v3_ownership_claim_uses_exact_packet_field_and_source_binding():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    result.ownership_claims = [
+        OwnershipClaim(
+            claim_kind="liquidity",
+            subject_role="market",
+            measure="adtv_20",
+            binding=OwnershipBinding(
+                source_ids=["liquidity:borsdata:42:2026-08-31:20d"],
+                deterministic_field=(
+                    "research_evidence.ownership_liquidity.liquidity.adtv_20"
+                ),
+                asserted_value=1_200_000,
+                asserted_unit="currency",
+            ),
+        )
+    ]
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={
+            "documents": [{"source_id": "news:21"}],
+            "ownership_liquidity": {
+                "source_ids": ["liquidity:borsdata:42:2026-08-31:20d"],
+                "liquidity": {"adtv_20": 1_200_000},
+                "source_ids_by_measure": {
+                    "adtv_20": ["liquidity:borsdata:42:2026-08-31:20d"]
+                },
+            },
+        },
+    )
+
+    parsed = AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+        _v3_qualitative_response(result), candidate
+    )
+
+    assert isinstance(parsed.ownership_claims[0], OwnershipClaim)
+
+
+def test_v3_ownership_binding_requires_complete_multi_source_set():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    result.ownership_claims = [
+        OwnershipClaim(
+            claim_kind="buyback",
+            subject_role="company",
+            measure="trailing_3_month_change_shares_raw",
+            binding=OwnershipBinding(
+                source_ids=[
+                    "buyback:borsdata:42:2026-08-20",
+                    "buyback:borsdata:42:2026-06-01",
+                ],
+                deterministic_field=(
+                    "research_evidence.ownership_liquidity.flow_signals.buybacks."
+                    "trailing_3_month_change_shares_raw"
+                ),
+                asserted_value=-300,
+                asserted_unit="shares",
+            ),
+        )
+    ]
+    candidate = AgentCandidate(
+        rank=1, company_id=42, ticker="TEST", name="Testbolaget",
+        research_evidence={
+            "documents": [{"source_id": "news:21"}],
+            "ownership_liquidity": {
+                "source_ids": [
+                    "buyback:borsdata:42:2026-08-20",
+                    "buyback:borsdata:42:2026-06-01",
+                ],
+                "flow_signals": {"buybacks": {
+                    "trailing_3_month_change_shares_raw": -300,
+                }},
+                "source_ids_by_measure": {
+                    "trailing_3_month_change_shares_raw": [
+                        "buyback:borsdata:42:2026-08-20",
+                        "buyback:borsdata:42:2026-06-01",
+                    ]
+                },
+            },
+        },
+    )
+
+    parsed = AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+        _v3_qualitative_response(result), candidate
+    )
+
+    assert parsed.ownership_claims[0].binding.source_ids == [
+        "buyback:borsdata:42:2026-08-20",
+        "buyback:borsdata:42:2026-06-01",
+    ]
+
+
+def test_documentary_management_and_capital_allocation_facts_are_not_ownership_claims():
+    result = valid_result()
+    result.management_assessment = "Management has institutional experience."
+    result.management_claims = [
+        AssessmentClaim(
+            statement=result.management_assessment,
+            evidence_kind="management_claim",
+            source_ids=["news:21"],
+        )
+    ]
+    result.company_fact_ledger.balance_sheet_and_capital_allocation = [
+        CompanyFact(
+            statement="The company acquired a stake in Supplier AB.",
+            evidence_kind="fact",
+            source_ids=["news:21"],
+        )
+    ]
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={"documents": [{"source_id": "news:21"}]},
+    )
+
+    persisted = AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+        qualitative_response(result), candidate
+    )
+
+    assert persisted.management_assessment == "Management has institutional experience."
+    assert persisted.company_fact_ledger.balance_sheet_and_capital_allocation[0].statement == (
+        "The company acquired a stake in Supplier AB."
+    )
 
 
 def test_execution_boundary_accepts_evidence_backed_thesis_card_sections():

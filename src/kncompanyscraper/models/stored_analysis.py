@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from kncompanyscraper.analysis.policy_versions import FORWARD_SCENARIO_POLICY_VERSION
+from kncompanyscraper.analysis.agent.conclusion_contract import (
+    render_structured_headline,
+    render_ownership_claims,
+)
 
 
 class StoredAnalysisDocument(dict):
@@ -39,9 +43,15 @@ class StoredAnalysisDocument(dict):
         return (self.forward_scenario or {}).get("policy_version")
 
     @property
+    @property
+    def is_legacy_v2(self) -> bool:
+        return self.thesis_card_version == "individual-thesis-card-v2"
+
+    @property
     def is_current_forward_scenario(self) -> bool:
         return (
-            self.thesis_card_version == "individual-thesis-card-v2"
+            self.thesis_card_version
+            in {"individual-thesis-card-v3-structured-conclusions"}
             and self.forward_scenario_policy_version == FORWARD_SCENARIO_POLICY_VERSION
         )
 
@@ -76,6 +86,9 @@ class StoredAnalysisDocument(dict):
 
     @property
     def one_sentence_thesis(self) -> str:
+        structured = self.content.get("structured_conclusions")
+        if isinstance(structured, dict):
+            return render_structured_headline(structured)
         return self.content["one_sentence_thesis"]
 
     @property
@@ -190,6 +203,9 @@ class StoredAnalysisDocument(dict):
             "current_price": provenance.get("current_price"),
             "horizon_months": self.content.get("case_horizon_months"),
             "one_sentence_thesis": self.one_sentence_thesis,
+            "ownership_and_flow_assessment": render_ownership_claims(
+                self.content.get("ownership_claims") or []
+            ),
             "falsifiable_case": self.content.get("falsifiable_case"),
             "revenue_resilience": self.revenue_resilience,
             "reverse_dcf": {

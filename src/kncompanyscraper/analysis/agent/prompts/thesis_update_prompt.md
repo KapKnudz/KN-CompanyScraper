@@ -16,9 +16,13 @@ Update the persisted company thesis using the incremental workflow.
 
 Only textual sources, insider events, and ownership/liquidity flow source IDs not present in the prior thesis are included. Deterministic results are current and may be unchanged. Keep insider transactions, executed company buybacks, short-interest snapshots, and long-holder ownership analytically distinct. Treat `_raw` flow fields as semantically unverified.
 
-Keep `ownership_claims` synchronized with every material ownership/liquidity
-assessment and cite the exact supplied source IDs. Do not retain a precise
-ownership claim when its current deterministic field is null.
+Keep `ownership_claims` as the closed typed union synchronized with every
+material ownership/liquidity assessment. Each binding must use the canonical
+packet field, exact typed value/unit, and exact
+`research_evidence.ownership_liquidity.source_ids_by_measure` entry. Do not
+retain a precise ownership claim when its current deterministic field is null.
+Documentary citations cannot be relabeled as ownership evidence; with an empty
+source map, omit claims and retain only the deterministic no-data assessment.
 
 Re-evaluate the stored activation trigger directly. Add one
 `activation_trigger_evidence` entry for each relevant new evidence item with

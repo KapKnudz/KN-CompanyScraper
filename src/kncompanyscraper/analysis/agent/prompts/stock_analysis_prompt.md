@@ -60,7 +60,7 @@ exact `full_results.peer_comparison` path. Do not invent peer explanations or
 use peer ranges as a new valuation calculation. When peer coverage is
 insufficient, state that limitation without weakening the core historical
 valuation result.
-Produce one `individual-thesis-card-v2`. Set `evidence_as_of` to the exact supplied research-evidence cutoff. Use `full_results.financial_history` for report-by-report comparisons and cite its supplied `financial:*` source IDs. Structure the business model consistently in `business_model_profile`; do not label recurring revenue, pricing power, capital intensity, operating leverage, or circle of competence more positively than the cited evidence supports. Keep unsupported dimensions `unassessable`.
+Produce one `individual-thesis-card-v3-structured-conclusions`. Set `evidence_as_of` to the exact supplied research-evidence cutoff. Use `full_results.financial_history` for report-by-report comparisons and cite its supplied `financial:*` source IDs. Structure the business model consistently in `business_model_profile`; do not label recurring revenue, pricing power, capital intensity, operating leverage, or circle of competence more positively than the cited evidence supports. Keep unsupported dimensions `unassessable`.
 Make `one_sentence_thesis` a single falsifiable case statement and repeat it
 verbatim in `falsifiable_case.statement`. State the concrete observation that
 would falsify it, use the same horizon as `case_horizon_months`, and cite the
@@ -79,10 +79,17 @@ are not supplied. Keep insider transactions, executed company buybacks,
 short-interest snapshots, and long-holder ownership distinct. Cite the exact
 flow source IDs for any supplied flow assertion, and describe `_raw` fields
 without adding percentage, currency, or trend interpretations.
-Repeat every material liquidity, buyback, short-interest, or ownership
-conclusion in `ownership_claims` using atomic statements and the exact supplied
-ownership/liquidity source IDs. If the packet has no source IDs, leave the
-claims empty and use the deterministic no-data wording.
+`ownership_claims` is a closed typed union. Each item contains only
+`claim_kind`, `subject_role`, `measure`, `binding`, and `limitation_codes`;
+`binding` must use the exact canonical `deterministic_field`, packet value,
+unit, and the exact `source_ids_by_measure` entry in
+`research_evidence.ownership_liquidity`. It has no statement, destination, or
+render-target field. Documentary founder/shareholder language is never an
+ownership source. When that generated source map is empty, omit all ownership
+claims and do not write a best-effort summary: the boundary supplies exactly
+`Ownership and liquidity evidence are unavailable. No inference can be made
+from their absence.` in the ownership projection. Changing a documentary
+citation into an ownership citation is not permitted.
 Treat every packet subsection whose `status` is `empty` or `unknown` and whose
 `source_ids` list is empty as a limitation only. It is not citable evidence:
 do not turn its packet location into a `full_results.*` citation or use it to

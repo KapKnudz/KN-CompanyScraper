@@ -5,6 +5,11 @@ from kncompanyscraper.analysis.valuation.forward_scenario import (
     ForwardScenarioAnalysis,
     ScenarioBundle,
 )
+from kncompanyscraper.analysis.agent.conclusion_contract import (
+    OWNERSHIP_MEASURES,
+    OWNERSHIP_FIELD_REGISTRY,
+    StructuredConclusions,
+)
 
 
 AnalysisVerdict = Literal["reject", "watch", "latent_case", "activated_case"]
@@ -102,6 +107,23 @@ class AssessmentClaim:
     evidence_kind: FactEvidenceKind
     source_ids: list[str] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
+
+
+@dataclass
+class OwnershipBinding:
+    source_ids: list[str]
+    deterministic_field: str
+    asserted_value: int | float | str | bool | None
+    asserted_unit: str
+
+
+@dataclass
+class OwnershipClaim:
+    claim_kind: str
+    subject_role: str
+    measure: str
+    binding: OwnershipBinding
+    limitation_codes: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -294,7 +316,7 @@ class StockAnalysisResult:
         default_factory=ManagementCredibilityCoverage
     )
     ownership_and_flow_assessment: str = ""
-    ownership_claims: list[AssessmentClaim] = field(default_factory=list)
+    ownership_claims: list[AssessmentClaim | OwnershipClaim] = field(default_factory=list)
     insider_assessment: str = ""
     insider_claims: list[AssessmentClaim] = field(default_factory=list)
     confirming_evidence: list[str] = field(default_factory=list)
@@ -308,6 +330,8 @@ class StockAnalysisResult:
         default_factory=list
     )
     citations: list[EvidenceCitation] = field(default_factory=list)
+    # v3 authoritative input graph. Legacy display fields are projections only.
+    structured_conclusions: StructuredConclusions | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -587,12 +611,107 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
             "claim": "string",
         }
     ],
+    "structured_conclusions": "null",
 }
 
+
+# v3 keeps model-authored conclusions as a closed typed graph. Human-readable
+# fields from the v2 contract are projections and are intentionally absent.
+_TYPED_CLAIM = {
+    "claim_id": "string",
+    "domain": "business_model | revenue | margin | balance_sheet | management | insider | valuation | risk | timing | evidence",
+    "predicate": (
+        "status | observation | mechanism | threshold | baseline | outcome | "
+        "assessment | source_gap | direction | event | relation"
+    ),
+    "value": "number | string | boolean | null",
+    "source_ids": ["string"],
+    "limitation_codes": ["string"],
+}
+_STRUCTURED_CONCLUSIONS = {
+    "headline_case": {
+        "case_ref": "string",
+        "horizon_months": "integer",
+        "revenue_mechanism": (
+            "organic_growth | price | volume | acquisition | recurring | variable | "
+            "project | transaction | unassessable"
+        ),
+        "profitability_state": "profitable | loss_making | recovering | unassessable",
+        "expectation_refs": ["string"],
+        "break_condition": _TYPED_CLAIM,
+    },
+    "falsifiable_case": {
+        "case_ref": "string",
+        "horizon_months": "integer",
+        "baseline_refs": ["string"],
+        "falsification": _TYPED_CLAIM,
+    },
+    "evidence_claims": [_TYPED_CLAIM],
+    "break_tests": [_TYPED_CLAIM],
+    "management_claims": [_TYPED_CLAIM],
+    "management_ledger": [_TYPED_CLAIM],
+    "company_facts": [_TYPED_CLAIM],
+    "business_model_facts": [_TYPED_CLAIM],
+    "margin_facts": [_TYPED_CLAIM],
+    "timing_facts": [_TYPED_CLAIM],
+    "limitation_codes": ["string"],
+    "trigger": _NullableObjectContract(_TYPED_CLAIM),
+    "revenue_resilience": _TYPED_CLAIM,
+    "reverse_dcf_assessment": "plausible | demanding | unsupported | unassessable",
+}
+V3_STOCK_ANALYSIS_OUTPUT_CONTRACT = dict(STOCK_ANALYSIS_OUTPUT_CONTRACT)
+V3_STOCK_ANALYSIS_OUTPUT_CONTRACT["thesis_card_version"] = (
+    "individual-thesis-card-v3-structured-conclusions"
+)
+for _field_name in (
+    "one_sentence_thesis", "falsifiable_case", "business_model_profile",
+    "margin_expansion_case", "timing_assessment", "confidence_limitations",
+    "company_fact_ledger", "reconsideration_trigger", "activation_trigger",
+    "latent_case_type",
+    "activation_trigger_spec", "activation_trigger_evidence",
+    "reverse_dcf_expectation_rationale", "revenue_resilience", "peak_margin_evidence",
+    "management_assessment", "management_claims", "management_credibility_ledger",
+    "management_credibility_coverage", "ownership_and_flow_assessment",
+    "insider_assessment", "insider_claims", "confirming_evidence",
+    "disconfirming_evidence", "thesis_break_conditions",
+    "strongest_confirming_evidence", "strongest_disconfirming_evidence",
+    "thesis_break_tests", "missing_information", "missing_information_details",
+    "citations",
+):
+    V3_STOCK_ANALYSIS_OUTPUT_CONTRACT.pop(_field_name, None)
+V3_STOCK_ANALYSIS_OUTPUT_CONTRACT["structured_conclusions"] = _STRUCTURED_CONCLUSIONS
+V3_STOCK_ANALYSIS_OUTPUT_CONTRACT["ownership_claims"] = [
+    {
+        "claim_kind": " | ".join(("liquidity", "buyback", "short_interest", "listing", "long_holder_ownership")),
+        "subject_role": "company | market | short_position | long_holder",
+        "measure": " | ".join(OWNERSHIP_MEASURES),
+        "binding": {
+            "source_ids": ["string"],
+            "deterministic_field": " | ".join(
+                field.deterministic_field for field in OWNERSHIP_FIELD_REGISTRY.values()
+            ),
+            "asserted_value": "number | string | boolean | null",
+            "asserted_unit": "date | days | shares | raw | identifier | status | currency | percent",
+        },
+        "limitation_codes": ["string"],
+    }
+]
 
 QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     key: value
     for key, value in STOCK_ANALYSIS_OUTPUT_CONTRACT.items()
+    if key
+    not in {
+        "scenario_bundles",
+        "forward_scenario_analysis",
+        "historical_forecast_table",
+        "peak_margin_bridge",
+        "scenario_driver_attribution",
+    }
+}
+V3_QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT = {
+    key: value
+    for key, value in V3_STOCK_ANALYSIS_OUTPUT_CONTRACT.items()
     if key
     not in {
         "scenario_bundles",
@@ -640,6 +759,14 @@ QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT = {
 QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT["thesis"] = (
     QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT
 )
+V3_QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT = {
+    key: value
+    for key, value in THESIS_UPDATE_OUTPUT_CONTRACT.items()
+    if key != "thesis"
+}
+V3_QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT["thesis"] = (
+    V3_QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT
+)
 
 
 SCENARIO_AUTHORING_OUTPUT_CONTRACT = {
@@ -656,12 +783,31 @@ def qualitative_stock_analysis_json_schema() -> dict:
     return _contract_to_json_schema(QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT)
 
 
+def v3_qualitative_stock_analysis_json_schema() -> dict:
+    contract = {
+        key: value
+        for key, value in V3_STOCK_ANALYSIS_OUTPUT_CONTRACT.items()
+        if key not in {
+            "scenario_bundles",
+            "forward_scenario_analysis",
+            "historical_forecast_table",
+            "peak_margin_bridge",
+            "scenario_driver_attribution",
+        }
+    }
+    return _contract_to_json_schema(contract)
+
+
 def thesis_update_json_schema() -> dict:
     return _contract_to_json_schema(THESIS_UPDATE_OUTPUT_CONTRACT)
 
 
 def qualitative_thesis_update_json_schema() -> dict:
     return _contract_to_json_schema(QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT)
+
+
+def v3_qualitative_thesis_update_json_schema() -> dict:
+    return _contract_to_json_schema(V3_QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT)
 
 
 def scenario_authoring_json_schema() -> dict:

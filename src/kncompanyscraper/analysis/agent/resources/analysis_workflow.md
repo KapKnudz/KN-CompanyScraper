@@ -136,13 +136,17 @@ Analyze insider activity, executed buybacks, short-interest snapshots, ownership
 
 Use this evidence to modify confidence or timing. Do not allow it to replace the fundamental case.
 
-Repeat each material liquidity, executed-buyback, short-interest, or ownership
-conclusion in `ownership_claims` with an atomic statement, evidence kind, and
-the exact supplied ownership/liquidity source IDs. Do not state a precise
-free-float, holder, institutional, concentration, voting, or ownership-change
-value when the corresponding deterministic field is null. When no
-ownership/liquidity source IDs are supplied, leave the claims empty and use the
-deterministic no-data assessment.
+`ownership_claims` is a closed typed union with no model-authored statement or
+destination. Each claim selects a fixed `claim_kind`, `subject_role`, and
+`measure`, then supplies the registry's canonical `deterministic_field`, exact
+packet value/unit, and exact generated source set from
+`research_evidence.ownership_liquidity.source_ids_by_measure`.
+Documentary founder/shareholder language cannot authorize an ownership claim.
+If that source map has no approved IDs, omit every ownership claim and use only
+the deterministic no-data assessment. Changing a documentary citation into an
+ownership citation is not permitted. A null deterministic field makes the
+measure unavailable; do not substitute insider events, buybacks, liquidity, or
+short interest.
 
 Populate `timing_assessment` with the fixed case horizon and observable catalyst
 windows: `0_12m`, `12_24m`, `24_48m`, or `uncertain`. Every catalyst must say what

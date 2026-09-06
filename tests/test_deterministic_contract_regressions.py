@@ -108,6 +108,24 @@ def test_2026_09_04_company_failure_shape_is_frozen(ticker):
     assert str(exc_info.value) == case["expected_message"]
 
 
+@pytest.mark.parametrize("ticker", ["GULD", "CLAS B", "NELLY"])
+def test_ownership_regression_shapes_omit_claims_when_source_map_is_empty(ticker):
+    case = _case(ticker)
+    result = _result(case)
+    result.ownership_claims = []
+    result.ownership_and_flow_assessment = ""
+
+    validated = AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+        qualitative_response(result), _candidate(case)
+    )
+
+    assert validated.ownership_claims == []
+    assert validated.ownership_and_flow_assessment == (
+        "Ownership and liquidity evidence are unavailable. "
+        "No inference can be made from their absence."
+    )
+
+
 def test_retry_manifest_has_exactly_seven_active_companies_and_excludes_navigo():
     manifest = json.loads(MANIFEST_PATH.read_text())
     tickers = [company["ticker"] for company in manifest["companies"]]

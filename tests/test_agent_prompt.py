@@ -66,14 +66,14 @@ def test_prompt_builder_packages_policy_workflow_and_candidate_evidence():
     assert "Three return engines" in prompt.system
     assert "Follow the steps in order" in prompt.system
     assert prompt.policy_name == "nordic-case-investing-policy"
-    assert prompt.policy_version == "1.28.0"
-    assert prompt.contract_version == "qualitative-stage-prompt-v3"
+    assert prompt.policy_version == "1.29.0-ownership-source-contract"
+    assert prompt.contract_version == "qualitative-stage-prompt-v4-ownership-source-contract"
     assert "company_fact_ledger" in prompt.user
     assert "Never turn reverse-DCF curve labels" in prompt.user
     assert "`omission_reasons` must be an empty list" in prompt.user
     assert "half_year_comparison" in prompt.user
     assert "do not reconstruct H1" in prompt.user
-    assert "individual-thesis-card-v2" in prompt.user
+    assert "individual-thesis-card-v3-structured-conclusions" in prompt.user
     assert "business_model_profile" in prompt.user
     assert "analysis_status" in prompt.user
     assert "Deterministic valuation limitations may still be present" in prompt.user

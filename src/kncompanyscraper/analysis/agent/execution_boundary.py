@@ -1,4 +1,4 @@
-from dataclasses import dataclass, fields, replace
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import date
 from math import isfinite
 import re
@@ -15,7 +15,15 @@ from kncompanyscraper.analysis.agent.agent_packet import (
 )
 from kncompanyscraper.analysis.agent.output_schema import (
     MissingInformationItem,
+    OwnershipClaim,
     StockAnalysisResult,
+)
+from kncompanyscraper.analysis.agent.conclusion_contract import (
+    ownership_field,
+    ownership_source_ids_for_measure,
+    packet_value,
+    render_ownership_claims,
+    NO_OWNERSHIP_LIQUIDITY_ASSESSMENT as NO_OWNERSHIP_LIQUIDITY_ASSESSMENT_TEXT,
 )
 from kncompanyscraper.analysis.agent.historical_forecast_table import (
     build_historical_forecast_table,
@@ -43,12 +51,9 @@ class PersistedStockAnalysis:
 
 
 class AgentExecutionBoundary:
-    VALIDATION_VERSION = "agent-boundary-v22-thesis-calibration"
+    VALIDATION_VERSION = "agent-boundary-v23-ownership-source-contract"
     VERDICT_POLICY_VERSION = VERDICT_COHERENCE_POLICY_VERSION
-    NO_OWNERSHIP_LIQUIDITY_ASSESSMENT = (
-        "Ownership and liquidity evidence are unavailable. "
-        "No inference can be made from their absence."
-    )
+    NO_OWNERSHIP_LIQUIDITY_ASSESSMENT = NO_OWNERSHIP_LIQUIDITY_ASSESSMENT_TEXT
     NO_INSIDER_ASSESSMENT = (
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
@@ -233,24 +238,6 @@ class AgentExecutionBoundary:
             candidate.full_results,
             candidate.research_evidence,
         )
-        sourced_ownership_claims = [
-            claim for claim in result.ownership_claims if claim.source_ids
-        ]
-        if sourced_ownership_claims:
-            result.ownership_claims = sourced_ownership_claims
-        self._normalize_assessment_claims(
-            result.ownership_claims,
-            evidence_catalog,
-            candidate.full_results,
-            candidate.research_evidence,
-        )
-        supported_ownership_claims = [
-            claim
-            for claim in result.ownership_claims
-            if set(claim.source_ids).issubset(ownership_liquidity_source_ids)
-        ]
-        if supported_ownership_claims:
-            result.ownership_claims = supported_ownership_claims
         self._normalize_assessment_claims(
             result.insider_claims,
             evidence_catalog,
@@ -363,6 +350,18 @@ class AgentExecutionBoundary:
             )
         else:
             forward_source_ids = set()
+        structured_source_ids = self._validate_structured_conclusions(result)
+        # Ownership structural diagnostics must precede the generic catalog
+        # check so repair feedback retains the exact offending claim.
+        self._validate_assessment_sections(
+            result,
+            document_source_ids=document_source_ids,
+            insider_source_ids=insider_source_ids,
+            ownership_liquidity_source_ids=ownership_liquidity_source_ids,
+            ownership_liquidity=candidate.research_evidence.get(
+                "ownership_liquidity", {}
+            ),
+        )
         self._validate_known_sources(
             known_source_ids,
             (
@@ -390,7 +389,11 @@ class AgentExecutionBoundary:
                     {
                         source_id
                         for claim in result.ownership_claims
-                        for source_id in claim.source_ids
+                        for source_id in (
+                            claim.binding.source_ids
+                            if isinstance(claim, OwnershipClaim)
+                            else claim.source_ids
+                        )
                     },
                 ),
                 (
@@ -400,6 +403,10 @@ class AgentExecutionBoundary:
                         for claim in result.insider_claims
                         for source_id in claim.source_ids
                     },
+                ),
+                (
+                    "structured conclusions cite unknown evidence source(s)",
+                    structured_source_ids,
                 ),
             ),
         )
@@ -435,15 +442,6 @@ class AgentExecutionBoundary:
                 },
             )
         self._validate_management_sources(result, document_source_ids)
-        self._validate_assessment_sections(
-            result,
-            document_source_ids=document_source_ids,
-            insider_source_ids=insider_source_ids,
-            ownership_liquidity_source_ids=ownership_liquidity_source_ids,
-            ownership_liquidity=candidate.research_evidence.get(
-                "ownership_liquidity", {}
-            ),
-        )
         # Preserve the fast, legacy diagnostic for missing reverse-DCF inputs;
         # the full verdict matrix runs below after forward scenarios exist.
         self._validate_activated_case(result, candidate)
@@ -504,6 +502,20 @@ class AgentExecutionBoundary:
                 "ownership/liquidity assessment uses supplied deterministic evidence "
                 f"({len(ownership_liquidity_source_ids)} source IDs available)"
             )
+            if result.ownership_claims and all(
+                isinstance(claim, OwnershipClaim) for claim in result.ownership_claims
+            ):
+                result.ownership_and_flow_assessment = render_ownership_claims(
+                    [
+                        {
+                            "measure": claim.measure,
+                            "binding": {
+                                "asserted_value": claim.binding.asserted_value
+                            },
+                        }
+                        for claim in result.ownership_claims
+                    ]
+                )
         else:
             if (
                 result.ownership_and_flow_assessment
@@ -1885,6 +1897,40 @@ class AgentExecutionBoundary:
         }
 
     @staticmethod
+    def _validate_structured_conclusions(result):
+        structured = result.structured_conclusions
+        if structured is None:
+            return set()
+        payload = asdict(structured)
+        source_ids = set()
+        claim_ids = set()
+
+        def visit(value):
+            if isinstance(value, dict):
+                if "claim_id" in value:
+                    claim_id = value["claim_id"]
+                    if claim_id in claim_ids:
+                        raise StockAnalysisValidationError(
+                            f"duplicate structured claim ID: {claim_id}"
+                        )
+                    claim_ids.add(claim_id)
+                ids = value.get("source_ids")
+                if isinstance(ids, (list, tuple)):
+                    if len(ids) != len(set(ids)):
+                        raise StockAnalysisValidationError(
+                            "structured claim contains duplicate source IDs"
+                        )
+                    source_ids.update(ids)
+                for child in value.values():
+                    visit(child)
+            elif isinstance(value, (list, tuple)):
+                for child in value:
+                    visit(child)
+
+        visit(payload)
+        return source_ids
+
+    @staticmethod
     def _normalize_assessment_claims(
         claims, source_aliases, full_results=None, research_evidence=None
     ):
@@ -1969,11 +2015,32 @@ class AgentExecutionBoundary:
             violations.append(
                 "ownership and flow assessment requires structured ownership claims"
             )
-        ownership_sources = {
-            source_id
-            for claim in result.ownership_claims
-            for source_id in claim.source_ids
-        }
+        ownership_sources = set()
+        for index, claim in enumerate(result.ownership_claims):
+            if isinstance(claim, OwnershipClaim):
+                ownership_sources.update(claim.binding.source_ids)
+                try:
+                    AgentExecutionBoundary._validate_typed_ownership_claim(
+                        claim, {"research_evidence": {"ownership_liquidity": ownership_liquidity}}
+                    )
+                except StockAnalysisValidationError as exc:
+                    violations.append(
+                        f'ownership_claims[{index}] offending claim '
+                        f'"{claim.measure}={claim.binding.asserted_value!r}" requires repair; '
+                        f'{exc}; documentary citations cannot be relabeled as ownership evidence; '
+                        "changing a documentary citation into an ownership citation is not permitted; "
+                        "omit the claim."
+                    )
+            else:
+                ownership_sources.update(claim.source_ids)
+                if not claim.source_ids or set(claim.source_ids) - ownership_liquidity_source_ids:
+                    violations.append(
+                        f'ownership_claims[{index}] offending statement '
+                        f'{claim.statement!r} requires an approved ownership/liquidity source; '
+                        "documentary citations cannot be relabeled as ownership evidence; "
+                        "changing a documentary citation into an ownership citation is not permitted; "
+                        "omit the claim."
+                    )
         unknown_ownership_sources = sorted(
             ownership_sources - ownership_liquidity_source_ids
         )
@@ -1984,7 +2051,8 @@ class AgentExecutionBoundary:
             )
         try:
             AgentExecutionBoundary._validate_supported_ownership_claims(
-                result.ownership_claims, ownership_liquidity
+                [claim for claim in result.ownership_claims if not isinstance(claim, OwnershipClaim)],
+                ownership_liquidity,
             )
         except StockAnalysisValidationError as exc:
             violations.extend(getattr(exc, "violations", (str(exc),)))
@@ -2003,6 +2071,47 @@ class AgentExecutionBoundary:
                 "insider claims must cite at least one supplied insider transaction"
             )
         _raise_validation_violations(violations)
+
+    @classmethod
+    def _validate_typed_ownership_claim(cls, claim, evidence):
+        if not claim.binding.source_ids:
+            raise StockAnalysisValidationError(
+                "binding requires the exact generated ownership source set"
+            )
+        if len(claim.binding.source_ids) != len(set(claim.binding.source_ids)):
+            raise StockAnalysisValidationError("binding contains duplicate source IDs")
+        try:
+            field = ownership_field(claim.measure)
+        except ValueError as exc:
+            raise StockAnalysisValidationError(str(exc)) from exc
+        if claim.subject_role != field.subject_role or claim.claim_kind != field.claim_kind:
+            raise StockAnalysisValidationError(
+                f"claim kind/subject role does not match measure {claim.measure}"
+            )
+        if claim.binding.deterministic_field != field.deterministic_field:
+            raise StockAnalysisValidationError(
+                f"deterministic field must be {field.deterministic_field}"
+            )
+        if claim.binding.asserted_unit != field.asserted_unit:
+            raise StockAnalysisValidationError(
+                f"asserted unit must be {field.asserted_unit}"
+            )
+        expected = packet_value(evidence, field)
+        if expected is None:
+            raise StockAnalysisValidationError(
+                f"measure {claim.measure} has no supplied deterministic field"
+            )
+        if claim.binding.asserted_value != expected:
+            raise StockAnalysisValidationError(
+                f"asserted value for {claim.measure} must equal the supplied packet value"
+            )
+        ownership_evidence = evidence["research_evidence"]["ownership_liquidity"]
+        supplied = ownership_source_ids_for_measure(ownership_evidence, claim.measure)
+        if not supplied or tuple(claim.binding.source_ids) != supplied:
+            raise StockAnalysisValidationError(
+                f"source IDs {list(claim.binding.source_ids)!r} must equal the exact "
+                f"generated source set {list(supplied)!r} for measure {claim.measure}"
+            )
 
     @staticmethod
     def _validate_supported_ownership_claims(claims, evidence):

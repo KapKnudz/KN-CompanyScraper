@@ -1,7 +1,10 @@
 import json
 import math
+from dataclasses import asdict
 from kncompanyscraper.analysis.agent.output_schema import (
     AssessmentClaim,
+    OwnershipClaim,
+    OwnershipBinding,
     _NullableObjectContract,
     BusinessModelProfile,
     CompanyFact,
@@ -17,14 +20,21 @@ from kncompanyscraper.analysis.agent.output_schema import (
     MissingInformationItem,
     RevenueResilience,
     STOCK_ANALYSIS_OUTPUT_CONTRACT,
+    V3_STOCK_ANALYSIS_OUTPUT_CONTRACT,
+    V3_QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
     QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
     SCENARIO_AUTHORING_OUTPUT_CONTRACT,
     StockAnalysisResult,
+    StructuredConclusions,
     ThesisCatalyst,
     ThesisBreakTest,
     TimingAssessment,
     THESIS_UPDATE_OUTPUT_CONTRACT,
+    V3_QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
     ThesisUpdateResult,
+)
+from kncompanyscraper.analysis.agent.conclusion_contract import (
+    NO_OWNERSHIP_LIQUIDITY_ASSESSMENT,
 )
 from kncompanyscraper.analysis.valuation.forward_scenario import (
     NetDebtChangeAssumption,
@@ -65,9 +75,10 @@ def parse_qualitative_stock_analysis_result(
     raw_response: str,
 ) -> StockAnalysisResult:
     raw_response = _normalize_qualitative_response(raw_response)
+    contract = _contract_for_payload(raw_response, qualitative=True)
     payload = _parse_contract(
         raw_response,
-        QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
+        contract,
         "qualitative-stock-analysis",
     )
     payload["scenario_bundles"] = []
@@ -83,14 +94,38 @@ def _normalize_qualitative_response(raw_response: str) -> str:
     except (json.JSONDecodeError, StockAnalysisValidationError):
         return raw_response
     if isinstance(payload, dict):
+        payload.pop("scenario_bundles", None)
+        payload.pop("forward_scenario_analysis", None)
         payload.pop("historical_forecast_table", None)
         payload.pop("peak_margin_bridge", None)
         payload.pop("scenario_driver_attribution", None)
     return json.dumps(payload, ensure_ascii=False)
 
+def _contract_for_payload(raw_response: str, *, qualitative: bool = False) -> dict:
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError:
+        return QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT if qualitative else STOCK_ANALYSIS_OUTPUT_CONTRACT
+    if isinstance(payload, dict) and payload.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
+        return V3_QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT if qualitative else V3_STOCK_ANALYSIS_OUTPUT_CONTRACT
+    return QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT if qualitative else STOCK_ANALYSIS_OUTPUT_CONTRACT
+
+
 def parse_thesis_update_result(raw_response: str) -> ThesisUpdateResult:
     raw_response = _normalize_qualitative_update_response(raw_response)
-    payload = _parse_contract(raw_response, THESIS_UPDATE_OUTPUT_CONTRACT, "thesis-update")
+    try:
+        update_payload = json.loads(raw_response)
+    except json.JSONDecodeError:
+        update_payload = {}
+    update_contract = (
+        V3_QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT
+        if isinstance(update_payload, dict)
+        and isinstance(update_payload.get("thesis"), dict)
+        and update_payload["thesis"].get("thesis_card_version")
+        == "individual-thesis-card-v3-structured-conclusions"
+        else THESIS_UPDATE_OUTPUT_CONTRACT
+    )
+    payload = _parse_contract(raw_response, update_contract, "thesis-update")
     return ThesisUpdateResult(
         impact=payload["impact"],
         summary=payload["summary"],
@@ -114,11 +149,12 @@ def _normalize_qualitative_update_response(raw_response: str) -> str:
         thesis.pop("historical_forecast_table", None)
         thesis.pop("peak_margin_bridge", None)
         thesis.pop("scenario_driver_attribution", None)
-        thesis["scenario_bundles"] = []
-        thesis["forward_scenario_analysis"] = None
-        thesis["historical_forecast_table"] = None
-        thesis["peak_margin_bridge"] = None
-        thesis["scenario_driver_attribution"] = None
+        if thesis.get("thesis_card_version") != "individual-thesis-card-v3-structured-conclusions":
+            thesis["scenario_bundles"] = []
+            thesis["forward_scenario_analysis"] = None
+            thesis["historical_forecast_table"] = None
+            thesis["peak_margin_bridge"] = None
+            thesis["scenario_driver_attribution"] = None
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -165,6 +201,12 @@ def _parse_contract(raw_response: str, contract: dict, label: str) -> dict:
         _normalize_management_ledger_contract(payload)
         _normalize_ownership_claim_contract(payload, contract)
         _validate_value(payload, contract, "result")
+        if payload.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
+            _expand_v3_projection_fields(payload)
+        elif isinstance(payload.get("thesis"), dict) and payload["thesis"].get(
+            "thesis_card_version"
+        ) == "individual-thesis-card-v3-structured-conclusions":
+            _expand_v3_projection_fields(payload["thesis"])
     except (json.JSONDecodeError, StockAnalysisValidationError) as exc:
         raise StockAnalysisValidationError(f"Invalid {label} JSON: {exc}") from exc
     return payload
@@ -182,6 +224,8 @@ def _normalize_thesis_card_fields(payload: dict) -> None:
             or "verdict" not in card
             or "company_id" not in card
         ):
+            continue
+        if card.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
             continue
         card.setdefault("latent_case_type", None)
         card.setdefault("activation_trigger_spec", None)
@@ -203,6 +247,99 @@ def _normalize_thesis_card_fields(payload: dict) -> None:
         if isinstance(resilience, dict):
             resilience.setdefault("recurring_source_ids", [])
             resilience.setdefault("variable_source_ids", [])
+
+
+def _expand_v3_projection_fields(payload: dict) -> None:
+    """Build legacy-compatible read projections from the typed v3 graph."""
+    structured = payload["structured_conclusions"]
+    payload["one_sentence_thesis"] = "Structured headline case: " + structured["headline_case"]["case_ref"]
+    falsifiable = structured["falsifiable_case"]
+    payload["falsifiable_case"] = {
+        "statement": payload["one_sentence_thesis"],
+        "falsification_test": "Typed falsification condition: " + falsifiable["falsification"]["claim_id"],
+        "horizon_months": falsifiable["horizon_months"],
+        "source_ids": falsifiable["baseline_refs"] or falsifiable["falsification"].get("source_ids", []),
+    }
+    payload["business_model_profile"] = asdict(BusinessModelProfile())
+    payload["margin_expansion_case"] = asdict(MarginExpansionCase())
+    payload["timing_assessment"] = asdict(TimingAssessment())
+    payload["confidence_limitations"] = list(structured["limitation_codes"])
+    payload["company_fact_ledger"] = asdict(CompanyFactLedger())
+    payload["reconsideration_trigger"] = None
+    payload["activation_trigger"] = None
+    payload["latent_case_type"] = None
+    payload["activation_trigger_spec"] = None
+    payload["activation_trigger_evidence"] = []
+    payload["reverse_dcf_expectation_rationale"] = "Typed reverse-DCF assessment."
+    payload["revenue_resilience"] = asdict(RevenueResilience(
+        assessment=structured["revenue_resilience"]["value"]
+        if structured["revenue_resilience"]["value"] in {"resilient", "mixed", "variable", "unassessable"}
+        else "unassessable",
+        limitations=list(structured["limitation_codes"]),
+    ))
+    payload["peak_margin_evidence"] = []
+    payload["management_assessment"] = ""
+    payload["management_claims"] = []
+    payload["management_credibility_ledger"] = []
+    payload["management_credibility_coverage"] = asdict(ManagementCredibilityCoverage())
+    payload["ownership_and_flow_assessment"] = (
+        NO_OWNERSHIP_LIQUIDITY_ASSESSMENT if not payload["ownership_claims"] else ""
+    )
+    payload["insider_assessment"] = ""
+    payload["insider_claims"] = []
+    payload["confirming_evidence"] = []
+    payload["disconfirming_evidence"] = []
+    payload["thesis_break_conditions"] = []
+    payload["strongest_confirming_evidence"] = None
+    payload["strongest_disconfirming_evidence"] = None
+    payload["thesis_break_tests"] = []
+    payload["missing_information"] = []
+    payload["missing_information_details"] = []
+    payload["citations"] = []
+    payload["structured_conclusions"] = _structured_conclusions_from_payload(structured)
+
+
+def _typed_claim(value: dict) -> "TypedClaim":
+    from kncompanyscraper.analysis.agent.conclusion_contract import TypedClaim
+    return TypedClaim(
+        claim_id=value["claim_id"], domain=value["domain"], predicate=value["predicate"],
+        value=value["value"], source_ids=tuple(value["source_ids"]),
+        limitation_codes=tuple(value["limitation_codes"]),
+    )
+
+
+def _structured_conclusions_from_payload(value: dict) -> StructuredConclusions:
+    from kncompanyscraper.analysis.agent.conclusion_contract import (
+        FalsifiableCaseComponent, HeadlineCase,
+    )
+    headline = value["headline_case"]
+    falsifiable = value["falsifiable_case"]
+    return StructuredConclusions(
+        headline_case=HeadlineCase(
+            case_ref=headline["case_ref"], horizon_months=headline["horizon_months"],
+            revenue_mechanism=headline["revenue_mechanism"],
+            profitability_state=headline["profitability_state"],
+            expectation_refs=tuple(headline["expectation_refs"]),
+            break_condition=_typed_claim(headline["break_condition"]),
+        ),
+        falsifiable_case=FalsifiableCaseComponent(
+            case_ref=falsifiable["case_ref"], horizon_months=falsifiable["horizon_months"],
+            baseline_refs=tuple(falsifiable["baseline_refs"]),
+            falsification=_typed_claim(falsifiable["falsification"]),
+        ),
+        evidence_claims=tuple(_typed_claim(item) for item in value["evidence_claims"]),
+        break_tests=tuple(_typed_claim(item) for item in value["break_tests"]),
+        management_claims=tuple(_typed_claim(item) for item in value["management_claims"]),
+        management_ledger=tuple(_typed_claim(item) for item in value["management_ledger"]),
+        company_facts=tuple(_typed_claim(item) for item in value["company_facts"]),
+        business_model_facts=tuple(_typed_claim(item) for item in value["business_model_facts"]),
+        margin_facts=tuple(_typed_claim(item) for item in value["margin_facts"]),
+        timing_facts=tuple(_typed_claim(item) for item in value["timing_facts"]),
+        limitation_codes=tuple(value["limitation_codes"]),
+        trigger=_typed_claim(value["trigger"]) if value["trigger"] is not None else None,
+        revenue_resilience=_typed_claim(value["revenue_resilience"]),
+        reverse_dcf_assessment=value["reverse_dcf_assessment"],
+    )
 
 
 def _normalize_management_ledger_contract(payload: dict) -> None:
@@ -329,11 +466,11 @@ def _stock_analysis_from_payload(payload: dict) -> StockAnalysisResult:
             ),
             mechanism=bundle["mechanism"],
         )
-        for bundle in payload["scenario_bundles"]
+        for bundle in payload.get("scenario_bundles", [])
     ]
     result_data["management_credibility_ledger"] = [
         ManagementClaimAssessment(**assessment)
-        for assessment in payload["management_credibility_ledger"]
+        for assessment in payload.get("management_credibility_ledger", [])
     ]
     result_data["management_credibility_coverage"] = ManagementCredibilityCoverage(
         **payload["management_credibility_coverage"]
@@ -342,7 +479,18 @@ def _stock_analysis_from_payload(payload: dict) -> StockAnalysisResult:
         AssessmentClaim(**claim) for claim in payload["management_claims"]
     ]
     result_data["ownership_claims"] = [
-        AssessmentClaim(**claim) for claim in payload["ownership_claims"]
+        (
+            OwnershipClaim(
+                claim_kind=claim["claim_kind"],
+                subject_role=claim["subject_role"],
+                measure=claim["measure"],
+                binding=OwnershipBinding(**claim["binding"]),
+                limitation_codes=claim["limitation_codes"],
+            )
+            if "claim_kind" in claim
+            else AssessmentClaim(**claim)
+        )
+        for claim in payload["ownership_claims"]
     ]
     result_data["insider_claims"] = [
         AssessmentClaim(**claim) for claim in payload["insider_claims"]

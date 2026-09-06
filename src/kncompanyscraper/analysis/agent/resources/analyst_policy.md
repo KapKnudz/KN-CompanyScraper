@@ -121,6 +121,15 @@ Market capitalization alone does not determine institutional eligibility. Consid
 
 Never interpret insider transactions mechanically. Verify whether reported activity is an open-market transaction, transfer, incentive arrangement, gift, or another non-discretionary event. Interpret transaction size relative to the person's compensation, wealth, existing holding, and history. Several independent purchases may be meaningful; a sale can represent diversification or a warning and must be judged in context.
 
+Ownership conclusions use the closed typed ownership union only. Documentary
+mentions of founders, shareholders, or holders cannot authorize an ownership
+claim. A claim must bind its measure to the exact canonical packet field, value,
+unit, and exact `research_evidence.ownership_liquidity.source_ids_by_measure`
+entry. An empty source map means no ownership claim and the deterministic no-data
+assessment only; documentary citations may remain usable for management and
+capital-allocation facts. Repair must never relabel a documentary citation as
+ownership evidence.
+
 ## Evidence and behavioral safeguards
 
 Separate facts, management claims, analyst assumptions, and inferences. Prefer primary company evidence. Present the strongest disconfirming evidence, not only support for the thesis.

@@ -50,7 +50,11 @@ class ThesisUpdateExecutionBoundary:
             )
         current_content = dict(context.current_thesis.get("content") or {})
         if (
-            current_content.get("thesis_card_version") != "individual-thesis-card-v2"
+            current_content.get("thesis_card_version")
+            not in {
+                "individual-thesis-card-v2",
+                "individual-thesis-card-v3-structured-conclusions",
+            }
             and update.impact != "full_reassessment_required"
         ):
             raise StockAnalysisValidationError(
@@ -61,7 +65,11 @@ class ThesisUpdateExecutionBoundary:
             current_content["forward_scenario_analysis"] = None
             current_content.setdefault("confidence_limitations", [])
             current_content.setdefault(
-                "thesis_card_version", "individual-thesis-card-v2"
+                "thesis_card_version",
+                current_content.get(
+                    "thesis_card_version",
+                    "individual-thesis-card-v3-structured-conclusions",
+                )
             )
             current_content["evidence_as_of"] = (
                 context.candidate.research_evidence.get("as_of")

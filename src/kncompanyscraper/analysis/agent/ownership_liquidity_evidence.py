@@ -26,6 +26,7 @@ class OwnershipLiquidityEvidence:
     ownership: dict = field(default_factory=dict)
     limitations: list[str] = field(default_factory=list)
     source_ids: list[str] = field(default_factory=list)
+    source_ids_by_measure: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -67,6 +68,7 @@ class OwnershipLiquidityEvidenceBuilder:
         values = {}
         observed = {}
         source_ids = []
+        source_ids_by_measure = {}
         for window in self.WINDOWS:
             window_prices = prices[:window]
             observed[window] = len(window_prices)
@@ -88,6 +90,10 @@ class OwnershipLiquidityEvidenceBuilder:
             )
             if filter_ids is None or liquidity_source_id in filter_ids:
                 source_ids.append(liquidity_source_id)
+                source_ids_by_measure[f"adtv_{window}"] = [liquidity_source_id]
+                source_ids_by_measure[f"observed_days_{window}"] = [liquidity_source_id]
+                if window == 120:
+                    source_ids_by_measure["zero_volume_days_120"] = [liquidity_source_id]
             else:
                 values[window] = None
                 observed[window] = 0
@@ -110,6 +116,8 @@ class OwnershipLiquidityEvidenceBuilder:
         if listing_payload["market_id"] is not None:
             if filter_ids is None or listing_source_id in filter_ids:
                 source_ids.append(listing_source_id)
+                for measure in ("market_id", "venue", "listing_date"):
+                    source_ids_by_measure[measure] = [listing_source_id]
             else:
                 listing_payload = {
                     "status": "unavailable",
@@ -118,7 +126,8 @@ class OwnershipLiquidityEvidenceBuilder:
                     "listing_date": None,
                 }
         flow_signals = self._flow_signals(
-            company_id, as_of, limitations, source_ids, filter_ids
+            company_id, as_of, limitations, source_ids, filter_ids,
+            source_ids_by_measure,
         )
         liquidity_values = tuple(values.values())
         if all(value is not None for value in liquidity_values):
@@ -162,6 +171,7 @@ class OwnershipLiquidityEvidenceBuilder:
             ownership={"status": "unavailable", "source_ids": []},
             limitations=limitations,
             source_ids=source_ids,
+            source_ids_by_measure=source_ids_by_measure,
         )
 
     def _flow_signals(
@@ -171,6 +181,7 @@ class OwnershipLiquidityEvidenceBuilder:
         limitations: list[str],
         source_ids: list[str],
         filter_ids: set[str] | None,
+        source_ids_by_measure: dict,
     ) -> dict:
         if self.ownership_flow_repository is None:
             limitations.extend(
@@ -202,6 +213,13 @@ class OwnershipLiquidityEvidenceBuilder:
             ]
         buyback_ids = [source_id for _, source_id in event_pairs]
         source_ids.extend(buyback_ids)
+        for measure in (
+            "latest_event_date", "trailing_3_month_change_shares_raw",
+            "trailing_12_month_change_shares_raw", "latest_treasury_shares",
+            "latest_treasury_shares_pct_raw",
+        ):
+            if buyback_ids:
+                source_ids_by_measure[measure] = list(buyback_ids)
         if event_pairs:
             latest = event_pairs[0][0]
             cutoff_3m = _subtract_months(as_of, 3)
@@ -275,6 +293,12 @@ class OwnershipLiquidityEvidenceBuilder:
                 "source_ids": [short_id],
             }
             source_ids.append(short_id)
+            for measure in (
+                "observation_date", "snapshot_age_days", "short_pct_raw",
+                "reported_holder_count_raw", "average_short_pct_raw",
+                "short_value_millions_raw",
+            ):
+                source_ids_by_measure[measure] = [short_id]
             if short_status == "stale":
                 limitations.append(
                     f"Short-interest snapshot is stale at {age_days} days old"
