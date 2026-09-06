@@ -1,7 +1,6 @@
 import json
 import math
 import re
-from dataclasses import asdict
 from kncompanyscraper.analysis.agent.output_schema import (
     AssessmentClaim,
     OwnershipClaim,
@@ -35,8 +34,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
     ThesisUpdateResult,
 )
 from kncompanyscraper.analysis.agent.conclusion_contract import (
-    NO_OWNERSHIP_LIQUIDITY_ASSESSMENT,
-    render_structured_headline,
+    project_structured_conclusions,
 )
 from kncompanyscraper.analysis.valuation.forward_scenario import (
     NetDebtChangeAssumption,
@@ -205,11 +203,12 @@ def _parse_contract(raw_response: str, contract: dict, label: str) -> dict:
         _validate_value(payload, contract, "result")
         if payload.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
             _validate_structured_claim_identifiers(payload["structured_conclusions"])
-            _expand_v3_projection_fields(payload)
         elif isinstance(payload.get("thesis"), dict) and payload["thesis"].get(
             "thesis_card_version"
         ) == "individual-thesis-card-v3-structured-conclusions":
-            _expand_v3_projection_fields(payload["thesis"])
+            _validate_structured_claim_identifiers(
+                payload["thesis"]["structured_conclusions"]
+            )
     except (json.JSONDecodeError, StockAnalysisValidationError) as exc:
         raise StockAnalysisValidationError(f"Invalid {label} JSON: {exc}") from exc
     return payload
@@ -225,6 +224,11 @@ def _validate_structured_claim_identifiers(value) -> None:
             raise StockAnalysisValidationError(
                 f"structured claim ID must be a code identifier: {claim_id!r}"
             )
+        for limitation_code in value.get("limitation_codes", []):
+            if not _STRUCTURED_CLAIM_ID.fullmatch(limitation_code):
+                raise StockAnalysisValidationError(
+                    "structured limitation codes must be code identifiers"
+                )
         for child in value.values():
             _validate_structured_claim_identifiers(child)
     elif isinstance(value, list):
@@ -267,128 +271,6 @@ def _normalize_thesis_card_fields(payload: dict) -> None:
         if isinstance(resilience, dict):
             resilience.setdefault("recurring_source_ids", [])
             resilience.setdefault("variable_source_ids", [])
-
-
-def _expand_v3_projection_fields(payload: dict) -> None:
-    """Build legacy-compatible read projections from the typed v3 graph."""
-    structured = payload["structured_conclusions"]
-    payload["one_sentence_thesis"] = render_structured_headline(structured)
-    falsifiable = structured["falsifiable_case"]
-    payload["falsifiable_case"] = {
-        "statement": payload["one_sentence_thesis"],
-        "falsification_test": "Typed falsification condition: " + falsifiable["falsification"]["claim_id"],
-        "horizon_months": falsifiable["horizon_months"],
-        "source_ids": falsifiable["baseline_refs"] or falsifiable["falsification"].get("source_ids", []),
-    }
-    payload["business_model_profile"] = asdict(BusinessModelProfile())
-    payload["margin_expansion_case"] = asdict(MarginExpansionCase())
-    payload["timing_assessment"] = asdict(TimingAssessment())
-    payload["confidence_limitations"] = list(structured["limitation_codes"])
-    payload["company_fact_ledger"] = {
-        **asdict(CompanyFactLedger()),
-        "business_model": _project_company_facts(
-            structured["business_model_facts"]
-        ),
-        "margins_and_operating_leverage": _project_company_facts(
-            structured["margin_facts"]
-        ),
-        "balance_sheet_and_capital_allocation": _project_company_facts(
-            structured["company_facts"]
-        ),
-        "revenue_drivers": _project_company_facts(structured["timing_facts"]),
-    }
-    payload["reconsideration_trigger"] = None
-    payload["activation_trigger"] = None
-    payload["latent_case_type"] = None
-    payload["activation_trigger_spec"] = None
-    payload["activation_trigger_evidence"] = []
-    payload["reverse_dcf_expectation_rationale"] = "Typed reverse-DCF assessment."
-    payload["revenue_resilience"] = asdict(RevenueResilience(
-        assessment=structured["revenue_resilience"]["value"]
-        if structured["revenue_resilience"]["value"] in {"resilient", "mixed", "variable", "unassessable"}
-        else "unassessable",
-        limitations=list(structured["limitation_codes"]),
-    ))
-    payload["peak_margin_evidence"] = []
-    management_claims = _project_assessment_claims(structured["management_claims"])
-    payload["management_assessment"] = (
-        management_claims[0]["statement"] if management_claims else ""
-    )
-    payload["management_claims"] = management_claims
-    payload["management_credibility_ledger"] = _project_management_ledger(
-        structured["management_ledger"]
-    )
-    payload["management_credibility_coverage"] = asdict(
-        ManagementCredibilityCoverage(
-            eligible_claim_count=len(payload["management_credibility_ledger"]),
-            pending_claim_count=len(payload["management_credibility_ledger"]),
-        )
-    )
-    payload["ownership_and_flow_assessment"] = (
-        NO_OWNERSHIP_LIQUIDITY_ASSESSMENT if not payload["ownership_claims"] else ""
-    )
-    payload["insider_assessment"] = ""
-    payload["insider_claims"] = []
-    payload["confirming_evidence"] = []
-    payload["disconfirming_evidence"] = []
-    payload["thesis_break_conditions"] = []
-    payload["strongest_confirming_evidence"] = None
-    payload["strongest_disconfirming_evidence"] = None
-    payload["thesis_break_tests"] = []
-    payload["missing_information"] = []
-    payload["missing_information_details"] = []
-    payload["citations"] = []
-    payload["structured_conclusions"] = _structured_conclusions_from_payload(structured)
-
-
-def _claim_text(claim: dict) -> str:
-    value = claim["value"]
-    if isinstance(value, str):
-        return value
-    if value is None:
-        return f"{claim['predicate']}: unavailable"
-    return f"{claim['predicate']}: {value}"
-
-
-def _project_company_facts(claims: list[dict]) -> list[dict]:
-    return [
-        {
-            "statement": _claim_text(claim),
-            "evidence_kind": "fact",
-            "source_ids": list(claim["source_ids"]),
-            "source_date": None,
-            "reporting_period": None,
-        }
-        for claim in claims
-    ]
-
-
-def _project_assessment_claims(claims: list[dict]) -> list[dict]:
-    return [
-        {
-            "statement": _claim_text(claim),
-            "evidence_kind": "management_claim",
-            "source_ids": list(claim["source_ids"]),
-            "limitations": list(claim["limitation_codes"]),
-        }
-        for claim in claims
-    ]
-
-
-def _project_management_ledger(claims: list[dict]) -> list[dict]:
-    return [
-        {
-            "date": "",
-            "claim": _claim_text(claim),
-            "expected_timing": None,
-            "observed_outcome": None,
-            "result": "unverifiable",
-            "source_ids": list(claim["source_ids"]),
-            "claim_source_ids": list(claim["source_ids"]),
-            "outcome_source_ids": [],
-        }
-        for claim in claims
-    ]
 
 
 def _typed_claim(value: dict) -> "TypedClaim":
@@ -487,6 +369,17 @@ def _normalize_ownership_claim_contract(payload: dict, contract: dict) -> None:
 
 def _stock_analysis_from_payload(payload: dict) -> StockAnalysisResult:
     result_data = dict(payload)
+    if payload.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
+        result_data.update(
+            project_structured_conclusions(
+                payload["structured_conclusions"],
+                payload.get("ownership_claims", []),
+            )
+        )
+        result_data["structured_conclusions"] = _structured_conclusions_from_payload(
+            payload["structured_conclusions"]
+        )
+        payload = result_data
     result_data["falsifiable_case"] = FalsifiableCase(
         **payload["falsifiable_case"]
     )

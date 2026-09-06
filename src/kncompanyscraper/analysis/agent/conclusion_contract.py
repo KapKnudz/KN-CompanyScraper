@@ -104,6 +104,40 @@ STRUCTURED_CASE_REFS = (
     "unassessable_case",
 )
 
+V3_PROJECTION_FIELDS = (
+    "one_sentence_thesis",
+    "falsifiable_case",
+    "business_model_profile",
+    "margin_expansion_case",
+    "timing_assessment",
+    "confidence_limitations",
+    "company_fact_ledger",
+    "reconsideration_trigger",
+    "activation_trigger",
+    "latent_case_type",
+    "activation_trigger_spec",
+    "activation_trigger_evidence",
+    "reverse_dcf_expectation_rationale",
+    "revenue_resilience",
+    "peak_margin_evidence",
+    "management_assessment",
+    "management_claims",
+    "management_credibility_ledger",
+    "management_credibility_coverage",
+    "ownership_and_flow_assessment",
+    "insider_assessment",
+    "insider_claims",
+    "confirming_evidence",
+    "disconfirming_evidence",
+    "thesis_break_conditions",
+    "strongest_confirming_evidence",
+    "strongest_disconfirming_evidence",
+    "thesis_break_tests",
+    "missing_information",
+    "missing_information_details",
+    "citations",
+)
+
 
 def ownership_field(measure: str) -> OwnershipField:
     try:
@@ -141,6 +175,178 @@ def render_structured_headline(conclusions: dict) -> str:
         f"mechanism={headline['revenue_mechanism']}; "
         f"profitability={headline['profitability_state']}."
     )
+
+
+def project_structured_conclusions(
+    conclusions: dict, ownership_claims: list[dict] | None = None
+) -> dict:
+    headline = conclusions["headline_case"]
+    falsifiable = conclusions["falsifiable_case"]
+    management_claims = [
+        _project_claim(claim, "management_claim")
+        for claim in conclusions["management_claims"]
+    ]
+    management_ledger = [
+        {
+            "date": "",
+            "claim": _claim_text(claim),
+            "expected_timing": None,
+            "observed_outcome": None,
+            "result": "unverifiable",
+            "source_ids": list(claim["source_ids"]),
+            "claim_source_ids": list(claim["source_ids"]),
+            "outcome_source_ids": [],
+        }
+        for claim in conclusions["management_ledger"]
+    ]
+    company_fact_ledger = {
+        "business_model": _project_facts(conclusions["business_model_facts"]),
+        "revenue_drivers": _project_facts(conclusions["timing_facts"]),
+        "margins_and_operating_leverage": _project_facts(
+            conclusions["margin_facts"]
+        ),
+        "balance_sheet_and_capital_allocation": _project_facts(
+            conclusions["company_facts"]
+        ),
+        "management_and_execution": [],
+        "ownership_and_insiders": [],
+        "valuation_expectations": [],
+        "risks_and_disconfirming_evidence": [],
+    }
+    resilience = conclusions["revenue_resilience"]
+    return {
+        "one_sentence_thesis": render_structured_headline(conclusions),
+        "falsifiable_case": {
+            "statement": render_structured_headline(conclusions),
+            "falsification_test": (
+                "Typed falsification condition: "
+                + falsifiable["falsification"]["claim_id"]
+            ),
+            "horizon_months": falsifiable["horizon_months"],
+            "source_ids": falsifiable["baseline_refs"]
+            or falsifiable["falsification"].get("source_ids", []),
+        },
+        "business_model_profile": {
+            "summary": "",
+            "customer_and_need": "",
+            "offering": "",
+            "revenue_mechanics": "",
+            "sales_and_distribution": "",
+            "cost_structure": "",
+            "reinvestment_requirements": "",
+            "competitive_position": "",
+            "key_dependencies": "",
+            "revenue_model_types": [],
+            "customer_types": [],
+            "recurring_revenue_profile": "unassessable",
+            "pricing_power": "unassessable",
+            "capital_intensity": "unassessable",
+            "operating_leverage": "unassessable",
+            "circle_of_competence": "unassessable",
+            "source_ids": [],
+            "limitations": [],
+        },
+        "margin_expansion_case": {
+            "status": "unassessable",
+            "mechanism": "",
+            "required_operating_changes": [],
+            "source_ids": [],
+            "contrary_source_ids": [],
+            "limitations": [],
+        },
+        "timing_assessment": {
+            "horizon_months": None,
+            "why_now": "",
+            "confidence": "low",
+            "catalysts": [],
+            "source_ids": [],
+            "limitations": [],
+        },
+        "confidence_limitations": list(conclusions["limitation_codes"]),
+        "company_fact_ledger": company_fact_ledger,
+        "reconsideration_trigger": None,
+        "activation_trigger": None,
+        "latent_case_type": None,
+        "activation_trigger_spec": None,
+        "activation_trigger_evidence": [],
+        "reverse_dcf_expectation_rationale": (
+            "Typed reverse-DCF assessment: "
+            + conclusions["reverse_dcf_assessment"]
+        ),
+        "revenue_resilience": {
+            "assessment": resilience["value"]
+            if resilience["value"]
+            in {"resilient", "mixed", "variable", "unassessable"}
+            else "unassessable",
+            "recurring_driver": "",
+            "variable_driver": "",
+            "cash_flow_observation": "",
+            "source_ids": list(resilience["source_ids"]),
+            "recurring_source_ids": [],
+            "variable_source_ids": [],
+            "limitations": list(conclusions["limitation_codes"]),
+        },
+        "peak_margin_evidence": [],
+        "management_assessment": (
+            management_claims[0]["statement"] if management_claims else ""
+        ),
+        "management_claims": management_claims,
+        "management_credibility_ledger": management_ledger,
+        "management_credibility_coverage": {
+            "eligible_claim_count": len(management_ledger),
+            "assessed_claim_count": 0,
+            "pending_claim_count": len(management_ledger),
+            "omitted_claim_count": 0,
+            "omission_reasons": [],
+        },
+        "ownership_and_flow_assessment": render_ownership_claims(
+            ownership_claims or []
+        ),
+        "insider_assessment": "",
+        "insider_claims": [],
+        "confirming_evidence": [
+            _claim_text(claim) for claim in conclusions["evidence_claims"]
+        ],
+        "disconfirming_evidence": [
+            _claim_text(claim) for claim in conclusions["break_tests"]
+        ],
+        "thesis_break_conditions": [
+            _claim_text(claim) for claim in conclusions["break_tests"]
+        ],
+        "strongest_confirming_evidence": None,
+        "strongest_disconfirming_evidence": None,
+        "thesis_break_tests": [],
+        "missing_information": list(conclusions["limitation_codes"]),
+        "missing_information_details": [],
+        "citations": [],
+    }
+
+
+def _claim_text(claim: dict) -> str:
+    value = "unavailable" if claim["value"] is None else claim["value"]
+    return f"{claim['domain']} {claim['predicate']}: {value}"
+
+
+def _project_claim(claim: dict, evidence_kind: str) -> dict:
+    return {
+        "statement": _claim_text(claim),
+        "evidence_kind": evidence_kind,
+        "source_ids": list(claim["source_ids"]),
+        "limitations": list(claim["limitation_codes"]),
+    }
+
+
+def _project_facts(claims: list[dict]) -> list[dict]:
+    return [
+        {
+            "statement": _claim_text(claim),
+            "evidence_kind": "fact",
+            "source_ids": list(claim["source_ids"]),
+            "source_date": None,
+            "reporting_period": None,
+        }
+        for claim in claims
+    ]
 
 
 def render_ownership_claims(claims: list[dict]) -> str:

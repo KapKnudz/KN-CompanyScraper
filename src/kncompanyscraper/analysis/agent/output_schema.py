@@ -9,6 +9,7 @@ from kncompanyscraper.analysis.agent.conclusion_contract import (
     OWNERSHIP_MEASURES,
     OWNERSHIP_FIELD_REGISTRY,
     STRUCTURED_CASE_REFS,
+    V3_PROJECTION_FIELDS,
     StructuredConclusions,
 )
 
@@ -335,7 +336,11 @@ class StockAnalysisResult:
     structured_conclusions: StructuredConclusions | None = None
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        data = asdict(self)
+        if self.thesis_card_version == "individual-thesis-card-v3-structured-conclusions":
+            for field_name in V3_PROJECTION_FIELDS:
+                data.pop(field_name, None)
+        return data
 
 
 @dataclass
@@ -626,15 +631,13 @@ _TYPED_CLAIM = {
         "assessment | source_gap | direction | event | relation"
     ),
     "value": (
-        "number | boolean | null | resilient | mixed | variable | unassessable | "
-        "plausible | demanding | unsupported"
+        "number | boolean | null | observed | supported | unsupported | unavailable | "
+        "positive | negative | mixed | confirmed | unconfirmed | unchanged | "
+        "improving | deteriorating | resilient | variable | unassessable | "
+        "plausible | demanding"
     ),
     "source_ids": ["string"],
     "limitation_codes": ["string"],
-}
-_TYPED_FACT_CLAIM = {
-    **_TYPED_CLAIM,
-    "value": "number | string | boolean | null",
 }
 _STRUCTURED_CONCLUSIONS = {
     "headline_case": {
@@ -654,14 +657,14 @@ _STRUCTURED_CONCLUSIONS = {
         "baseline_refs": ["string"],
         "falsification": _TYPED_CLAIM,
     },
-    "evidence_claims": [_TYPED_FACT_CLAIM],
+    "evidence_claims": [_TYPED_CLAIM],
     "break_tests": [_TYPED_CLAIM],
-    "management_claims": [_TYPED_FACT_CLAIM],
-    "management_ledger": [_TYPED_FACT_CLAIM],
-    "company_facts": [_TYPED_FACT_CLAIM],
-    "business_model_facts": [_TYPED_FACT_CLAIM],
-    "margin_facts": [_TYPED_FACT_CLAIM],
-    "timing_facts": [_TYPED_FACT_CLAIM],
+    "management_claims": [_TYPED_CLAIM],
+    "management_ledger": [_TYPED_CLAIM],
+    "company_facts": [_TYPED_CLAIM],
+    "business_model_facts": [_TYPED_CLAIM],
+    "margin_facts": [_TYPED_CLAIM],
+    "timing_facts": [_TYPED_CLAIM],
     "limitation_codes": ["string"],
     "trigger": _NullableObjectContract(_TYPED_CLAIM),
     "revenue_resilience": _TYPED_CLAIM,

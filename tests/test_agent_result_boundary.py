@@ -25,6 +25,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
     TimingAssessment,
     ThesisBreakTest,
 )
+from kncompanyscraper.models.stored_analysis import StoredAnalysisDocument
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
     parse_stock_analysis_result,
@@ -1492,7 +1493,7 @@ def test_v3_schema_rejects_legacy_free_text_ownership_claims():
         )
     ]
 
-    with pytest.raises(StockAnalysisValidationError, match="unexpected fields:"):
+    with pytest.raises(StockAnalysisValidationError, match="missing fields:"):
         AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
             qualitative_response(result),
             AgentCandidate(
@@ -1529,6 +1530,34 @@ def test_v3_schema_rejects_free_text_structured_conclusion_values():
         )
 
 
+def test_v3_company_fact_cannot_carry_free_text_ownership_conclusion():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["structured_conclusions"]["company_facts"] = [
+        {
+            "claim_id": "capital_allocation_fact",
+            "domain": "balance_sheet",
+            "predicate": "observation",
+            "value": "The founder owns 20%.",
+            "source_ids": ["news:21"],
+            "limitation_codes": [],
+        }
+    ]
+
+    with pytest.raises(StockAnalysisValidationError, match="must match"):
+        AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+            json.dumps(payload),
+            AgentCandidate(
+                rank=1,
+                company_id=42,
+                ticker="TEST",
+                name="Testbolaget",
+                research_evidence={"documents": [{"source_id": "news:21"}]},
+            ),
+        )
+
+
 def test_v3_projection_preserves_management_and_capital_facts():
     result = valid_result()
     result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
@@ -1539,7 +1568,7 @@ def test_v3_projection_preserves_management_and_capital_facts():
             "claim_id": "capital_allocation_fact",
             "domain": "balance_sheet",
             "predicate": "observation",
-            "value": "The company acquired a stake in Supplier AB.",
+            "value": "observed",
             "source_ids": ["news:21"],
             "limitation_codes": [],
         }
@@ -1549,7 +1578,7 @@ def test_v3_projection_preserves_management_and_capital_facts():
             "claim_id": "management_experience",
             "domain": "management",
             "predicate": "observation",
-            "value": "Management has institutional experience.",
+            "value": "supported",
             "source_ids": ["news:21"],
             "limitation_codes": [],
         }
@@ -1559,7 +1588,7 @@ def test_v3_projection_preserves_management_and_capital_facts():
             "claim_id": "management_execution_history",
             "domain": "management",
             "predicate": "outcome",
-            "value": "Management delivered the planned cost action.",
+            "value": "confirmed",
             "source_ids": ["news:21"],
             "limitation_codes": [],
         }
@@ -1576,14 +1605,24 @@ def test_v3_projection_preserves_management_and_capital_facts():
         ),
     )
 
-    assert persisted.company_fact_ledger.balance_sheet_and_capital_allocation[0].statement == (
-        "The company acquired a stake in Supplier AB."
+    serialized = persisted.to_dict()
+    assert "company_fact_ledger" not in serialized
+    assert "management_claims" not in serialized
+    assert serialized["structured_conclusions"]["company_facts"][0]["value"] == (
+        "observed"
     )
-    assert persisted.management_claims[0].statement == (
-        "Management has institutional experience."
+
+    summary = StoredAnalysisDocument(
+        {"content": serialized, "metadata": {}}
+    ).thesis_summary
+    assert summary["company_fact_ledger"]["balance_sheet_and_capital_allocation"][0][
+        "statement"
+    ] == "balance_sheet observation: observed"
+    assert summary["management_claims"][0]["statement"] == (
+        "management observation: supported"
     )
     assert persisted.management_credibility_ledger[0].claim == (
-        "Management delivered the planned cost action."
+        "management outcome: confirmed"
     )
 
 

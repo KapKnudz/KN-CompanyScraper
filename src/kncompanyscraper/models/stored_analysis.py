@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from kncompanyscraper.analysis.policy_versions import FORWARD_SCENARIO_POLICY_VERSION
 from kncompanyscraper.analysis.agent.conclusion_contract import (
-    render_structured_headline,
+    project_structured_conclusions,
     render_ownership_claims,
 )
 
@@ -82,22 +82,32 @@ class StoredAnalysisDocument(dict):
 
     @property
     def revenue_resilience(self) -> dict:
-        return self.content.get("revenue_resilience") or {}
+        return self._projected_content().get("revenue_resilience") or {}
+
+    def _projected_content(self) -> dict:
+        structured = self.content.get("structured_conclusions")
+        if not isinstance(structured, dict):
+            return self.content
+        return {
+            **self.content,
+            **project_structured_conclusions(
+                structured, self.content.get("ownership_claims") or []
+            ),
+        }
 
     @property
     def one_sentence_thesis(self) -> str:
-        structured = self.content.get("structured_conclusions")
-        if isinstance(structured, dict):
-            return render_structured_headline(structured)
-        return self.content["one_sentence_thesis"]
+        return self._projected_content()["one_sentence_thesis"]
 
     @property
     def reverse_dcf_expectation_assessment(self):
-        return self.content["reverse_dcf_expectation_assessment"]
+        return self._projected_content().get(
+            "reverse_dcf_expectation_assessment", "unassessable"
+        )
 
     @property
     def thesis_break_conditions(self) -> tuple:
-        return tuple(self.content["thesis_break_conditions"])
+        return tuple(self._projected_content().get("thesis_break_conditions", []))
 
     @property
     def analysis_status(self) -> str | None:
@@ -139,11 +149,12 @@ class StoredAnalysisDocument(dict):
         This only selects and organizes persisted fields. It deliberately does
         not recreate valuation arithmetic or translate historical v1 fields.
         """
+        content = self._projected_content()
         provenance = self.metadata.get("valuation_provenance") or {}
         forward = self.forward_scenario or {}
         bundles = {
             item.get("case"): item
-            for item in self.content.get("scenario_bundles", [])
+            for item in content.get("scenario_bundles", [])
             if isinstance(item, dict) and item.get("case")
         }
         scenarios = {}
@@ -169,7 +180,7 @@ class StoredAnalysisDocument(dict):
                         band["high_annualized_return"],
                     ],
                     "horizon_months": band.get(
-                        "horizon_months", self.content.get("case_horizon_months")
+                        "horizon_months", content.get("case_horizon_months")
                     ),
                     "assumptions": bundle,
                     "explanation": bundle.get("mechanism", ""),
@@ -194,47 +205,52 @@ class StoredAnalysisDocument(dict):
                 else self.verdict
             ),
             "latent_case_type": self.latent_case_type,
-            "activation_trigger": self.content.get("activation_trigger"),
-            "activation_trigger_spec": self.content.get("activation_trigger_spec"),
+            "activation_trigger": content.get("activation_trigger"),
+            "activation_trigger_spec": content.get("activation_trigger_spec"),
             "activation_trigger_evidence": list(
-                self.content.get("activation_trigger_evidence", [])
+                content.get("activation_trigger_evidence", [])
             ),
             "confidence": self.confidence,
             "current_price": provenance.get("current_price"),
-            "horizon_months": self.content.get("case_horizon_months"),
+            "horizon_months": content.get("case_horizon_months"),
             "one_sentence_thesis": self.one_sentence_thesis,
-            "ownership_and_flow_assessment": render_ownership_claims(
-                self.content.get("ownership_claims") or []
+            "company_fact_ledger": content.get("company_fact_ledger", {}),
+            "management_claims": content.get("management_claims", []),
+            "management_credibility_ledger": content.get(
+                "management_credibility_ledger", []
             ),
-            "falsifiable_case": self.content.get("falsifiable_case"),
+            "ownership_and_flow_assessment": render_ownership_claims(
+                content.get("ownership_claims") or []
+            ),
+            "falsifiable_case": content.get("falsifiable_case"),
             "revenue_resilience": self.revenue_resilience,
             "reverse_dcf": {
                 "assessment": self.reverse_dcf_expectation_assessment,
-                "rationale": self.content.get(
+                "rationale": content.get(
                     "reverse_dcf_expectation_rationale", ""
                 ),
                 "selected_curve_points": curve,
             },
             "scenarios": scenarios,
-            "scenario_driver_attribution": self.content.get(
+            "scenario_driver_attribution": content.get(
                 "scenario_driver_attribution"
             ),
             "why_now": timing.get("why_now", ""),
-            "strongest_confirming_evidence": self.content.get(
+            "strongest_confirming_evidence": content.get(
                 "strongest_confirming_evidence"
             ),
-            "strongest_disconfirming_evidence": self.content.get(
+            "strongest_disconfirming_evidence": content.get(
                 "strongest_disconfirming_evidence"
             ),
             "thesis_break_conditions": list(self.thesis_break_conditions),
             "thesis_break_tests": list(
-                self.content.get("thesis_break_tests", [])
+                content.get("thesis_break_tests", [])
             ),
             "material_missing_information": list(
-                self.content.get("missing_information", [])
+                content.get("missing_information", [])
             ),
             "missing_information_details": list(
-                self.content.get("missing_information_details", [])
+                content.get("missing_information_details", [])
             ),
             "confidence_cap": (self.metadata.get("confidence_cap") or {}).get("cap"),
             "capital_allocation_limitations": list(
