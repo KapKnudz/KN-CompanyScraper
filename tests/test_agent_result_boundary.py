@@ -1738,6 +1738,78 @@ def test_v3_projection_preserves_management_and_capital_facts():
     assert persisted.missing_information_details[0].limitation_class == "core"
 
 
+def test_v3_headline_projection_includes_typed_break_and_expectation_refs():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["structured_conclusions"]["headline_case"]["expectation_refs"] = [
+        "valuation:reverse_dcf:expectation_curve"
+    ]
+
+    parsed = parse_qualitative_stock_analysis_result(json.dumps(payload))
+
+    assert "expectations=valuation:reverse_dcf:expectation_curve" in (
+        parsed.one_sentence_thesis
+    )
+    assert "break=risk source gap: unavailable" in parsed.one_sentence_thesis
+
+
+def test_v3_rejects_unsourced_structured_break_claims():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["structured_conclusions"]["break_tests"] = [
+        {
+            "claim_id": "unsourced_break",
+            "domain": "risk",
+            "predicate": "threshold",
+            "value": "unsupported",
+            "source_ids": [],
+            "limitation_codes": [],
+        }
+    ]
+
+    with pytest.raises(StockAnalysisValidationError, match="structured break tests"):
+        AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+            json.dumps(payload),
+            AgentCandidate(
+                rank=1,
+                company_id=42,
+                ticker="TEST",
+                name="Testbolaget",
+                research_evidence={"documents": [{"source_id": "news:21"}]},
+            ),
+        )
+
+
+def test_v3_rejects_claims_cross_routed_into_business_model_facts():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["structured_conclusions"]["business_model_facts"] = [
+        {
+            "claim_id": "misrouted_insider_claim",
+            "domain": "insider",
+            "predicate": "event",
+            "value": "confirmed",
+            "source_ids": ["news:21"],
+            "limitation_codes": [],
+        }
+    ]
+
+    with pytest.raises(StockAnalysisValidationError, match="must match"):
+        AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+            json.dumps(payload),
+            AgentCandidate(
+                rank=1,
+                company_id=42,
+                ticker="TEST",
+                name="Testbolaget",
+                research_evidence={"documents": [{"source_id": "news:21"}]},
+            ),
+        )
+
+
 def test_v3_structured_trigger_projects_activation_contract():
     result = valid_result()
     result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"

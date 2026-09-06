@@ -1943,6 +1943,10 @@ class AgentExecutionBoundary:
             raise StockAnalysisValidationError(
                 "structured conclusions must contain exactly one typed break test for each required type"
             )
+        if any(not claim.source_ids for claim in structured.break_tests):
+            raise StockAnalysisValidationError(
+                "structured break tests must cite the evidence establishing the baseline"
+            )
         payload = asdict(structured)
         source_ids = set()
         claim_ids = set()

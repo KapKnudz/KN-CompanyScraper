@@ -8,6 +8,7 @@ from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt
 from kncompanyscraper.analysis.agent.output_schema import (
     qualitative_stock_analysis_json_schema,
     stock_analysis_json_schema,
+    v3_qualitative_stock_analysis_json_schema,
 )
 from tests.test_agent_result_boundary import valid_response
 
@@ -64,6 +65,21 @@ def test_json_schemas_use_json_null_for_nullable_enums():
     assert (
         qualitative_stock_analysis_json_schema()["properties"]["latent_case_type"]
         == expected
+    )
+
+
+def test_v3_typed_value_schema_preserves_numeric_boolean_and_literal_values():
+    value_schema = v3_qualitative_stock_analysis_json_schema()["properties"][
+        "structured_conclusions"
+    ]["properties"]["company_facts"]["items"]["properties"]["value"]
+
+    assert {item["type"] for item in value_schema["anyOf"]} >= {
+        "number",
+        "boolean",
+        "null",
+    }
+    assert {"supported", "unavailable"}.issubset(
+        next(item["enum"] for item in value_schema["anyOf"] if "enum" in item)
     )
 
 

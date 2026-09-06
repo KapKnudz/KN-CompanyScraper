@@ -241,6 +241,11 @@ def _validate_structured_claim_identifiers(value) -> None:
                 raise StockAnalysisValidationError(
                     f"structured {field_name} must be a code identifier"
                 )
+        for reference in value.get("expectation_refs", []):
+            if not re.fullmatch(r"^[a-z][a-z0-9_.:-]*$", reference):
+                raise StockAnalysisValidationError(
+                    "structured expectation references must be code identifiers"
+                )
         for child in value.values():
             _validate_structured_claim_identifiers(child)
     elif isinstance(value, list):

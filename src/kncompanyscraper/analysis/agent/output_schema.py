@@ -665,6 +665,12 @@ _MANAGEMENT_FACT["fact_code"] = (
 _MANAGEMENT_FACT["domain"] = "management"
 _INSIDER_CLAIM = dict(_TYPED_CLAIM)
 _INSIDER_CLAIM["domain"] = "insider"
+_BUSINESS_MODEL_CLAIM = dict(_TYPED_CLAIM)
+_BUSINESS_MODEL_CLAIM["domain"] = "business_model"
+_MARGIN_CLAIM = dict(_TYPED_CLAIM)
+_MARGIN_CLAIM["domain"] = "margin"
+_TIMING_CLAIM = dict(_TYPED_CLAIM)
+_TIMING_CLAIM["domain"] = "timing"
 _STRUCTURED_TRIGGER = {
     "claim_id": "string",
     "trigger_type": "price | operating",
@@ -770,9 +776,9 @@ _STRUCTURED_CONCLUSIONS = {
     "management_ledger": [_MANAGEMENT_FACT],
     "company_facts": [_CAPITAL_ALLOCATION_FACT],
     "insider_claims": [_INSIDER_CLAIM],
-    "business_model_facts": [_TYPED_CLAIM],
-    "margin_facts": [_TYPED_CLAIM],
-    "timing_facts": [_TYPED_CLAIM],
+    "business_model_facts": [_BUSINESS_MODEL_CLAIM],
+    "margin_facts": [_MARGIN_CLAIM],
+    "timing_facts": [_TIMING_CLAIM],
     "strongest_confirming_evidence": _nullable_object_contract(
         _STRUCTURED_DECISIVE_EVIDENCE
     ),
@@ -985,16 +991,13 @@ def _contract_to_json_schema(specification) -> dict:
 
     options = specification.split(" | ")
     primitive_types = {"boolean", "integer", "number", "string", "null"}
-    if all(option in primitive_types for option in options):
-        types = [option for option in options]
+    primitive_options = [option for option in options if option in primitive_types]
+    literal_options = [option for option in options if option not in primitive_types]
+    if not literal_options:
+        types = [option for option in primitive_options]
         return {"type": types[0] if len(types) == 1 else types}
-
-    if "null" in options:
-        return {
-            "anyOf": [
-                {"type": "string", "enum": [item for item in options if item != "null"]},
-                {"type": "null"},
-            ]
-        }
-
-    return {"type": "string", "enum": options}
+    schemas = [{"type": "string", "enum": literal_options}]
+    schemas.extend({"type": option} for option in primitive_options)
+    if len(schemas) == 1:
+        return schemas[0]
+    return {"anyOf": schemas}

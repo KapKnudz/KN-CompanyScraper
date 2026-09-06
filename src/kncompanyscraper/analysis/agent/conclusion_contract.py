@@ -240,10 +240,15 @@ def render_structured_headline(conclusions: dict) -> str:
         "margin_expansion_case": "Margin-expansion case",
         "unassessable_case": "Unassessable case",
     }[headline["case_ref"]]
+    expectation_refs = ", ".join(
+        reference for reference in headline["expectation_refs"]
+    ) or "none"
     return (
         f"{case_label} over {headline['horizon_months']} months; "
         f"mechanism={headline['revenue_mechanism']}; "
-        f"profitability={headline['profitability_state']}."
+        f"profitability={headline['profitability_state']}; "
+        f"expectations={expectation_refs}; "
+        f"break={_claim_text(headline['break_condition'])}."
     )
 
 
@@ -270,7 +275,7 @@ def project_structured_conclusions(
         for claim in conclusions["management_ledger"]
     ]
     insider_claims = [
-        _project_claim(claim, "insider_transaction")
+        _project_claim(claim, "fact")
         for claim in conclusions["insider_claims"]
     ]
     company_fact_ledger = {
