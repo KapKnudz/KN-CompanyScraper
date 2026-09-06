@@ -1466,10 +1466,10 @@ def _v3_qualitative_response(result):
                 "value": value, "source_ids": source_ids or [],
                 "limitation_codes": limitation_codes or []}
     payload["structured_conclusions"] = {
-        "headline_case": {"case_ref": "case-1", "horizon_months": 36,
+        "headline_case": {"case_ref": "fundamental_case", "horizon_months": 36,
             "revenue_mechanism": "organic_growth", "profitability_state": "profitable",
             "expectation_refs": [], "break_condition": claim("break")},
-        "falsifiable_case": {"case_ref": "case-1", "horizon_months": 36,
+        "falsifiable_case": {"case_ref": "fundamental_case", "horizon_months": 36,
             "baseline_refs": [], "falsification": claim("falsification", source_ids=["news:21"])},
         "evidence_claims": [], "break_tests": [], "management_claims": [],
         "management_ledger": [], "company_facts": [], "business_model_facts": [],
@@ -1503,6 +1503,88 @@ def test_v3_schema_rejects_legacy_free_text_ownership_claims():
                 research_evidence={"documents": [{"source_id": "news:21"}]},
             ),
         )
+
+
+def test_v3_schema_rejects_free_text_structured_conclusion_values():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["structured_conclusions"]["headline_case"]["case_ref"] = (
+        "The founder owns 20%."
+    )
+    payload["structured_conclusions"]["headline_case"]["break_condition"][
+        "value"
+    ] = "The founder owns 20%."
+
+    with pytest.raises(StockAnalysisValidationError, match="must match"):
+        AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+            json.dumps(payload),
+            AgentCandidate(
+                rank=1,
+                company_id=42,
+                ticker="TEST",
+                name="Testbolaget",
+                research_evidence={"documents": [{"source_id": "news:21"}]},
+            ),
+        )
+
+
+def test_v3_projection_preserves_management_and_capital_facts():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    structured = payload["structured_conclusions"]
+    structured["company_facts"] = [
+        {
+            "claim_id": "capital_allocation_fact",
+            "domain": "balance_sheet",
+            "predicate": "observation",
+            "value": "The company acquired a stake in Supplier AB.",
+            "source_ids": ["news:21"],
+            "limitation_codes": [],
+        }
+    ]
+    structured["management_claims"] = [
+        {
+            "claim_id": "management_experience",
+            "domain": "management",
+            "predicate": "observation",
+            "value": "Management has institutional experience.",
+            "source_ids": ["news:21"],
+            "limitation_codes": [],
+        }
+    ]
+    structured["management_ledger"] = [
+        {
+            "claim_id": "management_execution_history",
+            "domain": "management",
+            "predicate": "outcome",
+            "value": "Management delivered the planned cost action.",
+            "source_ids": ["news:21"],
+            "limitation_codes": [],
+        }
+    ]
+
+    persisted = AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+        json.dumps(payload),
+        AgentCandidate(
+            rank=1,
+            company_id=42,
+            ticker="TEST",
+            name="Testbolaget",
+            research_evidence={"documents": [{"source_id": "news:21"}]},
+        ),
+    )
+
+    assert persisted.company_fact_ledger.balance_sheet_and_capital_allocation[0].statement == (
+        "The company acquired a stake in Supplier AB."
+    )
+    assert persisted.management_claims[0].statement == (
+        "Management has institutional experience."
+    )
+    assert persisted.management_credibility_ledger[0].claim == (
+        "Management delivered the planned cost action."
+    )
 
 
 def test_v3_ownership_claim_uses_exact_packet_field_and_source_binding():

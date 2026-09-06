@@ -8,6 +8,7 @@ from kncompanyscraper.analysis.valuation.forward_scenario import (
 from kncompanyscraper.analysis.agent.conclusion_contract import (
     OWNERSHIP_MEASURES,
     OWNERSHIP_FIELD_REGISTRY,
+    STRUCTURED_CASE_REFS,
     StructuredConclusions,
 )
 
@@ -624,13 +625,20 @@ _TYPED_CLAIM = {
         "status | observation | mechanism | threshold | baseline | outcome | "
         "assessment | source_gap | direction | event | relation"
     ),
-    "value": "number | string | boolean | null",
+    "value": (
+        "number | boolean | null | resilient | mixed | variable | unassessable | "
+        "plausible | demanding | unsupported"
+    ),
     "source_ids": ["string"],
     "limitation_codes": ["string"],
 }
+_TYPED_FACT_CLAIM = {
+    **_TYPED_CLAIM,
+    "value": "number | string | boolean | null",
+}
 _STRUCTURED_CONCLUSIONS = {
     "headline_case": {
-        "case_ref": "string",
+        "case_ref": " | ".join(STRUCTURED_CASE_REFS),
         "horizon_months": "integer",
         "revenue_mechanism": (
             "organic_growth | price | volume | acquisition | recurring | variable | "
@@ -641,19 +649,19 @@ _STRUCTURED_CONCLUSIONS = {
         "break_condition": _TYPED_CLAIM,
     },
     "falsifiable_case": {
-        "case_ref": "string",
+        "case_ref": " | ".join(STRUCTURED_CASE_REFS),
         "horizon_months": "integer",
         "baseline_refs": ["string"],
         "falsification": _TYPED_CLAIM,
     },
-    "evidence_claims": [_TYPED_CLAIM],
+    "evidence_claims": [_TYPED_FACT_CLAIM],
     "break_tests": [_TYPED_CLAIM],
-    "management_claims": [_TYPED_CLAIM],
-    "management_ledger": [_TYPED_CLAIM],
-    "company_facts": [_TYPED_CLAIM],
-    "business_model_facts": [_TYPED_CLAIM],
-    "margin_facts": [_TYPED_CLAIM],
-    "timing_facts": [_TYPED_CLAIM],
+    "management_claims": [_TYPED_FACT_CLAIM],
+    "management_ledger": [_TYPED_FACT_CLAIM],
+    "company_facts": [_TYPED_FACT_CLAIM],
+    "business_model_facts": [_TYPED_FACT_CLAIM],
+    "margin_facts": [_TYPED_FACT_CLAIM],
+    "timing_facts": [_TYPED_FACT_CLAIM],
     "limitation_codes": ["string"],
     "trigger": _NullableObjectContract(_TYPED_CLAIM),
     "revenue_resilience": _TYPED_CLAIM,

@@ -97,6 +97,13 @@ NO_OWNERSHIP_LIQUIDITY_ASSESSMENT = (
     "No inference can be made from their absence."
 )
 
+STRUCTURED_CASE_REFS = (
+    "fundamental_case",
+    "revenue_growth_case",
+    "margin_expansion_case",
+    "unassessable_case",
+)
+
 
 def ownership_field(measure: str) -> OwnershipField:
     try:
@@ -123,8 +130,14 @@ def packet_value(packet: dict, field: OwnershipField) -> Any:
 
 def render_structured_headline(conclusions: dict) -> str:
     headline = conclusions["headline_case"]
+    case_label = {
+        "fundamental_case": "Fundamental case",
+        "revenue_growth_case": "Revenue-growth case",
+        "margin_expansion_case": "Margin-expansion case",
+        "unassessable_case": "Unassessable case",
+    }[headline["case_ref"]]
     return (
-        f"{headline['case_ref']} over {headline['horizon_months']} months; "
+        f"{case_label} over {headline['horizon_months']} months; "
         f"mechanism={headline['revenue_mechanism']}; "
         f"profitability={headline['profitability_state']}."
     )
