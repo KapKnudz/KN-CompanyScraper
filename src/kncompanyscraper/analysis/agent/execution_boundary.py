@@ -50,6 +50,16 @@ class PersistedStockAnalysis:
     result: StockAnalysisResult
 
 
+def _ownership_measure_source_ids(ownership_liquidity: dict) -> set[str]:
+    return {
+        source_id
+        for source_ids in (
+            ownership_liquidity.get("source_ids_by_measure") or {}
+        ).values()
+        for source_id in source_ids
+    }
+
+
 class AgentExecutionBoundary:
     VALIDATION_VERSION = "agent-boundary-v23-ownership-source-contract"
     VERDICT_POLICY_VERSION = VERDICT_COHERENCE_POLICY_VERSION
@@ -110,6 +120,12 @@ class AgentExecutionBoundary:
         ownership_liquidity_source_ids = set(
             ownership_liquidity.get("source_ids", [])
         )
+        ownership_measure_source_ids = (
+            _ownership_measure_source_ids(ownership_liquidity)
+            if result.thesis_card_version
+            == "individual-thesis-card-v3-structured-conclusions"
+            else ownership_liquidity_source_ids
+        )
         evidence_catalog = build_evidence_catalog(
             candidate.full_results, research_evidence
         )
@@ -136,7 +152,7 @@ class AgentExecutionBoundary:
                 result,
                 document_source_ids=document_source_ids,
                 insider_source_ids=insider_source_ids,
-                ownership_liquidity_source_ids=ownership_liquidity_source_ids,
+                ownership_liquidity_source_ids=ownership_measure_source_ids,
                 ownership_liquidity=ownership_liquidity,
             ),
             lambda: self._validate_activated_case(result, candidate),
@@ -210,6 +226,14 @@ class AgentExecutionBoundary:
             candidate.research_evidence.get("ownership_liquidity", {}).get(
                 "source_ids", []
             )
+        )
+        ownership_measure_source_ids = (
+            _ownership_measure_source_ids(
+                candidate.research_evidence.get("ownership_liquidity", {})
+            )
+            if result.thesis_card_version
+            == "individual-thesis-card-v3-structured-conclusions"
+            else ownership_liquidity_source_ids
         )
         document_source_ids.update(
             candidate.research_evidence.get("prior_document_source_ids", [])
@@ -357,7 +381,7 @@ class AgentExecutionBoundary:
             result,
             document_source_ids=document_source_ids,
             insider_source_ids=insider_source_ids,
-            ownership_liquidity_source_ids=ownership_liquidity_source_ids,
+            ownership_liquidity_source_ids=ownership_measure_source_ids,
             ownership_liquidity=candidate.research_evidence.get(
                 "ownership_liquidity", {}
             ),
@@ -497,10 +521,10 @@ class AgentExecutionBoundary:
 
         warnings = list(deterministic_warnings)
         ownership_checks = []
-        if ownership_liquidity_source_ids:
+        if ownership_measure_source_ids:
             ownership_checks.append(
                 "ownership/liquidity assessment uses supplied deterministic evidence "
-                f"({len(ownership_liquidity_source_ids)} source IDs available)"
+                f"({len(ownership_measure_source_ids)} source IDs available)"
             )
             if result.ownership_claims and all(
                 isinstance(claim, OwnershipClaim) for claim in result.ownership_claims

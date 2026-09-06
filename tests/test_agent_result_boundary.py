@@ -1976,6 +1976,36 @@ def test_v3_ownership_claim_uses_exact_packet_field_and_source_binding():
     assert isinstance(parsed.ownership_claims[0], OwnershipClaim)
 
 
+def test_v3_empty_ownership_source_map_ignores_aggregate_source_ids():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    result.ownership_claims = []
+    result.ownership_and_flow_assessment = ""
+    candidate = AgentCandidate(
+        rank=1,
+        company_id=42,
+        ticker="TEST",
+        name="Testbolaget",
+        research_evidence={
+            "documents": [{"source_id": "news:21"}],
+            "ownership_liquidity": {
+                "source_ids": ["legacy:ownership"],
+                "source_ids_by_measure": {},
+            },
+        },
+    )
+
+    parsed = AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+        _v3_qualitative_response(result), candidate
+    )
+
+    assert parsed.ownership_claims == []
+    assert parsed.ownership_and_flow_assessment == (
+        "Ownership and liquidity evidence are unavailable. "
+        "No inference can be made from their absence."
+    )
+
+
 def test_v3_ownership_binding_requires_complete_multi_source_set():
     result = valid_result()
     result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
