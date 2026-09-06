@@ -1909,6 +1909,21 @@ class AgentExecutionBoundary:
         structured = result.structured_conclusions
         if structured is None:
             return set()
+        required_break_types = {
+            "revenue_or_demand",
+            "margin_or_execution",
+            "balance_sheet_or_dilution",
+            "management_credibility",
+            "valuation_overshoot",
+            "superior_evidence_or_opportunity",
+        }
+        actual_break_types = {
+            test.break_type for test in structured.thesis_break_tests
+        }
+        if actual_break_types != required_break_types:
+            raise StockAnalysisValidationError(
+                "structured conclusions must contain exactly one typed break test for each required type"
+            )
         payload = asdict(structured)
         source_ids = set()
         claim_ids = set()

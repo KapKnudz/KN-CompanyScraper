@@ -320,7 +320,13 @@ def _typed_trigger(value: dict):
 
 def _structured_conclusions_from_payload(value: dict) -> StructuredConclusions:
     from kncompanyscraper.analysis.agent.conclusion_contract import (
-        FalsifiableCaseComponent, HeadlineCase,
+        FalsifiableCaseComponent,
+        HeadlineCase,
+        TypedBreakTest,
+        TypedDecisiveEvidence,
+        TypedMissingInformation,
+        TypedReconsiderationTrigger,
+        TypedTriggerEvidence,
     )
     headline = value["headline_case"]
     falsifiable = value["falsifiable_case"]
@@ -345,6 +351,61 @@ def _structured_conclusions_from_payload(value: dict) -> StructuredConclusions:
         business_model_facts=tuple(_typed_claim(item) for item in value["business_model_facts"]),
         margin_facts=tuple(_typed_claim(item) for item in value["margin_facts"]),
         timing_facts=tuple(_typed_claim(item) for item in value["timing_facts"]),
+        strongest_confirming_evidence=(
+            TypedDecisiveEvidence(
+                claim=_typed_claim(value["strongest_confirming_evidence"]["claim"]),
+                relevance_code=value["strongest_confirming_evidence"]["relevance_code"],
+            )
+            if value["strongest_confirming_evidence"] is not None
+            else None
+        ),
+        strongest_disconfirming_evidence=(
+            TypedDecisiveEvidence(
+                claim=_typed_claim(value["strongest_disconfirming_evidence"]["claim"]),
+                relevance_code=value["strongest_disconfirming_evidence"]["relevance_code"],
+            )
+            if value["strongest_disconfirming_evidence"] is not None
+            else None
+        ),
+        thesis_break_tests=tuple(
+            TypedBreakTest(
+                break_type=item["break_type"],
+                condition_code=item["condition_code"],
+                observable_metric_code=item["observable_metric_code"],
+                threshold_code=item["threshold_code"],
+                response=item["response"],
+                source_ids=tuple(item["source_ids"]),
+                limitation_codes=tuple(item["limitation_codes"]),
+            )
+            for item in value["thesis_break_tests"]
+        ),
+        missing_information_details=tuple(
+            TypedMissingInformation(
+                item_code=item["item_code"],
+                limitation_class=item["limitation_class"],
+                impact_code=item["impact_code"],
+            )
+            for item in value["missing_information_details"]
+        ),
+        reconsideration_trigger=(
+            TypedReconsiderationTrigger(
+                trigger_code=value["reconsideration_trigger"]["trigger_code"],
+                source_ids=tuple(value["reconsideration_trigger"]["source_ids"]),
+                limitation_codes=tuple(
+                    value["reconsideration_trigger"]["limitation_codes"]
+                ),
+            )
+            if value["reconsideration_trigger"] is not None
+            else None
+        ),
+        trigger_evidence=tuple(
+            TypedTriggerEvidence(
+                claim=_typed_claim(item["claim"]),
+                status=item["status"],
+                rationale_code=item["rationale_code"],
+            )
+            for item in value["trigger_evidence"]
+        ),
         limitation_codes=tuple(value["limitation_codes"]),
         trigger=_typed_trigger(value["trigger"]) if value["trigger"] is not None else None,
         revenue_resilience=_typed_claim(value["revenue_resilience"]),

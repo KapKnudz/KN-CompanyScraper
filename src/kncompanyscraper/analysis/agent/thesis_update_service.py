@@ -181,8 +181,11 @@ class ThesisUpdateExecutionBoundary:
     def _validate_trigger_progress(update, context):
         """Require incremental updates to evaluate, not silently roll, a trigger."""
         current = context.current_thesis.get("content") or {}
-        if current.get("verdict") != "latent_case" or not current.get(
-            "activation_trigger_spec"
+        current_structured = current.get("structured_conclusions") or {}
+        current_trigger = current_structured.get("trigger")
+        current_spec = current.get("activation_trigger_spec")
+        if current.get("verdict") != "latent_case" or not (
+            current_trigger or current_spec
         ):
             return
         if update.impact == "full_reassessment_required":
@@ -206,17 +209,21 @@ class ThesisUpdateExecutionBoundary:
                 "incremental update must evaluate the stored activation trigger with new evidence"
             )
 
-        current_spec = current["activation_trigger_spec"]
         updated_spec = update.thesis.activation_trigger_spec
         same_trigger = (
             updated_spec is not None
-            and ThesisUpdateExecutionBoundary._trigger_identity(current_spec)
+            and ThesisUpdateExecutionBoundary._trigger_identity(
+                current_trigger or current_spec
+            )
             == ThesisUpdateExecutionBoundary._trigger_identity(updated_spec)
         )
         timing_changed = (
             updated_spec is not None
             and any(
-                current_spec.get(field) != getattr(updated_spec, field)
+                ThesisUpdateExecutionBoundary._trigger_field(
+                    current_trigger or current_spec, field
+                )
+                != getattr(updated_spec, field)
                 for field in ("evidence_window", "observation_requirement")
             )
         )
@@ -236,10 +243,49 @@ class ThesisUpdateExecutionBoundary:
             )
     @staticmethod
     def _trigger_identity(spec):
+        if isinstance(spec, dict) and "unresolved_claim_code" in spec:
+            fields = (
+                "unresolved_claim_code",
+                "observable_metric_code",
+                "threshold_code",
+            )
+            return tuple(
+                ThesisUpdateExecutionBoundary._trigger_code_text(spec.get(field))
+                for field in fields
+            )
         fields = ("unresolved_claim", "observable_metric_or_event", "threshold_or_direction")
         if isinstance(spec, dict):
             return tuple(spec.get(field) for field in fields)
         return tuple(getattr(spec, field) for field in fields)
+
+    @staticmethod
+    def _trigger_field(spec, field):
+        if isinstance(spec, dict) and "unresolved_claim_code" in spec:
+            value = spec.get(
+                {
+                    "evidence_window": "evidence_window",
+                    "observation_requirement": "observation_requirement",
+                }[field]
+            )
+            if field == "evidence_window":
+                return {
+                    "0_12m": "0-12 months",
+                    "12_24m": "12-24 months",
+                    "24_48m": "24-48 months",
+                    "uncertain": "uncertain",
+                }[value]
+            return {
+                "single_observation": "single observation",
+                "repeated_observations": "repeated observations",
+            }[value]
+        fields = ("unresolved_claim", "observable_metric_or_event", "threshold_or_direction")
+        if isinstance(spec, dict):
+            return spec.get(field)
+        return getattr(spec, field)
+
+    @staticmethod
+    def _trigger_code_text(value):
+        return value.replace("_", " ").replace("-", " ")
 
 
 class ThesisUpdateService:

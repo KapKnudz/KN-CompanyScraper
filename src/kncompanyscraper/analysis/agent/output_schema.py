@@ -688,6 +688,62 @@ _STRUCTURED_TRIGGER = {
     "source_ids": ["string"],
     "limitation_codes": ["string"],
 }
+_STRUCTURED_DECISIVE_EVIDENCE = {
+    "claim": _TYPED_CLAIM,
+    "relevance_code": (
+        "baseline_support | mechanism_support | downside_exposure | "
+        "thesis_break_signal | evidence_quality"
+    ),
+}
+_STRUCTURED_BREAK_TEST = {
+    "break_type": (
+        "revenue_or_demand | margin_or_execution | balance_sheet_or_dilution | "
+        "management_credibility | valuation_overshoot | superior_evidence_or_opportunity"
+    ),
+    "condition_code": (
+        "revenue_decline | demand_loss | margin_decline | execution_failure | "
+        "debt_increase | dilution | management_miss | valuation_expansion | "
+        "superior_evidence"
+    ),
+    "observable_metric_code": (
+        "revenue | sales | ebit_margin | gross_margin | free_cash_flow | "
+        "net_debt | share_price | valuation | multiple | customers | churn | "
+        "management_guidance | new_evidence"
+    ),
+    "threshold_code": (
+        "above_0_percent | above_5_percent | above_10_percent | above_15_percent | "
+        "below_5_percent | below_10_percent | below_15_percent | reaches_entry_level | "
+        "exceeds_baseline | maintains_positive | remains_positive | improves | declines"
+    ),
+    "response": "reassess | reduce | sell",
+    "source_ids": ["string"],
+    "limitation_codes": ["string"],
+}
+_STRUCTURED_MISSING_INFORMATION = {
+    "item_code": (
+        "missing_revenue_evidence | missing_cash_flow_history | "
+        "missing_current_price | missing_operating_baseline | "
+        "missing_management_history | missing_documentary_support | "
+        "missing_ownership_data | missing_valuation_inputs"
+    ),
+    "limitation_class": "core | supplemental",
+    "impact_code": "conclusion_limited | context_limited",
+}
+_STRUCTURED_RECONSIDERATION_TRIGGER = {
+    "trigger_code": (
+        "valuation_entry | evidence_recovery | operating_recovery | "
+        "balance_sheet_recovery"
+    ),
+    "source_ids": ["string"],
+    "limitation_codes": ["string"],
+}
+_STRUCTURED_TRIGGER_EVIDENCE = {
+    "claim": _TYPED_CLAIM,
+    "status": "confirms | weakens | unresolved",
+    "rationale_code": (
+        "metric_met | metric_missed | inconclusive | persistence_unresolved"
+    ),
+}
 _STRUCTURED_CONCLUSIONS = {
     "headline_case": {
         "case_ref": " | ".join(STRUCTURED_CASE_REFS),
@@ -714,6 +770,18 @@ _STRUCTURED_CONCLUSIONS = {
     "business_model_facts": [_TYPED_CLAIM],
     "margin_facts": [_TYPED_CLAIM],
     "timing_facts": [_TYPED_CLAIM],
+    "strongest_confirming_evidence": _nullable_object_contract(
+        _STRUCTURED_DECISIVE_EVIDENCE
+    ),
+    "strongest_disconfirming_evidence": _nullable_object_contract(
+        _STRUCTURED_DECISIVE_EVIDENCE
+    ),
+    "thesis_break_tests": [_STRUCTURED_BREAK_TEST],
+    "missing_information_details": [_STRUCTURED_MISSING_INFORMATION],
+    "reconsideration_trigger": _nullable_object_contract(
+        _STRUCTURED_RECONSIDERATION_TRIGGER
+    ),
+    "trigger_evidence": [_STRUCTURED_TRIGGER_EVIDENCE],
     "limitation_codes": ["string"],
     "trigger": _NullableObjectContract(_STRUCTURED_TRIGGER),
     "revenue_resilience": _TYPED_CLAIM,

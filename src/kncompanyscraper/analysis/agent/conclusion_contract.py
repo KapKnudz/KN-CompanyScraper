@@ -46,6 +46,44 @@ class TypedTrigger:
 
 
 @dataclass(frozen=True)
+class TypedDecisiveEvidence:
+    claim: TypedClaim
+    relevance_code: str
+
+
+@dataclass(frozen=True)
+class TypedBreakTest:
+    break_type: str
+    condition_code: str
+    observable_metric_code: str
+    threshold_code: str
+    response: str
+    source_ids: tuple[str, ...]
+    limitation_codes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class TypedMissingInformation:
+    item_code: str
+    limitation_class: str
+    impact_code: str
+
+
+@dataclass(frozen=True)
+class TypedTriggerEvidence:
+    claim: TypedClaim
+    status: str
+    rationale_code: str
+
+
+@dataclass(frozen=True)
+class TypedReconsiderationTrigger:
+    trigger_code: str
+    source_ids: tuple[str, ...]
+    limitation_codes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class FalsifiableCaseComponent:
     case_ref: str
     horizon_months: int
@@ -75,6 +113,12 @@ class StructuredConclusions:
     business_model_facts: tuple[TypedClaim, ...]
     margin_facts: tuple[TypedClaim, ...]
     timing_facts: tuple[TypedClaim, ...]
+    strongest_confirming_evidence: TypedDecisiveEvidence | None
+    strongest_disconfirming_evidence: TypedDecisiveEvidence | None
+    thesis_break_tests: tuple[TypedBreakTest, ...]
+    missing_information_details: tuple[TypedMissingInformation, ...]
+    reconsideration_trigger: TypedReconsiderationTrigger | None
+    trigger_evidence: tuple[TypedTriggerEvidence, ...]
     limitation_codes: tuple[str, ...]
     trigger: TypedTrigger | None
     revenue_resilience: TypedClaim
@@ -238,6 +282,26 @@ def project_structured_conclusions(
         "valuation_expectations": [],
         "risks_and_disconfirming_evidence": [],
     }
+    strongest_confirming_evidence = _project_decisive_evidence(
+        conclusions.get("strongest_confirming_evidence"), "confirming"
+    )
+    strongest_disconfirming_evidence = _project_decisive_evidence(
+        conclusions.get("strongest_disconfirming_evidence"), "disconfirming"
+    )
+    thesis_break_tests = [
+        _project_break_test(test) for test in conclusions["thesis_break_tests"]
+    ]
+    missing_information_details = [
+        _project_missing_information(detail)
+        for detail in conclusions["missing_information_details"]
+    ]
+    reconsideration_trigger = _project_reconsideration_trigger(
+        conclusions.get("reconsideration_trigger")
+    )
+    trigger_evidence = [
+        _project_trigger_evidence(entry)
+        for entry in conclusions["trigger_evidence"]
+    ]
     resilience = conclusions["revenue_resilience"]
     trigger = conclusions.get("trigger")
     trigger_projection = _project_trigger(trigger) if trigger is not None else {
@@ -295,9 +359,9 @@ def project_structured_conclusions(
         },
         "confidence_limitations": list(conclusions["limitation_codes"]),
         "company_fact_ledger": company_fact_ledger,
-        "reconsideration_trigger": None,
+        "reconsideration_trigger": reconsideration_trigger,
         **trigger_projection,
-        "activation_trigger_evidence": [],
+        "activation_trigger_evidence": trigger_evidence,
         "reverse_dcf_expectation_rationale": (
             "Typed reverse-DCF assessment: "
             + conclusions["reverse_dcf_assessment"]
@@ -342,11 +406,13 @@ def project_structured_conclusions(
         "thesis_break_conditions": [
             _claim_text(claim) for claim in conclusions["break_tests"]
         ],
-        "strongest_confirming_evidence": None,
-        "strongest_disconfirming_evidence": None,
-        "thesis_break_tests": [],
-        "missing_information": list(conclusions["limitation_codes"]),
-        "missing_information_details": [],
+        "strongest_confirming_evidence": strongest_confirming_evidence,
+        "strongest_disconfirming_evidence": strongest_disconfirming_evidence,
+        "thesis_break_tests": thesis_break_tests,
+        "missing_information": [
+            detail["item"] for detail in missing_information_details
+        ],
+        "missing_information_details": missing_information_details,
         "citations": [],
     }
 
@@ -391,6 +457,70 @@ def _project_trigger(trigger: dict) -> dict:
 
 def _code_text(value: str) -> str:
     return value.replace("_", " ").replace("-", " ")
+
+
+def _project_decisive_evidence(evidence: dict | None, side: str) -> dict | None:
+    if evidence is None:
+        return None
+    relevance = {
+        "baseline_support": "It establishes the current baseline for the case.",
+        "mechanism_support": "It supports the stated business mechanism.",
+        "downside_exposure": "It identifies a decision-relevant downside exposure.",
+        "thesis_break_signal": "It is a decision-relevant signal against the thesis.",
+        "evidence_quality": "It is decision-relevant because it improves evidence quality.",
+    }[evidence["relevance_code"]]
+    claim = evidence["claim"]
+    return {
+        "statement": _claim_text(claim),
+        "why_it_matters": relevance,
+        "source_ids": list(claim["source_ids"]),
+    }
+
+
+def _project_break_test(test: dict) -> dict:
+    return {
+        "break_type": test["break_type"],
+        "condition": _code_text(test["condition_code"]),
+        "observable_metric_or_event": _code_text(test["observable_metric_code"]),
+        "threshold_or_direction": _code_text(test["threshold_code"]),
+        "response": test["response"],
+        "source_ids": list(test["source_ids"]),
+    }
+
+
+def _project_missing_information(detail: dict) -> dict:
+    item = _code_text(detail["item_code"])
+    impact = {
+        "conclusion_limited": "This missing input can affect the fundamental company conclusion.",
+        "context_limited": "This missing input limits context but does not by itself establish a broken fundamental case.",
+    }[detail["impact_code"]]
+    return {
+        "item": item,
+        "limitation_class": detail["limitation_class"],
+        "impact": impact,
+    }
+
+
+def _project_reconsideration_trigger(trigger: dict | None) -> str | None:
+    if trigger is None:
+        return None
+    return _code_text(trigger["trigger_code"])
+
+
+def _project_trigger_evidence(entry: dict) -> dict:
+    rationale = {
+        "metric_met": "The observation meets the named trigger condition.",
+        "metric_missed": "The observation does not meet the named trigger condition.",
+        "inconclusive": "The observation is relevant but does not resolve the trigger.",
+        "persistence_unresolved": "The observation leaves the stated persistence risk unresolved.",
+    }[entry["rationale_code"]]
+    claim = entry["claim"]
+    return {
+        "evidence_item": _claim_text(claim),
+        "status": entry["status"],
+        "rationale": rationale,
+        "source_ids": list(claim["source_ids"]),
+    }
 
 
 def _project_claim(claim: dict, evidence_kind: str) -> dict:

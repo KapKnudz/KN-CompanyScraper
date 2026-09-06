@@ -1476,6 +1476,42 @@ def _v3_qualitative_response(result):
         "evidence_claims": [], "break_tests": [], "management_claims": [],
         "management_ledger": [], "company_facts": [], "business_model_facts": [],
         "margin_facts": [], "timing_facts": [], "limitation_codes": ["missing_revenue_evidence"],
+        "strongest_confirming_evidence": {
+            "claim": claim("confirming", "revenue", "observation", "supported", ["news:21"]),
+            "relevance_code": "baseline_support",
+        },
+        "strongest_disconfirming_evidence": {
+            "claim": claim("disconfirming", "risk", "observation", "unsupported", ["news:21"]),
+            "relevance_code": "downside_exposure",
+        },
+        "thesis_break_tests": [
+            {
+                "break_type": break_type,
+                "condition_code": condition_code,
+                "observable_metric_code": metric_code,
+                "threshold_code": "below_10_percent",
+                "response": "reassess",
+                "source_ids": ["news:21"],
+                "limitation_codes": [],
+            }
+            for break_type, condition_code, metric_code in (
+                ("revenue_or_demand", "revenue_decline", "revenue"),
+                ("margin_or_execution", "margin_decline", "ebit_margin"),
+                ("balance_sheet_or_dilution", "debt_increase", "net_debt"),
+                ("management_credibility", "management_miss", "management_guidance"),
+                ("valuation_overshoot", "valuation_expansion", "valuation"),
+                ("superior_evidence_or_opportunity", "superior_evidence", "new_evidence"),
+            )
+        ],
+        "missing_information_details": [
+            {
+                "item_code": "missing_revenue_evidence",
+                "limitation_class": "core",
+                "impact_code": "conclusion_limited",
+            }
+        ],
+        "reconsideration_trigger": None,
+        "trigger_evidence": [],
         "trigger": None,
         "revenue_resilience": claim("resilience", "revenue", "assessment", "unassessable"),
         "reverse_dcf_assessment": "unassessable",
@@ -1627,6 +1663,11 @@ def test_v3_projection_preserves_management_and_capital_facts():
     assert persisted.management_credibility_ledger[0].claim == (
         "management execution: confirmed"
     )
+    assert persisted.strongest_confirming_evidence.why_it_matters == (
+        "It establishes the current baseline for the case."
+    )
+    assert len(persisted.thesis_break_tests) == 6
+    assert persisted.missing_information_details[0].limitation_class == "core"
 
 
 def test_v3_structured_trigger_projects_activation_contract():
