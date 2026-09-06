@@ -28,6 +28,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
 from kncompanyscraper.models.stored_analysis import StoredAnalysisDocument
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
+    parse_qualitative_stock_analysis_result,
     parse_stock_analysis_result,
 )
 from kncompanyscraper.analysis.valuation.forward_scenario import ForwardScenarioEngine
@@ -1537,6 +1538,7 @@ def test_v3_company_fact_cannot_carry_free_text_ownership_conclusion():
     payload["structured_conclusions"]["company_facts"] = [
         {
             "claim_id": "capital_allocation_fact",
+            "fact_code": "cash_balance",
             "domain": "balance_sheet",
             "predicate": "observation",
             "value": "The founder owns 20%.",
@@ -1566,9 +1568,10 @@ def test_v3_projection_preserves_management_and_capital_facts():
     structured["company_facts"] = [
         {
             "claim_id": "capital_allocation_fact",
+            "fact_code": "cash_balance",
             "domain": "balance_sheet",
             "predicate": "observation",
-            "value": "observed",
+            "value": 1250,
             "source_ids": ["news:21"],
             "limitation_codes": [],
         }
@@ -1576,9 +1579,10 @@ def test_v3_projection_preserves_management_and_capital_facts():
     structured["management_claims"] = [
         {
             "claim_id": "management_experience",
+            "fact_code": "tenure",
             "domain": "management",
             "predicate": "observation",
-            "value": "supported",
+            "value": 12,
             "source_ids": ["news:21"],
             "limitation_codes": [],
         }
@@ -1586,6 +1590,7 @@ def test_v3_projection_preserves_management_and_capital_facts():
     structured["management_ledger"] = [
         {
             "claim_id": "management_execution_history",
+            "fact_code": "execution",
             "domain": "management",
             "predicate": "outcome",
             "value": "confirmed",
@@ -1608,22 +1613,48 @@ def test_v3_projection_preserves_management_and_capital_facts():
     serialized = persisted.to_dict()
     assert "company_fact_ledger" not in serialized
     assert "management_claims" not in serialized
-    assert serialized["structured_conclusions"]["company_facts"][0]["value"] == (
-        "observed"
-    )
+    assert serialized["structured_conclusions"]["company_facts"][0]["value"] == 1250
 
     summary = StoredAnalysisDocument(
         {"content": serialized, "metadata": {}}
     ).thesis_summary
     assert summary["company_fact_ledger"]["balance_sheet_and_capital_allocation"][0][
         "statement"
-    ] == "balance_sheet observation: observed"
+    ] == "balance_sheet cash balance: 1250"
     assert summary["management_claims"][0]["statement"] == (
-        "management observation: supported"
+        "management tenure: 12"
     )
     assert persisted.management_credibility_ledger[0].claim == (
-        "management outcome: confirmed"
+        "management execution: confirmed"
     )
+
+
+def test_v3_structured_trigger_projects_activation_contract():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["structured_conclusions"]["trigger"] = {
+        "claim_id": "operating_trigger",
+        "trigger_type": "operating",
+        "unresolved_claim_code": "durable_recovery",
+        "observable_metric_code": "ebit_margin",
+        "threshold_code": "above_10_percent",
+        "evidence_window": "0_12m",
+        "single_observation_sufficient": True,
+        "observation_requirement": "single_observation",
+        "source_ids": ["news:21"],
+        "limitation_codes": [],
+    }
+
+    parsed = parse_qualitative_stock_analysis_result(json.dumps(payload))
+
+    assert parsed.latent_case_type == "operating"
+    assert parsed.activation_trigger == (
+        "Resolve durable recovery when ebit margin above 10 percent."
+    )
+    assert parsed.activation_trigger_spec.observable_metric_or_event == "ebit margin"
+    assert parsed.activation_trigger_spec.threshold_or_direction == "above 10 percent"
+    AgentExecutionBoundary._validate_activation_trigger(parsed)
 
 
 def test_v3_ownership_claim_uses_exact_packet_field_and_source_binding():

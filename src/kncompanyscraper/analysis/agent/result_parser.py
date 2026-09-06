@@ -229,6 +229,17 @@ def _validate_structured_claim_identifiers(value) -> None:
                 raise StockAnalysisValidationError(
                     "structured limitation codes must be code identifiers"
                 )
+        for field_name in (
+            "fact_code",
+            "unresolved_claim_code",
+            "observable_metric_code",
+            "threshold_code",
+        ):
+            code = value.get(field_name)
+            if code is not None and not _STRUCTURED_CLAIM_ID.fullmatch(code):
+                raise StockAnalysisValidationError(
+                    f"structured {field_name} must be a code identifier"
+                )
         for child in value.values():
             _validate_structured_claim_identifiers(child)
     elif isinstance(value, list):
@@ -282,6 +293,31 @@ def _typed_claim(value: dict) -> "TypedClaim":
     )
 
 
+def _typed_fact(value: dict):
+    from kncompanyscraper.analysis.agent.conclusion_contract import TypedFact
+    return TypedFact(
+        claim_id=value["claim_id"], fact_code=value["fact_code"],
+        domain=value["domain"], predicate=value["predicate"], value=value["value"],
+        source_ids=tuple(value["source_ids"]),
+        limitation_codes=tuple(value["limitation_codes"]),
+    )
+
+
+def _typed_trigger(value: dict):
+    from kncompanyscraper.analysis.agent.conclusion_contract import TypedTrigger
+    return TypedTrigger(
+        claim_id=value["claim_id"], trigger_type=value["trigger_type"],
+        unresolved_claim_code=value["unresolved_claim_code"],
+        observable_metric_code=value["observable_metric_code"],
+        threshold_code=value["threshold_code"],
+        evidence_window=value["evidence_window"],
+        single_observation_sufficient=value["single_observation_sufficient"],
+        observation_requirement=value["observation_requirement"],
+        source_ids=tuple(value["source_ids"]),
+        limitation_codes=tuple(value["limitation_codes"]),
+    )
+
+
 def _structured_conclusions_from_payload(value: dict) -> StructuredConclusions:
     from kncompanyscraper.analysis.agent.conclusion_contract import (
         FalsifiableCaseComponent, HeadlineCase,
@@ -303,14 +339,14 @@ def _structured_conclusions_from_payload(value: dict) -> StructuredConclusions:
         ),
         evidence_claims=tuple(_typed_claim(item) for item in value["evidence_claims"]),
         break_tests=tuple(_typed_claim(item) for item in value["break_tests"]),
-        management_claims=tuple(_typed_claim(item) for item in value["management_claims"]),
-        management_ledger=tuple(_typed_claim(item) for item in value["management_ledger"]),
-        company_facts=tuple(_typed_claim(item) for item in value["company_facts"]),
+        management_claims=tuple(_typed_fact(item) for item in value["management_claims"]),
+        management_ledger=tuple(_typed_fact(item) for item in value["management_ledger"]),
+        company_facts=tuple(_typed_fact(item) for item in value["company_facts"]),
         business_model_facts=tuple(_typed_claim(item) for item in value["business_model_facts"]),
         margin_facts=tuple(_typed_claim(item) for item in value["margin_facts"]),
         timing_facts=tuple(_typed_claim(item) for item in value["timing_facts"]),
         limitation_codes=tuple(value["limitation_codes"]),
-        trigger=_typed_claim(value["trigger"]) if value["trigger"] is not None else None,
+        trigger=_typed_trigger(value["trigger"]) if value["trigger"] is not None else None,
         revenue_resilience=_typed_claim(value["revenue_resilience"]),
         reverse_dcf_assessment=value["reverse_dcf_assessment"],
     )

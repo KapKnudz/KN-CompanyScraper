@@ -639,6 +639,35 @@ _TYPED_CLAIM = {
     "source_ids": ["string"],
     "limitation_codes": ["string"],
 }
+_TYPED_FACT = {
+    "claim_id": "string",
+    "fact_code": (
+        "cash_balance | debt_balance | working_capital | acquisition | capex | "
+        "buyback | dividend | dilution | capital_allocation_policy | tenure | "
+        "incentive_alignment | execution | governance | guidance | management_change"
+    ),
+    "domain": "balance_sheet | management",
+    "predicate": "observation | outcome | relation | status",
+    "value": (
+        "number | boolean | null | observed | supported | unsupported | unavailable | "
+        "positive | negative | mixed | confirmed | unconfirmed | unchanged | "
+        "improving | deteriorating | resilient | variable | unassessable"
+    ),
+    "source_ids": ["string"],
+    "limitation_codes": ["string"],
+}
+_STRUCTURED_TRIGGER = {
+    "claim_id": "string",
+    "trigger_type": "price | operating",
+    "unresolved_claim_code": "string",
+    "observable_metric_code": "string",
+    "threshold_code": "string",
+    "evidence_window": "0_12m | 12_24m | 24_48m | uncertain",
+    "single_observation_sufficient": "boolean",
+    "observation_requirement": "single_observation | repeated_observations",
+    "source_ids": ["string"],
+    "limitation_codes": ["string"],
+}
 _STRUCTURED_CONCLUSIONS = {
     "headline_case": {
         "case_ref": " | ".join(STRUCTURED_CASE_REFS),
@@ -659,14 +688,14 @@ _STRUCTURED_CONCLUSIONS = {
     },
     "evidence_claims": [_TYPED_CLAIM],
     "break_tests": [_TYPED_CLAIM],
-    "management_claims": [_TYPED_CLAIM],
-    "management_ledger": [_TYPED_CLAIM],
-    "company_facts": [_TYPED_CLAIM],
+    "management_claims": [_TYPED_FACT],
+    "management_ledger": [_TYPED_FACT],
+    "company_facts": [_TYPED_FACT],
     "business_model_facts": [_TYPED_CLAIM],
     "margin_facts": [_TYPED_CLAIM],
     "timing_facts": [_TYPED_CLAIM],
     "limitation_codes": ["string"],
-    "trigger": _NullableObjectContract(_TYPED_CLAIM),
+    "trigger": _NullableObjectContract(_STRUCTURED_TRIGGER),
     "revenue_resilience": _TYPED_CLAIM,
     "reverse_dcf_assessment": "plausible | demanding | unsupported | unassessable",
 }

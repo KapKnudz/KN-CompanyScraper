@@ -21,6 +21,31 @@ class TypedClaim:
 
 
 @dataclass(frozen=True)
+class TypedFact:
+    claim_id: str
+    fact_code: str
+    domain: str
+    predicate: str
+    value: int | float | str | bool | None
+    source_ids: tuple[str, ...]
+    limitation_codes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class TypedTrigger:
+    claim_id: str
+    trigger_type: str
+    unresolved_claim_code: str
+    observable_metric_code: str
+    threshold_code: str
+    evidence_window: str
+    single_observation_sufficient: bool
+    observation_requirement: str
+    source_ids: tuple[str, ...]
+    limitation_codes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class FalsifiableCaseComponent:
     case_ref: str
     horizon_months: int
@@ -44,14 +69,14 @@ class StructuredConclusions:
     falsifiable_case: FalsifiableCaseComponent
     evidence_claims: tuple[TypedClaim, ...]
     break_tests: tuple[TypedClaim, ...]
-    management_claims: tuple[TypedClaim, ...]
-    management_ledger: tuple[TypedClaim, ...]
-    company_facts: tuple[TypedClaim, ...]
+    management_claims: tuple[TypedFact, ...]
+    management_ledger: tuple[TypedFact, ...]
+    company_facts: tuple[TypedFact, ...]
     business_model_facts: tuple[TypedClaim, ...]
     margin_facts: tuple[TypedClaim, ...]
     timing_facts: tuple[TypedClaim, ...]
     limitation_codes: tuple[str, ...]
-    trigger: TypedClaim | None
+    trigger: TypedTrigger | None
     revenue_resilience: TypedClaim
     reverse_dcf_assessment: str
 
@@ -214,6 +239,12 @@ def project_structured_conclusions(
         "risks_and_disconfirming_evidence": [],
     }
     resilience = conclusions["revenue_resilience"]
+    trigger = conclusions.get("trigger")
+    trigger_projection = _project_trigger(trigger) if trigger is not None else {
+        "activation_trigger": None,
+        "latent_case_type": None,
+        "activation_trigger_spec": None,
+    }
     return {
         "one_sentence_thesis": render_structured_headline(conclusions),
         "falsifiable_case": {
@@ -265,9 +296,7 @@ def project_structured_conclusions(
         "confidence_limitations": list(conclusions["limitation_codes"]),
         "company_fact_ledger": company_fact_ledger,
         "reconsideration_trigger": None,
-        "activation_trigger": None,
-        "latent_case_type": None,
-        "activation_trigger_spec": None,
+        **trigger_projection,
         "activation_trigger_evidence": [],
         "reverse_dcf_expectation_rationale": (
             "Typed reverse-DCF assessment: "
@@ -324,7 +353,44 @@ def project_structured_conclusions(
 
 def _claim_text(claim: dict) -> str:
     value = "unavailable" if claim["value"] is None else claim["value"]
-    return f"{claim['domain']} {claim['predicate']}: {value}"
+    subject = claim.get("fact_code", claim["predicate"]).replace("_", " ")
+    return f"{claim['domain']} {subject}: {value}"
+
+
+def _project_trigger(trigger: dict) -> dict:
+    unresolved_claim = _code_text(trigger["unresolved_claim_code"])
+    observable_metric = _code_text(trigger["observable_metric_code"])
+    threshold = _code_text(trigger["threshold_code"])
+    evidence_window = {
+        "0_12m": "0-12 months",
+        "12_24m": "12-24 months",
+        "24_48m": "24-48 months",
+        "uncertain": "uncertain",
+    }[trigger["evidence_window"]]
+    observation_requirement = {
+        "single_observation": "single observation",
+        "repeated_observations": "repeated observations",
+    }[trigger["observation_requirement"]]
+    return {
+        "activation_trigger": (
+            f"Resolve {unresolved_claim} when {observable_metric} {threshold}."
+        ),
+        "latent_case_type": trigger["trigger_type"],
+        "activation_trigger_spec": {
+            "unresolved_claim": unresolved_claim,
+            "observable_metric_or_event": observable_metric,
+            "threshold_or_direction": threshold,
+            "evidence_window": evidence_window,
+            "single_observation_sufficient": trigger[
+                "single_observation_sufficient"
+            ],
+            "observation_requirement": observation_requirement,
+        },
+    }
+
+
+def _code_text(value: str) -> str:
+    return value.replace("_", " ").replace("-", " ")
 
 
 def _project_claim(claim: dict, evidence_kind: str) -> dict:
