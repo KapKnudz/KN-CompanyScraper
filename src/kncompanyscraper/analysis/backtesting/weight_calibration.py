@@ -284,9 +284,9 @@ def _peer_neutral_correlation(period_rows, control: str) -> float:
 
 def _selection_key(metrics: WeightMetrics) -> tuple[float, float, float]:
     return (
-        metrics.top_excess,
-        metrics.top_bottom_spread,
-        metrics.score_return_correlation,
+        round(metrics.top_excess, 12),
+        round(metrics.top_bottom_spread, 12),
+        round(metrics.score_return_correlation, 12),
     )
 
 
