@@ -2,11 +2,17 @@ import json
 from hashlib import sha256
 from types import SimpleNamespace
 
+import pytest
+
 from kncompanyscraper.analysis.agent.agent_packet import (
     AgentCandidatePacket,
     serialize_packet,
 )
-from kncompanyscraper.analysis.agent.specialist_runner import ShadowSpecialistRunner
+from kncompanyscraper.analysis.agent.specialist_runner import (
+    FIRST_WAVE_SPECIALISTS,
+    ShadowSpecialistRunner,
+    SpecialistPromptBuilder,
+)
 
 
 def packet():
@@ -138,6 +144,28 @@ def test_shadow_runner_uses_frozen_hash_and_persists_non_authoritative_metadata(
     assert artifacts.saved[0]["metadata"]["packet_hash"] == frozen_hash
     assert artifacts.saved[0]["metadata"]["analysis_attempt"] == 1
     assert artifacts.validation == [(1, "accepted", None)]
+    assert "prompt_artifact" not in artifacts.saved[0]["metadata"]
+    assert len(artifacts.saved[0]["metadata"]["prompt_sha256"]) == 64
+
+
+def test_first_wave_prompt_selection_targets_one_closed_domain_per_agent():
+    for agent_name in FIRST_WAVE_SPECIALISTS:
+        prompt = SpecialistPromptBuilder().build(packet(), agent_name)
+        domain = agent_name.value
+
+        assert prompt.schema_name == f"specialist_{domain}"
+        assert domain in prompt.output_schema["required"]
+        assert prompt.output_schema["additionalProperties"] is False
+        assert prompt.output_schema["properties"][domain]["type"] == "object"
+        assert prompt.contract_version == "specialist-shadow-prompt-v2-first-wave"
+        assert domain in prompt.output_schema["properties"]["agent_name"]["enum"]
+
+
+def test_prompt_builder_does_not_select_second_wave_sell_conditions():
+    from kncompanyscraper.analysis.agent.output_schema import SpecialistAgentName
+
+    with pytest.raises(ValueError, match="no first-wave specialist prompt"):
+        SpecialistPromptBuilder().build(packet(), SpecialistAgentName.SELL_CONDITIONS)
 
 
 def test_parse_failure_is_recorded_and_does_not_raise():

@@ -17,7 +17,10 @@ from kncompanyscraper.analysis.agent.output_schema import (
 )
 from kncompanyscraper.analysis.agent.packet_measurement import measure_packet
 from kncompanyscraper.analysis.agent.prompt_artifact import serialize_prompt
-from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt
+from kncompanyscraper.analysis.agent.prompt_builder import (
+    AgentPrompt,
+    AgentPromptBuilder,
+)
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
     parse_specialist_output,
@@ -32,21 +35,14 @@ FIRST_WAVE_SPECIALISTS = (
     SpecialistAgentName.GROWTH_VALUATION,
 )
 
-_SPECIALIST_INSTRUCTIONS = {
-    SpecialistAgentName.BUSINESS_MODEL: (
-        "Assess business mechanics and understandability only."
-    ),
+_SPECIALIST_PROMPT_RESOURCES = {
+    SpecialistAgentName.BUSINESS_MODEL: "specialist_business_model_prompt.md",
     SpecialistAgentName.MANAGEMENT_CREDIBILITY: (
-        "Assess observable management execution and the coverage-tiered ledger only."
+        "specialist_management_credibility_prompt.md"
     ),
-    SpecialistAgentName.MARGIN: "Assess current and defensible margin mechanics only.",
-    SpecialistAgentName.INSIDER_OWNERSHIP: (
-        "Classify insider, ownership, liquidity, and flow evidence only."
-    ),
-    SpecialistAgentName.GROWTH_VALUATION: (
-        "Assess sourced growth and valuation expectations; do not calculate prices "
-        "or returns."
-    ),
+    SpecialistAgentName.MARGIN: "specialist_margin_prompt.md",
+    SpecialistAgentName.INSIDER_OWNERSHIP: "specialist_insider_ownership_prompt.md",
+    SpecialistAgentName.GROWTH_VALUATION: "specialist_growth_valuation_prompt.md",
 }
 
 
@@ -88,29 +84,44 @@ class ShadowSpecialistRun:
 class SpecialistPromptBuilder:
     """Build a narrow prompt while preserving the normal adapter seam."""
 
-    CONTRACT_VERSION = "specialist-shadow-prompt-v1"
+    CONTRACT_VERSION = "specialist-shadow-prompt-v2-first-wave"
     POLICY_NAME = "specialist-shadow-analysis"
     POLICY_VERSION = "1.0.0"
 
     def build(
         self, packet: AgentCandidatePacket | dict, agent_name: SpecialistAgentName
     ) -> AgentPrompt:
+        agent_name = SpecialistAgentName(agent_name)
+        try:
+            instruction_resource = _SPECIALIST_PROMPT_RESOURCES[agent_name]
+        except KeyError as exc:
+            raise ValueError(
+                f"no first-wave specialist prompt for agent {agent_name.value!r}"
+            ) from exc
+        instructions = AgentPromptBuilder._read_resource(
+            f"prompts/{instruction_resource}"
+        )
         packet_json = serialize_packet(packet)
         schema = specialist_output_json_schema(agent_name.value)
         return AgentPrompt(
             system=(
-                "You are a non-authoritative shadow specialist. Return only the closed "
-                "specialist-output-v1 JSON object. Do not emit a verdict, scenario "
-                "prices, returns, fair value, position size, or prose outside JSON. "
-                f"Your responsibility: {_SPECIALIST_INSTRUCTIONS[agent_name]} "
+                "You are a non-authoritative shadow specialist. Return exactly one "
+                "JSON object valid against the specialist-output-v1 schema supplied "
+                "for this request. Set agent_name exactly to "
+                f"{agent_name.value!r} and include only the "
+                f"{agent_name.value!r} domain payload. Do not emit markdown, prose "
+                "outside JSON, a verdict, activation decision, or position size.\n\n"
+                f"{instructions}\n"
                 "Use exact source IDs from the frozen packet and mark missing evidence "
                 "explicitly."
             ),
             user=(
-                f"Agent name: {agent_name.value}\n\n"
+                f"Agent name: {agent_name.value}\n"
+                f"Domain payload: {agent_name.value}\n\n"
                 "Frozen AgentCandidatePacket:\n"
                 f"{packet_json}\n\n"
-                "Return the specialist contract for this agent."
+                "Return only the complete specialist-output-v1 JSON object for this "
+                "agent and domain."
             ),
             policy_name=self.POLICY_NAME,
             policy_version=self.POLICY_VERSION,

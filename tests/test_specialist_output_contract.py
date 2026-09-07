@@ -88,6 +88,97 @@ def test_valid_specialist_output_parses_to_typed_objects():
     ]["required"] == ["coverage", "pattern_state", "ledger", "claims"]
 
 
+def _first_wave_payload(agent_name):
+    if agent_name == "management_credibility":
+        return _management_payload()
+    payload = {
+        "schema_version": "specialist-output-v1",
+        "run_id": "run-1",
+        "agent_name": agent_name,
+        "company_id": 42,
+        "ticker": "TEST",
+        "evidence_as_of": "2026-08-16",
+        "status": "complete",
+        "confidence": "low",
+        "confidence_cap": "low",
+        "claims": [],
+        "missing_information": [],
+        "packet_hash": "a" * 64,
+    }
+    payload[agent_name] = {
+        "business_model": {
+            "revenue_model_types": ["subscription"],
+            "recurring_revenue_profile": "partial",
+            "operating_leverage": "credible",
+            "circle_of_competence": "inside",
+            "profitability_state": "profitable",
+            "claims": [],
+        },
+        "margin": {
+            "margin_state": "early_evidence",
+            "current_ebit_margin": 0.08,
+            "defensible_peak_ebit_margin": 0.12,
+            "mechanism": "fixed-cost absorption",
+            "supporting_source_ids": ["financial:margin"],
+            "contrary_source_ids": [],
+            "margin_dependency": "secondary",
+        },
+        "insider_ownership": {
+            "insider_signal": "none",
+            "signal_strength": "none",
+            "flow_effect": "unassessable",
+            "event_claims": [],
+            "data_coverage": {
+                "insider": "empty",
+                "ownership": "partial",
+                "liquidity": "available",
+            },
+        },
+        "growth_valuation": {
+            "growth_state": "supported",
+            "revenue_mechanism": "recurring",
+            "reverse_dcf_assessment": "demanding",
+            "engine_dependency": "fundamental",
+            "scenario_bundles": [],
+            "claims": [],
+        },
+    }[agent_name]
+    return payload
+
+
+@pytest.mark.parametrize(
+    "agent_name",
+    [
+        "business_model",
+        "management_credibility",
+        "margin",
+        "insider_ownership",
+        "growth_valuation",
+    ],
+)
+def test_first_wave_representative_outputs_parse_for_their_domain(agent_name):
+    parsed = parse_specialist_output(json.dumps(_first_wave_payload(agent_name)))
+
+    assert parsed.agent_name.value == agent_name
+    assert getattr(parsed, agent_name) is not None
+
+
+def test_specialist_agent_name_cannot_use_another_domain_payload():
+    payload = _first_wave_payload("business_model")
+    payload["margin"] = {
+        "margin_state": "unassessable",
+        "current_ebit_margin": None,
+        "defensible_peak_ebit_margin": None,
+        "mechanism": "",
+        "supporting_source_ids": [],
+        "contrary_source_ids": [],
+        "margin_dependency": "none",
+    }
+
+    with pytest.raises(StockAnalysisValidationError):
+        parse_specialist_output(json.dumps(payload))
+
+
 def test_complete_specialist_output_requires_matching_domain_payload():
     payload = _management_payload()
     payload.pop("management_credibility")
