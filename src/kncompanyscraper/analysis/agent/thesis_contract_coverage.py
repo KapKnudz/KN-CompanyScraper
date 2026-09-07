@@ -1,5 +1,7 @@
 """Read-only coverage measurement for persisted thesis-card contracts."""
 
+from kncompanyscraper.models.stored_analysis import as_stored_analysis
+
 
 MEASUREMENT_VERSION = "thesis-contract-coverage-v2"
 THESIS_BREAK_TYPES = (
@@ -45,7 +47,7 @@ def build_falsifiable_case_coverage(analyses_by_company: dict[int, dict]) -> dic
 
 
 def _coverage_row(company_id: int, analysis: dict) -> dict:
-    content = analysis.get("content") or {}
+    content = as_stored_analysis(analysis)._projected_content()
     falsifiable = content.get("falsifiable_case") or {}
     if not isinstance(falsifiable, dict):
         falsifiable = {}

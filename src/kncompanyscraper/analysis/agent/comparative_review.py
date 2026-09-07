@@ -12,6 +12,7 @@ from kncompanyscraper.analysis.comparative_ranking import (
 )
 from kncompanyscraper.analysis.valuation.forward_scenario import ForwardRank
 from kncompanyscraper.analysis.policy_versions import comparative_ranking_policy_version
+from kncompanyscraper.models.stored_analysis import as_stored_analysis
 
 
 COMPARATIVE_REVIEW_CONTRACT = {
@@ -84,7 +85,7 @@ class ComparativeReviewPromptBuilder:
         ]
         for company_id in ordered_company_ids:
             stored = analyses_by_company[company_id]
-            content = stored["content"]
+            content = as_stored_analysis(stored)._projected_content()
             cases.append(
                 {
                     "company_id": company_id,
@@ -308,7 +309,7 @@ class ComparativeReviewService:
 
 
 def _known_source_ids(stored: dict) -> set[str]:
-    content = stored["content"]
+    content = as_stored_analysis(stored)._projected_content()
     source_ids = set((stored.get("metadata") or {}).get("evidence_source_ids") or [])
     source_ids.update(
         citation["source_id"]
@@ -327,6 +328,18 @@ def _known_source_ids(stored: dict) -> set[str]:
         for assumption in bundle.values():
             if isinstance(assumption, dict):
                 source_ids.update(assumption.get("source_ids") or [])
+
+    def collect_structured_source_ids(value):
+        if isinstance(value, dict):
+            source_ids.update(value.get("source_ids") or [])
+            source_ids.update(value.get("baseline_refs") or [])
+            for child in value.values():
+                collect_structured_source_ids(child)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                collect_structured_source_ids(child)
+
+    collect_structured_source_ids(content.get("structured_conclusions"))
     return source_ids
 
 

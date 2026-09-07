@@ -1,10 +1,23 @@
-# Individual thesis card v2
+# Individual thesis card v2 and v3
+
+`individual-thesis-card-v3-structured-conclusions` is the current authoritative
+contract. v2 cards remain immutable audit-only records and are not current
+ranking inputs. V3 model output is a closed typed conclusion graph; readable
+projections, including ownership output, are rendered at read time.
 
 `individual-thesis-card-v2` is the common company-level output contract. The
 individual analyst receives no peer conclusions and must analyze the supplied
 company on its own evidence. The same contract applies to general companies,
 property companies, and banks; unsupported valuation methods remain visibly
 unavailable rather than being replaced with model arithmetic.
+
+In v3, the model supplies `structured_conclusions`, composed of closed typed
+claim components with exact source IDs and no display strings, destinations, or
+free-text conclusion fields. The execution boundary validates this graph and
+renders readable projections at read time. Documentary ownership language is
+never promoted to ownership evidence; an empty generated ownership source map
+renders only the deterministic no-data assessment. The v2 fields described
+below remain a compatibility/audit representation and are not authoritative.
 
 `analysis_status` is separate from the investment `verdict`. A model-backed card
 can be persisted only with `analysis_status=complete`. Evidence-blocked and

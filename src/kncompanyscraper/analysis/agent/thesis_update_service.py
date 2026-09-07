@@ -1,17 +1,11 @@
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import json
 
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
-    parse_stock_analysis_result,
     parse_thesis_update_result,
 )
 from kncompanyscraper.analysis.agent.thesis_update import ThesisUpdatePromptBuilder
-from kncompanyscraper.analysis.agent.output_schema import (
-    BusinessModelProfile,
-    MarginExpansionCase,
-    TimingAssessment,
-)
 from kncompanyscraper.constants import RAW_RESPONSE_TRANSIENT_METADATA_KEYS
 
 
@@ -49,45 +43,27 @@ class ThesisUpdateExecutionBoundary:
                 "no_material_change cannot contain changed sections"
             )
         current_content = dict(context.current_thesis.get("content") or {})
-        if (
-            current_content.get("thesis_card_version") != "individual-thesis-card-v2"
-            and update.impact != "full_reassessment_required"
+        if current_content.get("thesis_card_version") != (
+            ThesisUpdatePromptBuilder.V3_THESIS_CARD_VERSION
         ):
+            if update.impact == "full_reassessment_required":
+                return PersistedThesisUpdate(update=update, persisted_analysis=None)
             raise StockAnalysisValidationError(
-                "v1 theses require a full reassessment before incremental updates"
+                "v2 theses are audit-only and require a full reassessment before incremental updates"
+            )
+        if update.thesis.thesis_card_version != ThesisUpdatePromptBuilder.V3_THESIS_CARD_VERSION:
+            raise StockAnalysisValidationError(
+                "v3 theses require v3 incremental updates"
             )
         self._validate_trigger_progress(update, context)
         if update.impact == "no_material_change":
-            current_content["forward_scenario_analysis"] = None
-            current_content.setdefault("confidence_limitations", [])
-            current_content.setdefault(
-                "thesis_card_version", "individual-thesis-card-v2"
-            )
             current_content["evidence_as_of"] = (
                 context.candidate.research_evidence.get("as_of")
             )
-            current_content.setdefault(
-                "business_model_profile", asdict(BusinessModelProfile())
-            )
-            current_content.setdefault(
-                "margin_expansion_case", asdict(MarginExpansionCase())
-            )
-            current_content.setdefault(
-                "timing_assessment", asdict(TimingAssessment())
-            )
-            current_content.setdefault(
-                "company_fact_ledger",
-                {
-                    "business_model": [],
-                    "revenue_drivers": [],
-                    "margins_and_operating_leverage": [],
-                    "balance_sheet_and_capital_allocation": [],
-                    "management_and_execution": [],
-                    "ownership_and_insiders": [],
-                    "valuation_expectations": [],
-                    "risks_and_disconfirming_evidence": [],
-                },
-            )
+            current_content.setdefault("scenario_bundles", [])
+            current_content["case_horizon_months"] = current_content[
+                "structured_conclusions"
+            ]["headline_case"]["horizon_months"]
             updated_content = update.thesis.to_dict()
             # A no-material-change response does not invoke the authoring model;
             # carry forward the last accepted assumptions so the stock boundary
@@ -95,23 +71,44 @@ class ThesisUpdateExecutionBoundary:
             updated_content["scenario_bundles"] = current_content.get(
                 "scenario_bundles", []
             )
-            if (
-                updated_content.get("company_fact_ledger")
-                != current_content.get("company_fact_ledger")
+            ignored_fields = {"activation_trigger_evidence"}
+            ignored_fields.update(
+                {
+                    "forward_scenario_analysis",
+                    "historical_forecast_table",
+                    "peak_margin_bridge",
+                    "scenario_driver_attribution",
+                }
+            )
+            comparison_content = dict(updated_content)
+            current_structured = current_content.get("structured_conclusions")
+            comparison_structured = comparison_content.get("structured_conclusions")
+            if isinstance(current_structured, dict) and isinstance(
+                comparison_structured, dict
             ):
-                updated_content["company_fact_ledger"] = current_content[
-                    "company_fact_ledger"
-                ]
-                update.thesis = parse_stock_analysis_result(
-                    json.dumps(updated_content, ensure_ascii=False)
+                comparison_structured = dict(comparison_structured)
+                comparison_structured["trigger_evidence"] = current_structured.get(
+                    "trigger_evidence", []
                 )
-            if updated_content != current_content:
+                comparison_content["structured_conclusions"] = comparison_structured
+            if comparison_content != current_content:
                 changed_fields = sorted(
                     key
                     for key in set(current_content) | set(updated_content)
                     if (
-                        current_content.get(key) != updated_content.get(key)
-                        and key != "activation_trigger_evidence"
+                        json.dumps(
+                            current_content.get(key),
+                            sort_keys=True,
+                            ensure_ascii=False,
+                            default=str,
+                        )
+                        != json.dumps(
+                            comparison_content.get(key),
+                            sort_keys=True,
+                            ensure_ascii=False,
+                            default=str,
+                        )
+                        and key not in ignored_fields
                     )
                 )
                 if changed_fields:
@@ -173,8 +170,11 @@ class ThesisUpdateExecutionBoundary:
     def _validate_trigger_progress(update, context):
         """Require incremental updates to evaluate, not silently roll, a trigger."""
         current = context.current_thesis.get("content") or {}
-        if current.get("verdict") != "latent_case" or not current.get(
-            "activation_trigger_spec"
+        current_structured = current.get("structured_conclusions") or {}
+        current_trigger = current_structured.get("trigger")
+        current_spec = current.get("activation_trigger_spec")
+        if current.get("verdict") != "latent_case" or not (
+            current_trigger or current_spec
         ):
             return
         if update.impact == "full_reassessment_required":
@@ -198,17 +198,21 @@ class ThesisUpdateExecutionBoundary:
                 "incremental update must evaluate the stored activation trigger with new evidence"
             )
 
-        current_spec = current["activation_trigger_spec"]
         updated_spec = update.thesis.activation_trigger_spec
         same_trigger = (
             updated_spec is not None
-            and ThesisUpdateExecutionBoundary._trigger_identity(current_spec)
+            and ThesisUpdateExecutionBoundary._trigger_identity(
+                current_trigger or current_spec
+            )
             == ThesisUpdateExecutionBoundary._trigger_identity(updated_spec)
         )
         timing_changed = (
             updated_spec is not None
             and any(
-                current_spec.get(field) != getattr(updated_spec, field)
+                ThesisUpdateExecutionBoundary._trigger_field(
+                    current_trigger or current_spec, field
+                )
+                != getattr(updated_spec, field)
                 for field in ("evidence_window", "observation_requirement")
             )
         )
@@ -228,10 +232,49 @@ class ThesisUpdateExecutionBoundary:
             )
     @staticmethod
     def _trigger_identity(spec):
+        if isinstance(spec, dict) and "unresolved_claim_code" in spec:
+            fields = (
+                "unresolved_claim_code",
+                "observable_metric_code",
+                "threshold_code",
+            )
+            return tuple(
+                ThesisUpdateExecutionBoundary._trigger_code_text(spec.get(field))
+                for field in fields
+            )
         fields = ("unresolved_claim", "observable_metric_or_event", "threshold_or_direction")
         if isinstance(spec, dict):
             return tuple(spec.get(field) for field in fields)
         return tuple(getattr(spec, field) for field in fields)
+
+    @staticmethod
+    def _trigger_field(spec, field):
+        if isinstance(spec, dict) and "unresolved_claim_code" in spec:
+            value = spec.get(
+                {
+                    "evidence_window": "evidence_window",
+                    "observation_requirement": "observation_requirement",
+                }[field]
+            )
+            if field == "evidence_window":
+                return {
+                    "0_12m": "0-12 months",
+                    "12_24m": "12-24 months",
+                    "24_48m": "24-48 months",
+                    "uncertain": "uncertain",
+                }[value]
+            return {
+                "single_observation": "single observation",
+                "repeated_observations": "repeated observations",
+            }[value]
+        fields = ("unresolved_claim", "observable_metric_or_event", "threshold_or_direction")
+        if isinstance(spec, dict):
+            return spec.get(field)
+        return getattr(spec, field)
+
+    @staticmethod
+    def _trigger_code_text(value):
+        return value.replace("_", " ").replace("-", " ")
 
 
 class ThesisUpdateService:

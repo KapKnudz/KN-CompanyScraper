@@ -19,6 +19,15 @@ class CompanyRepository:
         }
 
 
+class PartialListingCompanyRepository(CompanyRepository):
+    def get_listing_identity(self, company_id):
+        return {
+            "market_id": None,
+            "venue": None,
+            "listing_date": date(2020, 2, 3),
+        }
+
+
 class ValuationRepository:
     def __init__(self, prices):
         self.prices = prices
@@ -78,6 +87,12 @@ def test_builds_deterministic_adtv_windows_and_listing_packet():
         "liquidity:borsdata:42:2026-08-31:120d",
         "listing:borsdata:42",
     ]
+    assert evidence.source_ids_by_measure["adtv_20"] == [
+        "liquidity:borsdata:42:2026-08-31:20d"
+    ]
+    assert evidence.source_ids_by_measure["listing_date"] == [
+        "listing:borsdata:42"
+    ]
 
 
 def test_rejects_incomplete_windows_and_excludes_future_prices():
@@ -95,6 +110,37 @@ def test_rejects_incomplete_windows_and_excludes_future_prices():
     assert evidence.liquidity.status == "partial"
     assert evidence.liquidity.observed_days_60 == 20
     assert any("60-day proxy requires 60 observations" in item for item in evidence.limitations)
+
+
+def test_binds_listing_date_without_market_id():
+    evidence = OwnershipLiquidityEvidenceBuilder(
+        PartialListingCompanyRepository(), ValuationRepository(_prices())
+    ).build(42, date(2026, 8, 31))
+
+    assert evidence.listing == {
+        "status": "available",
+        "market_id": None,
+        "venue": None,
+        "listing_date": "2020-02-03",
+    }
+    assert evidence.source_ids_by_measure["listing_date"] == [
+        "listing:borsdata:42"
+    ]
+    assert "market_id" not in evidence.source_ids_by_measure
+
+
+def test_filtered_zero_volume_measure_is_unavailable_without_binding():
+    filter_ids = {
+        "liquidity:borsdata:42:2026-08-31:20d",
+        "liquidity:borsdata:42:2026-08-31:60d",
+        "listing:borsdata:42",
+    }
+    evidence = OwnershipLiquidityEvidenceBuilder(
+        CompanyRepository(), ValuationRepository(_prices())
+    ).build(42, date(2026, 8, 31), filter_ids=filter_ids)
+
+    assert evidence.liquidity.zero_volume_days_120 is None
+    assert "zero_volume_days_120" not in evidence.source_ids_by_measure
 
 
 def _buyback(event_date, change_shares, treasury_shares):
@@ -202,3 +248,6 @@ def test_original_filter_recalculates_buybacks_from_exact_source_ids():
         "buyback:borsdata:42:2026-06-01"
     ]
     assert evidence.flow_signals["shorts"]["source_ids"] == []
+    assert evidence.source_ids_by_measure["trailing_3_month_change_shares_raw"] == [
+        "buyback:borsdata:42:2026-06-01"
+    ]

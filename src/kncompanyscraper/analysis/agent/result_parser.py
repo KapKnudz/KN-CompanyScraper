@@ -1,7 +1,10 @@
 import json
 import math
+import re
 from kncompanyscraper.analysis.agent.output_schema import (
     AssessmentClaim,
+    OwnershipClaim,
+    OwnershipBinding,
     _NullableObjectContract,
     BusinessModelProfile,
     CompanyFact,
@@ -17,14 +20,21 @@ from kncompanyscraper.analysis.agent.output_schema import (
     MissingInformationItem,
     RevenueResilience,
     STOCK_ANALYSIS_OUTPUT_CONTRACT,
+    V3_STOCK_ANALYSIS_OUTPUT_CONTRACT,
+    V3_QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
     QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
     SCENARIO_AUTHORING_OUTPUT_CONTRACT,
     StockAnalysisResult,
+    StructuredConclusions,
     ThesisCatalyst,
     ThesisBreakTest,
     TimingAssessment,
     THESIS_UPDATE_OUTPUT_CONTRACT,
+    V3_QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
     ThesisUpdateResult,
+)
+from kncompanyscraper.analysis.agent.conclusion_contract import (
+    project_structured_conclusions,
 )
 from kncompanyscraper.analysis.valuation.forward_scenario import (
     NetDebtChangeAssumption,
@@ -39,7 +49,8 @@ class StockAnalysisValidationError(ValueError):
 
 def parse_stock_analysis_result(raw_response: str) -> StockAnalysisResult:
     raw_response = _normalize_missing_scenario_fields(raw_response)
-    payload = _parse_contract(raw_response, STOCK_ANALYSIS_OUTPUT_CONTRACT, "stock-analysis")
+    contract = _contract_for_payload(raw_response)
+    payload = _parse_contract(raw_response, contract, "stock-analysis")
     return _stock_analysis_from_payload(payload)
 
 
@@ -65,9 +76,10 @@ def parse_qualitative_stock_analysis_result(
     raw_response: str,
 ) -> StockAnalysisResult:
     raw_response = _normalize_qualitative_response(raw_response)
+    contract = _contract_for_payload(raw_response, qualitative=True)
     payload = _parse_contract(
         raw_response,
-        QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
+        contract,
         "qualitative-stock-analysis",
     )
     payload["scenario_bundles"] = []
@@ -83,14 +95,38 @@ def _normalize_qualitative_response(raw_response: str) -> str:
     except (json.JSONDecodeError, StockAnalysisValidationError):
         return raw_response
     if isinstance(payload, dict):
+        payload.pop("scenario_bundles", None)
+        payload.pop("forward_scenario_analysis", None)
         payload.pop("historical_forecast_table", None)
         payload.pop("peak_margin_bridge", None)
         payload.pop("scenario_driver_attribution", None)
     return json.dumps(payload, ensure_ascii=False)
 
+def _contract_for_payload(raw_response: str, *, qualitative: bool = False) -> dict:
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError:
+        return QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT if qualitative else STOCK_ANALYSIS_OUTPUT_CONTRACT
+    if isinstance(payload, dict) and payload.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
+        return V3_QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT if qualitative else V3_STOCK_ANALYSIS_OUTPUT_CONTRACT
+    return QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT if qualitative else STOCK_ANALYSIS_OUTPUT_CONTRACT
+
+
 def parse_thesis_update_result(raw_response: str) -> ThesisUpdateResult:
     raw_response = _normalize_qualitative_update_response(raw_response)
-    payload = _parse_contract(raw_response, THESIS_UPDATE_OUTPUT_CONTRACT, "thesis-update")
+    try:
+        update_payload = json.loads(raw_response)
+    except json.JSONDecodeError:
+        update_payload = {}
+    update_contract = (
+        V3_QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT
+        if isinstance(update_payload, dict)
+        and isinstance(update_payload.get("thesis"), dict)
+        and update_payload["thesis"].get("thesis_card_version")
+        == "individual-thesis-card-v3-structured-conclusions"
+        else THESIS_UPDATE_OUTPUT_CONTRACT
+    )
+    payload = _parse_contract(raw_response, update_contract, "thesis-update")
     return ThesisUpdateResult(
         impact=payload["impact"],
         summary=payload["summary"],
@@ -114,11 +150,12 @@ def _normalize_qualitative_update_response(raw_response: str) -> str:
         thesis.pop("historical_forecast_table", None)
         thesis.pop("peak_margin_bridge", None)
         thesis.pop("scenario_driver_attribution", None)
-        thesis["scenario_bundles"] = []
-        thesis["forward_scenario_analysis"] = None
-        thesis["historical_forecast_table"] = None
-        thesis["peak_margin_bridge"] = None
-        thesis["scenario_driver_attribution"] = None
+        if thesis.get("thesis_card_version") != "individual-thesis-card-v3-structured-conclusions":
+            thesis["scenario_bundles"] = []
+            thesis["forward_scenario_analysis"] = None
+            thesis["historical_forecast_table"] = None
+            thesis["peak_margin_bridge"] = None
+            thesis["scenario_driver_attribution"] = None
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -164,10 +201,80 @@ def _parse_contract(raw_response: str, contract: dict, label: str) -> dict:
         _normalize_thesis_card_fields(payload)
         _normalize_management_ledger_contract(payload)
         _normalize_ownership_claim_contract(payload, contract)
+        _reject_v3_legacy_ownership_claims(payload, contract)
         _validate_value(payload, contract, "result")
+        _validate_ownership_claim_identifiers(payload)
+        if payload.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
+            _validate_structured_claim_identifiers(payload["structured_conclusions"])
+        elif isinstance(payload.get("thesis"), dict) and payload["thesis"].get(
+            "thesis_card_version"
+        ) == "individual-thesis-card-v3-structured-conclusions":
+            _validate_structured_claim_identifiers(
+                payload["thesis"]["structured_conclusions"]
+            )
     except (json.JSONDecodeError, StockAnalysisValidationError) as exc:
         raise StockAnalysisValidationError(f"Invalid {label} JSON: {exc}") from exc
     return payload
+
+
+_STRUCTURED_CLAIM_ID = re.compile(r"^[a-z][a-z0-9_:-]*$")
+
+
+def _validate_structured_claim_identifiers(value) -> None:
+    if isinstance(value, dict):
+        claim_id = value.get("claim_id")
+        if claim_id is not None and not _STRUCTURED_CLAIM_ID.fullmatch(claim_id):
+            raise StockAnalysisValidationError(
+                f"structured claim ID must be a code identifier: {claim_id!r}"
+            )
+        for limitation_code in value.get("limitation_codes", []):
+            if not _STRUCTURED_CLAIM_ID.fullmatch(limitation_code):
+                raise StockAnalysisValidationError(
+                    "structured limitation codes must be code identifiers"
+                )
+        for field_name in (
+            "fact_code",
+            "unresolved_claim_code",
+            "observable_metric_code",
+            "threshold_code",
+        ):
+            code = value.get(field_name)
+            if code is not None and not _STRUCTURED_CLAIM_ID.fullmatch(code):
+                raise StockAnalysisValidationError(
+                    f"structured {field_name} must be a code identifier"
+                )
+        for reference in value.get("expectation_refs", []):
+            if not re.fullmatch(r"^[a-z][a-z0-9_.:-]*$", reference):
+                raise StockAnalysisValidationError(
+                    "structured expectation references must be code identifiers"
+                )
+            if not reference.startswith("valuation:reverse_dcf:"):
+                raise StockAnalysisValidationError(
+                    "structured expectation references must use the valuation:reverse_dcf namespace"
+                )
+        for child in value.values():
+            _validate_structured_claim_identifiers(child)
+    elif isinstance(value, list):
+        for child in value:
+            _validate_structured_claim_identifiers(child)
+
+
+def _validate_ownership_claim_identifiers(payload: dict) -> None:
+    cards = [payload]
+    thesis = payload.get("thesis") if isinstance(payload, dict) else None
+    if isinstance(thesis, dict):
+        cards.append(thesis)
+    for card in cards:
+        if card.get("thesis_card_version") != (
+            "individual-thesis-card-v3-structured-conclusions"
+        ):
+            continue
+        for claim in card.get("ownership_claims") or []:
+            for limitation_code in claim.get("limitation_codes", []):
+                if not _STRUCTURED_CLAIM_ID.fullmatch(limitation_code):
+                    raise StockAnalysisValidationError(
+                        "ownership limitation codes must be code identifiers"
+                    )
 
 
 def _normalize_thesis_card_fields(payload: dict) -> None:
@@ -182,6 +289,8 @@ def _normalize_thesis_card_fields(payload: dict) -> None:
             or "verdict" not in card
             or "company_id" not in card
         ):
+            continue
+        if card.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
             continue
         card.setdefault("latent_case_type", None)
         card.setdefault("activation_trigger_spec", None)
@@ -203,6 +312,136 @@ def _normalize_thesis_card_fields(payload: dict) -> None:
         if isinstance(resilience, dict):
             resilience.setdefault("recurring_source_ids", [])
             resilience.setdefault("variable_source_ids", [])
+
+
+def _typed_claim(value: dict) -> "TypedClaim":
+    from kncompanyscraper.analysis.agent.conclusion_contract import TypedClaim
+    return TypedClaim(
+        claim_id=value["claim_id"], domain=value["domain"], predicate=value["predicate"],
+        value=value["value"], source_ids=tuple(value["source_ids"]),
+        limitation_codes=tuple(value["limitation_codes"]),
+    )
+
+
+def _typed_fact(value: dict):
+    from kncompanyscraper.analysis.agent.conclusion_contract import TypedFact
+    return TypedFact(
+        claim_id=value["claim_id"], fact_code=value["fact_code"],
+        domain=value["domain"], predicate=value["predicate"], value=value["value"],
+        source_ids=tuple(value["source_ids"]),
+        limitation_codes=tuple(value["limitation_codes"]),
+    )
+
+
+def _typed_trigger(value: dict):
+    from kncompanyscraper.analysis.agent.conclusion_contract import TypedTrigger
+    return TypedTrigger(
+        claim_id=value["claim_id"], trigger_type=value["trigger_type"],
+        unresolved_claim_code=value["unresolved_claim_code"],
+        observable_metric_code=value["observable_metric_code"],
+        threshold_code=value["threshold_code"],
+        evidence_window=value["evidence_window"],
+        single_observation_sufficient=value["single_observation_sufficient"],
+        observation_requirement=value["observation_requirement"],
+        source_ids=tuple(value["source_ids"]),
+        limitation_codes=tuple(value["limitation_codes"]),
+    )
+
+
+def _structured_conclusions_from_payload(value: dict) -> StructuredConclusions:
+    from kncompanyscraper.analysis.agent.conclusion_contract import (
+        FalsifiableCaseComponent,
+        HeadlineCase,
+        TypedBreakTest,
+        TypedDecisiveEvidence,
+        TypedMissingInformation,
+        TypedReconsiderationTrigger,
+        TypedTriggerEvidence,
+    )
+    headline = value["headline_case"]
+    falsifiable = value["falsifiable_case"]
+    return StructuredConclusions(
+        headline_case=HeadlineCase(
+            case_ref=headline["case_ref"], horizon_months=headline["horizon_months"],
+            revenue_mechanism=headline["revenue_mechanism"],
+            profitability_state=headline["profitability_state"],
+            expectation_refs=tuple(headline["expectation_refs"]),
+            break_condition=_typed_claim(headline["break_condition"]),
+        ),
+        falsifiable_case=FalsifiableCaseComponent(
+            case_ref=falsifiable["case_ref"], horizon_months=falsifiable["horizon_months"],
+            baseline_refs=tuple(falsifiable["baseline_refs"]),
+            falsification=_typed_claim(falsifiable["falsification"]),
+        ),
+        evidence_claims=tuple(_typed_claim(item) for item in value["evidence_claims"]),
+        break_tests=tuple(_typed_claim(item) for item in value["break_tests"]),
+        management_claims=tuple(_typed_fact(item) for item in value["management_claims"]),
+        management_ledger=tuple(_typed_fact(item) for item in value["management_ledger"]),
+        company_facts=tuple(_typed_fact(item) for item in value["company_facts"]),
+        insider_claims=tuple(_typed_claim(item) for item in value["insider_claims"]),
+        business_model_facts=tuple(_typed_claim(item) for item in value["business_model_facts"]),
+        margin_facts=tuple(_typed_claim(item) for item in value["margin_facts"]),
+        timing_facts=tuple(_typed_claim(item) for item in value["timing_facts"]),
+        strongest_confirming_evidence=(
+            TypedDecisiveEvidence(
+                claim=_typed_claim(value["strongest_confirming_evidence"]["claim"]),
+                relevance_code=value["strongest_confirming_evidence"]["relevance_code"],
+            )
+            if value["strongest_confirming_evidence"] is not None
+            else None
+        ),
+        strongest_disconfirming_evidence=(
+            TypedDecisiveEvidence(
+                claim=_typed_claim(value["strongest_disconfirming_evidence"]["claim"]),
+                relevance_code=value["strongest_disconfirming_evidence"]["relevance_code"],
+            )
+            if value["strongest_disconfirming_evidence"] is not None
+            else None
+        ),
+        thesis_break_tests=tuple(
+            TypedBreakTest(
+                break_type=item["break_type"],
+                condition_code=item["condition_code"],
+                observable_metric_code=item["observable_metric_code"],
+                threshold_code=item["threshold_code"],
+                response=item["response"],
+                source_ids=tuple(item["source_ids"]),
+                limitation_codes=tuple(item["limitation_codes"]),
+            )
+            for item in value["thesis_break_tests"]
+        ),
+        missing_information_details=tuple(
+            TypedMissingInformation(
+                item_code=item["item_code"],
+                limitation_class=item["limitation_class"],
+                impact_code=item["impact_code"],
+            )
+            for item in value["missing_information_details"]
+        ),
+        reconsideration_trigger=(
+            TypedReconsiderationTrigger(
+                trigger_code=value["reconsideration_trigger"]["trigger_code"],
+                source_ids=tuple(value["reconsideration_trigger"]["source_ids"]),
+                limitation_codes=tuple(
+                    value["reconsideration_trigger"]["limitation_codes"]
+                ),
+            )
+            if value["reconsideration_trigger"] is not None
+            else None
+        ),
+        trigger_evidence=tuple(
+            TypedTriggerEvidence(
+                claim=_typed_claim(item["claim"]),
+                status=item["status"],
+                rationale_code=item["rationale_code"],
+            )
+            for item in value["trigger_evidence"]
+        ),
+        limitation_codes=tuple(value["limitation_codes"]),
+        trigger=_typed_trigger(value["trigger"]) if value["trigger"] is not None else None,
+        revenue_resilience=_typed_claim(value["revenue_resilience"]),
+        reverse_dcf_assessment=value["reverse_dcf_assessment"],
+    )
 
 
 def _normalize_management_ledger_contract(payload: dict) -> None:
@@ -256,8 +495,41 @@ def _normalize_ownership_claim_contract(payload: dict, contract: dict) -> None:
         payload.setdefault("ownership_claims", [])
 
 
+def _reject_v3_legacy_ownership_claims(payload: dict, contract: dict) -> None:
+    cards = []
+    if contract.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
+        cards.append(payload)
+    thesis = payload.get("thesis")
+    if (
+        isinstance(thesis, dict)
+        and thesis.get("thesis_card_version")
+        == "individual-thesis-card-v3-structured-conclusions"
+    ):
+        cards.append(thesis)
+    for card in cards:
+        for claim in card.get("ownership_claims") or []:
+            if isinstance(claim, dict) and "statement" in claim:
+                statement = claim.get("statement", "")
+                raise StockAnalysisValidationError(
+                    f'ownership claim offending statement {statement!r} requires an approved '
+                    "ownership/liquidity source; changing a documentary citation into an "
+                    "ownership citation is not permitted; omit the claim."
+                )
+
+
 def _stock_analysis_from_payload(payload: dict) -> StockAnalysisResult:
     result_data = dict(payload)
+    if payload.get("thesis_card_version") == "individual-thesis-card-v3-structured-conclusions":
+        result_data.update(
+            project_structured_conclusions(
+                payload["structured_conclusions"],
+                payload.get("ownership_claims", []),
+            )
+        )
+        result_data["structured_conclusions"] = _structured_conclusions_from_payload(
+            payload["structured_conclusions"]
+        )
+        payload = result_data
     result_data["falsifiable_case"] = FalsifiableCase(
         **payload["falsifiable_case"]
     )
@@ -329,11 +601,11 @@ def _stock_analysis_from_payload(payload: dict) -> StockAnalysisResult:
             ),
             mechanism=bundle["mechanism"],
         )
-        for bundle in payload["scenario_bundles"]
+        for bundle in payload.get("scenario_bundles", [])
     ]
     result_data["management_credibility_ledger"] = [
         ManagementClaimAssessment(**assessment)
-        for assessment in payload["management_credibility_ledger"]
+        for assessment in payload.get("management_credibility_ledger", [])
     ]
     result_data["management_credibility_coverage"] = ManagementCredibilityCoverage(
         **payload["management_credibility_coverage"]
@@ -342,7 +614,18 @@ def _stock_analysis_from_payload(payload: dict) -> StockAnalysisResult:
         AssessmentClaim(**claim) for claim in payload["management_claims"]
     ]
     result_data["ownership_claims"] = [
-        AssessmentClaim(**claim) for claim in payload["ownership_claims"]
+        (
+            OwnershipClaim(
+                claim_kind=claim["claim_kind"],
+                subject_role=claim["subject_role"],
+                measure=claim["measure"],
+                binding=OwnershipBinding(**claim["binding"]),
+                limitation_codes=claim["limitation_codes"],
+            )
+            if "claim_kind" in claim
+            else AssessmentClaim(**claim)
+        )
+        for claim in payload["ownership_claims"]
     ]
     result_data["insider_claims"] = [
         AssessmentClaim(**claim) for claim in payload["insider_claims"]

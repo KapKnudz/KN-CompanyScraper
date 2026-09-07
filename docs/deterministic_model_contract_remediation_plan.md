@@ -121,33 +121,33 @@ methodology decision is complete.
 
 ### Tasks
 
-- [ ] Update the qualitative prompt and analysis workflow to state that
+- [x] Update the qualitative prompt and analysis workflow to state that
   documentary ownership language is not eligible for `ownership_claims` when
   the dedicated ownership source whitelist is empty.
-- [ ] Require omission rather than a best-effort ownership summary for GULD-,
+- [x] Require omission rather than a best-effort ownership summary for GULD-,
   CLAS B-, and NELLY-shaped packets with no approved ownership IDs.
-- [ ] Ensure the deterministic no-data assessment is the sole accepted
+- [x] Ensure the deterministic no-data assessment is the sole accepted
   ownership-specific conclusion in that state.
-- [ ] Keep document-backed capital-allocation and management facts available in
+- [x] Keep document-backed capital-allocation and management facts available in
   their appropriate non-ownership sections.
-- [ ] Make repair feedback identify the exact offending claim and explain that
+- [x] Make repair feedback identify the exact offending claim and explain that
   changing a document citation into an ownership citation is not permitted.
-- [ ] Bump the qualitative prompt-contract or policy version because the
+- [x] Bump the qualitative prompt-contract or policy version because the
   model-facing source semantics change.
 
 ### Tests
 
-- [ ] A document mentioning a founder or shareholder does not authorize an
+- [x] A document mentioning a founder or shareholder does not authorize an
   `ownership_claims` entry when approved ownership IDs are absent.
-- [ ] Empty ownership evidence produces an empty claims list and deterministic
+- [x] Empty ownership evidence produces an empty claims list and deterministic
   no-data wording.
-- [ ] A valid claim using an exact supplied ownership/liquidity source ID still
+- [x] A valid claim using an exact supplied ownership/liquidity source ID still
   passes.
-- [ ] Free-float, holder, concentration, voting, ownership-change, and index
+- [x] Free-float, holder, concentration, voting, ownership-change, and index
   precision remain rejected when their deterministic fields are null.
-- [ ] Insider events, buybacks, and liquidity sources cannot masquerade as
+- [x] Insider events, buybacks, and liquidity sources cannot masquerade as
   long-holder ownership evidence.
-- [ ] GULD-, CLAS B-, and NELLY-shaped fixtures pass after unsupported claims
+- [x] GULD-, CLAS B-, and NELLY-shaped fixtures pass after unsupported claims
   are omitted.
 
 ### Acceptance criteria

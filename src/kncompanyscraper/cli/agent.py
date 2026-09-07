@@ -13,7 +13,7 @@ def register(subparsers):
 
     export_thesis_parser = subparsers.add_parser(
         "export-thesis-summaries",
-        help="Export validated v2 thesis summaries as JSON",
+        help="Export validated v3 thesis summaries as JSON",
     )
     export_thesis_parser.add_argument("--output", required=True, type=Path)
     export_thesis_parser.set_defaults(func=_cmd_export_thesis_summaries)
@@ -160,7 +160,7 @@ def _cmd_export_thesis_summaries(args):
         json.dumps(summaries, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    print(f"Exported {len(summaries)} validated v2 thesis summaries to {args.output}.")
+    print(f"Exported {len(summaries)} validated v3 thesis summaries to {args.output}.")
 
 
 def _cmd_audit_thesis_calibration(args):

@@ -10,8 +10,8 @@ from kncompanyscraper.analysis.agent.agent_packet import (
 )
 from kncompanyscraper.analysis.agent.packet_measurement import measure_packet
 from kncompanyscraper.analysis.agent.output_schema import (
-    QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
-    qualitative_stock_analysis_json_schema,
+    V3_QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
+    v3_qualitative_stock_analysis_json_schema,
 )
 from kncompanyscraper.analysis.policy_versions import THESIS_CALIBRATION_POLICY_VERSION
 
@@ -31,8 +31,8 @@ class AgentPrompt:
 
 class AgentPromptBuilder:
     POLICY_NAME = "nordic-case-investing-policy"
-    POLICY_VERSION = "1.28.0"
-    CONTRACT_VERSION = "qualitative-stage-prompt-v3"
+    POLICY_VERSION = "1.29.0-ownership-source-contract"
+    CONTRACT_VERSION = "qualitative-stage-prompt-v4-ownership-source-contract"
 
     def build(self, candidate: AgentCandidate) -> AgentPrompt:
         policy = self._read_resource("resources/analyst_policy.md")
@@ -43,7 +43,7 @@ class AgentPromptBuilder:
         packet = AgentCandidatePacket.from_candidate(candidate)
         candidate_json = serialize_packet(packet)
         output_contract = json.dumps(
-            QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
+            V3_QUALITATIVE_STOCK_ANALYSIS_OUTPUT_CONTRACT,
             ensure_ascii=False,
             indent=2,
         )
@@ -70,7 +70,7 @@ class AgentPromptBuilder:
             policy_name=self.POLICY_NAME,
             policy_version=self.POLICY_VERSION,
             policy_sha256=policy_sha256,
-            output_schema=qualitative_stock_analysis_json_schema(),
+            output_schema=v3_qualitative_stock_analysis_json_schema(),
             packet_measurement=asdict(measure_packet(packet, pretty=False)),
             contract_version=self.CONTRACT_VERSION,
         )

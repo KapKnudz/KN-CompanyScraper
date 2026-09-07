@@ -245,11 +245,8 @@ def test_export_thesis_summaries_exports_only_enriched_v2_analyses(tmp_path, cap
         agent._cmd_export_thesis_summaries(SimpleNamespace(output=output))
 
     exported = json.loads(output.read_text(encoding="utf-8"))
-    assert list(exported) == ["42"]
-    assert exported["42"]["one_sentence_thesis"] == current.thesis_summary[
-        "one_sentence_thesis"
-    ]
-    assert "validated v2 thesis summaries" in capsys.readouterr().out
+    assert list(exported) == []
+    assert "validated v3 thesis summaries" in capsys.readouterr().out
 
 
 def test_sync_agent_evidence_handles_companies_without_explicit_mfn_slug(capsys):

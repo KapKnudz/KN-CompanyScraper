@@ -1,4 +1,4 @@
-from dataclasses import dataclass, fields, replace
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import date
 from math import isfinite
 import re
@@ -15,7 +15,15 @@ from kncompanyscraper.analysis.agent.agent_packet import (
 )
 from kncompanyscraper.analysis.agent.output_schema import (
     MissingInformationItem,
+    OwnershipClaim,
     StockAnalysisResult,
+)
+from kncompanyscraper.analysis.agent.conclusion_contract import (
+    ownership_field,
+    ownership_source_ids_for_measure,
+    packet_value,
+    render_ownership_claims,
+    NO_OWNERSHIP_LIQUIDITY_ASSESSMENT as NO_OWNERSHIP_LIQUIDITY_ASSESSMENT_TEXT,
 )
 from kncompanyscraper.analysis.agent.historical_forecast_table import (
     build_historical_forecast_table,
@@ -42,13 +50,20 @@ class PersistedStockAnalysis:
     result: StockAnalysisResult
 
 
+def _ownership_measure_source_ids(ownership_liquidity: dict) -> set[str]:
+    return {
+        source_id
+        for source_ids in (
+            ownership_liquidity.get("source_ids_by_measure") or {}
+        ).values()
+        for source_id in source_ids
+    }
+
+
 class AgentExecutionBoundary:
-    VALIDATION_VERSION = "agent-boundary-v22-thesis-calibration"
+    VALIDATION_VERSION = "agent-boundary-v23-ownership-source-contract"
     VERDICT_POLICY_VERSION = VERDICT_COHERENCE_POLICY_VERSION
-    NO_OWNERSHIP_LIQUIDITY_ASSESSMENT = (
-        "Ownership and liquidity evidence are unavailable. "
-        "No inference can be made from their absence."
-    )
+    NO_OWNERSHIP_LIQUIDITY_ASSESSMENT = NO_OWNERSHIP_LIQUIDITY_ASSESSMENT_TEXT
     NO_INSIDER_ASSESSMENT = (
         "No insider transactions are available for the selected period. "
         "No inference can be made from their absence."
@@ -105,6 +120,12 @@ class AgentExecutionBoundary:
         ownership_liquidity_source_ids = set(
             ownership_liquidity.get("source_ids", [])
         )
+        ownership_measure_source_ids = (
+            _ownership_measure_source_ids(ownership_liquidity)
+            if result.thesis_card_version
+            == "individual-thesis-card-v3-structured-conclusions"
+            else ownership_liquidity_source_ids
+        )
         evidence_catalog = build_evidence_catalog(
             candidate.full_results, research_evidence
         )
@@ -131,7 +152,7 @@ class AgentExecutionBoundary:
                 result,
                 document_source_ids=document_source_ids,
                 insider_source_ids=insider_source_ids,
-                ownership_liquidity_source_ids=ownership_liquidity_source_ids,
+                ownership_liquidity_source_ids=ownership_measure_source_ids,
                 ownership_liquidity=ownership_liquidity,
             ),
             lambda: self._validate_activated_case(result, candidate),
@@ -206,6 +227,14 @@ class AgentExecutionBoundary:
                 "source_ids", []
             )
         )
+        ownership_measure_source_ids = (
+            _ownership_measure_source_ids(
+                candidate.research_evidence.get("ownership_liquidity", {})
+            )
+            if result.thesis_card_version
+            == "individual-thesis-card-v3-structured-conclusions"
+            else ownership_liquidity_source_ids
+        )
         document_source_ids.update(
             candidate.research_evidence.get("prior_document_source_ids", [])
         )
@@ -233,24 +262,6 @@ class AgentExecutionBoundary:
             candidate.full_results,
             candidate.research_evidence,
         )
-        sourced_ownership_claims = [
-            claim for claim in result.ownership_claims if claim.source_ids
-        ]
-        if sourced_ownership_claims:
-            result.ownership_claims = sourced_ownership_claims
-        self._normalize_assessment_claims(
-            result.ownership_claims,
-            evidence_catalog,
-            candidate.full_results,
-            candidate.research_evidence,
-        )
-        supported_ownership_claims = [
-            claim
-            for claim in result.ownership_claims
-            if set(claim.source_ids).issubset(ownership_liquidity_source_ids)
-        ]
-        if supported_ownership_claims:
-            result.ownership_claims = supported_ownership_claims
         self._normalize_assessment_claims(
             result.insider_claims,
             evidence_catalog,
@@ -363,6 +374,18 @@ class AgentExecutionBoundary:
             )
         else:
             forward_source_ids = set()
+        structured_source_ids = self._validate_structured_conclusions(result)
+        # Ownership structural diagnostics must precede the generic catalog
+        # check so repair feedback retains the exact offending claim.
+        self._validate_assessment_sections(
+            result,
+            document_source_ids=document_source_ids,
+            insider_source_ids=insider_source_ids,
+            ownership_liquidity_source_ids=ownership_measure_source_ids,
+            ownership_liquidity=candidate.research_evidence.get(
+                "ownership_liquidity", {}
+            ),
+        )
         self._validate_known_sources(
             known_source_ids,
             (
@@ -390,7 +413,11 @@ class AgentExecutionBoundary:
                     {
                         source_id
                         for claim in result.ownership_claims
-                        for source_id in claim.source_ids
+                        for source_id in (
+                            claim.binding.source_ids
+                            if isinstance(claim, OwnershipClaim)
+                            else claim.source_ids
+                        )
                     },
                 ),
                 (
@@ -400,6 +427,10 @@ class AgentExecutionBoundary:
                         for claim in result.insider_claims
                         for source_id in claim.source_ids
                     },
+                ),
+                (
+                    "structured conclusions cite unknown evidence source(s)",
+                    structured_source_ids,
                 ),
             ),
         )
@@ -435,15 +466,6 @@ class AgentExecutionBoundary:
                 },
             )
         self._validate_management_sources(result, document_source_ids)
-        self._validate_assessment_sections(
-            result,
-            document_source_ids=document_source_ids,
-            insider_source_ids=insider_source_ids,
-            ownership_liquidity_source_ids=ownership_liquidity_source_ids,
-            ownership_liquidity=candidate.research_evidence.get(
-                "ownership_liquidity", {}
-            ),
-        )
         # Preserve the fast, legacy diagnostic for missing reverse-DCF inputs;
         # the full verdict matrix runs below after forward scenarios exist.
         self._validate_activated_case(result, candidate)
@@ -499,11 +521,25 @@ class AgentExecutionBoundary:
 
         warnings = list(deterministic_warnings)
         ownership_checks = []
-        if ownership_liquidity_source_ids:
+        if ownership_measure_source_ids:
             ownership_checks.append(
                 "ownership/liquidity assessment uses supplied deterministic evidence "
-                f"({len(ownership_liquidity_source_ids)} source IDs available)"
+                f"({len(ownership_measure_source_ids)} source IDs available)"
             )
+            if result.ownership_claims and all(
+                isinstance(claim, OwnershipClaim) for claim in result.ownership_claims
+            ):
+                result.ownership_and_flow_assessment = render_ownership_claims(
+                    [
+                        {
+                            "measure": claim.measure,
+                            "binding": {
+                                "asserted_value": claim.binding.asserted_value
+                            },
+                        }
+                        for claim in result.ownership_claims
+                    ]
+                )
         else:
             if (
                 result.ownership_and_flow_assessment
@@ -948,6 +984,7 @@ class AgentExecutionBoundary:
             falsifiable.horizon_months is not None
             and result.case_horizon_months is not None
             and falsifiable.horizon_months != result.case_horizon_months
+            and result.structured_conclusions is None
         ):
             raise StockAnalysisValidationError(
                 "falsifiable-case horizon must match case_horizon_months"
@@ -958,6 +995,25 @@ class AgentExecutionBoundary:
             )
 
         decisive_source_ids = set()
+        available_citable_source_ids = set(
+            source_aliases.get("canonical_source_ids", ())
+        )
+        if result.structured_conclusions is not None and available_citable_source_ids and (
+            result.strongest_confirming_evidence is None
+            or result.strongest_disconfirming_evidence is None
+        ):
+            missing_sides = [
+                label
+                for label, evidence in (
+                    ("strongest confirming evidence", result.strongest_confirming_evidence),
+                    ("strongest disconfirming evidence", result.strongest_disconfirming_evidence),
+                )
+                if evidence is None
+            ]
+            raise StockAnalysisValidationError(
+                "citable evidence requires typed decisive evidence: "
+                + ", ".join(missing_sides)
+            )
         for label, evidence in (
             ("strongest confirming evidence", result.strongest_confirming_evidence),
             ("strongest disconfirming evidence", result.strongest_disconfirming_evidence),
@@ -1184,6 +1240,14 @@ class AgentExecutionBoundary:
         ):
             raise StockAnalysisValidationError(
                 "activation triggers must name a company-specific metric or event"
+            )
+        if result.latent_case_type == "operating" and re.search(
+            r"\b(?:share price|valuation|multiple)\b",
+            observable_text,
+            re.IGNORECASE,
+        ):
+            raise StockAnalysisValidationError(
+                "operating latent triggers must name an operating metric or event"
             )
         if not re.search(
             r"\b(?:above|below|at least|at most|no more than|maintain|maintains?|"
@@ -1885,6 +1949,84 @@ class AgentExecutionBoundary:
         }
 
     @staticmethod
+    def _validate_structured_conclusions(result):
+        structured = result.structured_conclusions
+        if structured is None:
+            return set()
+        required_break_types = {
+            "revenue_or_demand",
+            "margin_or_execution",
+            "balance_sheet_or_dilution",
+            "management_credibility",
+            "valuation_overshoot",
+            "superior_evidence_or_opportunity",
+        }
+        actual_break_types = {
+            test.break_type for test in structured.thesis_break_tests
+        }
+        if actual_break_types != required_break_types:
+            raise StockAnalysisValidationError(
+                "structured conclusions must contain exactly one typed break test for each required type"
+            )
+        if any(not claim.source_ids for claim in structured.break_tests):
+            raise StockAnalysisValidationError(
+                "structured break tests must cite the evidence establishing the baseline"
+            )
+        if (
+            structured.headline_case.case_ref
+            != structured.falsifiable_case.case_ref
+            or structured.headline_case.horizon_months
+            != structured.falsifiable_case.horizon_months
+        ):
+            raise StockAnalysisValidationError(
+                "structured headline and falsifiable case must share the case reference and horizon"
+            )
+        payload = asdict(structured)
+        source_ids = set()
+        claim_ids = set()
+
+        def visit(value, path="structured_conclusions"):
+            if isinstance(value, dict):
+                if "claim_id" in value:
+                    claim_id = value["claim_id"]
+                    if claim_id in claim_ids:
+                        raise StockAnalysisValidationError(
+                            f"duplicate structured claim ID: {claim_id}"
+                        )
+                    claim_ids.add(claim_id)
+                ids = value.get("source_ids")
+                if isinstance(ids, (list, tuple)):
+                    if len(ids) != len(set(ids)):
+                        raise StockAnalysisValidationError(
+                            "structured claim contains duplicate source IDs"
+                        )
+                    if (
+                        "claim_id" in value
+                        and not ids
+                        and (
+                            "trigger_type" in value
+                            or "trigger_code" in value
+                            or (
+                                value.get("predicate") != "source_gap"
+                                and value.get("value")
+                                not in {None, "unavailable", "unassessable"}
+                            )
+                        )
+                    ):
+                        raise StockAnalysisValidationError(
+                            f"structured conclusion {path} requires source_ids"
+                        )
+                    source_ids.update(ids)
+                for key, child in value.items():
+                    visit(child, f"{path}.{key}")
+            elif isinstance(value, (list, tuple)):
+                for index, child in enumerate(value):
+                    visit(child, f"{path}[{index}]")
+
+        visit(payload)
+        return source_ids
+
+    @staticmethod
     def _normalize_assessment_claims(
         claims, source_aliases, full_results=None, research_evidence=None
     ):
@@ -1969,11 +2111,31 @@ class AgentExecutionBoundary:
             violations.append(
                 "ownership and flow assessment requires structured ownership claims"
             )
-        ownership_sources = {
-            source_id
-            for claim in result.ownership_claims
-            for source_id in claim.source_ids
-        }
+        ownership_sources = set()
+        for index, claim in enumerate(result.ownership_claims):
+            if isinstance(claim, OwnershipClaim):
+                ownership_sources.update(claim.binding.source_ids)
+                try:
+                    AgentExecutionBoundary._validate_typed_ownership_claim(
+                        claim, {"research_evidence": {"ownership_liquidity": ownership_liquidity}}
+                    )
+                except StockAnalysisValidationError as exc:
+                    violations.append(
+                        f'ownership_claims[{index}] offending claim '
+                        f'"{claim.measure}={claim.binding.asserted_value!r}" requires repair; '
+                        f'{exc}; documentary citations cannot be relabeled as ownership evidence; '
+                        "changing a documentary citation into an ownership citation is not permitted; "
+                        "omit the claim."
+                    )
+            else:
+                ownership_sources.update(claim.source_ids)
+                violations.append(
+                    f'ownership_claims[{index}] offending statement '
+                    f'{claim.statement!r} must use a typed ownership claim; '
+                    "documentary citations cannot be relabeled as ownership evidence; "
+                    "changing a documentary citation into an ownership citation is not permitted; "
+                    "omit the claim."
+                )
         unknown_ownership_sources = sorted(
             ownership_sources - ownership_liquidity_source_ids
         )
@@ -1982,13 +2144,6 @@ class AgentExecutionBoundary:
                 "ownership claims must cite supplied ownership/liquidity evidence: "
                 + ", ".join(unknown_ownership_sources)
             )
-        try:
-            AgentExecutionBoundary._validate_supported_ownership_claims(
-                result.ownership_claims, ownership_liquidity
-            )
-        except StockAnalysisValidationError as exc:
-            violations.extend(getattr(exc, "violations", (str(exc),)))
-
         if insider_source_ids and result.insider_assessment.strip() and not result.insider_claims:
             violations.append(
                 "insider assessment requires structured insider claims"
@@ -2004,34 +2159,50 @@ class AgentExecutionBoundary:
             )
         _raise_validation_violations(violations)
 
-    @staticmethod
-    def _validate_supported_ownership_claims(claims, evidence):
-        ownership = evidence.get("ownership") or {}
-        changes = evidence.get("changes") or {}
-        field_groups = (
-            (("free float", "free-float"), ownership, (
-                "free_float_pct", "free_float_shares", "free_float_market_cap"
-            )),
-            (("institutional ownership",), ownership, ("institutional_pct",)),
-            (("holder concentration", "capital concentration"), ownership, (
-                "top_1_capital_pct", "top_3_capital_pct", "top_10_capital_pct"
-            )),
-            (("voting control", "voting ownership"), ownership, ("top_1_voting_pct",)),
-            (("ownership change", "ownership broadening", "ownership concentration"), changes, (
-                "quarter", "year"
-            )),
-        )
-        for claim in claims:
-            statement = claim.statement.casefold()
-            if not re.search(r"(?<!\w)[+-]?\d+(?:[.,]\d+)?\s*%?", statement):
-                continue
-            for phrases, values, fields_to_check in field_groups:
-                if any(phrase in statement for phrase in phrases) and not any(
-                    values.get(field) is not None for field in fields_to_check
-                ):
-                    raise StockAnalysisValidationError(
-                        "precise ownership claim requires a supplied deterministic field"
-                    )
+    @classmethod
+    def _validate_typed_ownership_claim(cls, claim, evidence):
+        if not claim.binding.source_ids:
+            raise StockAnalysisValidationError(
+                "binding requires the exact generated ownership source set"
+            )
+        if len(claim.binding.source_ids) != len(set(claim.binding.source_ids)):
+            raise StockAnalysisValidationError("binding contains duplicate source IDs")
+        try:
+            field = ownership_field(claim.measure)
+        except ValueError as exc:
+            raise StockAnalysisValidationError(str(exc)) from exc
+        if claim.subject_role != field.subject_role or claim.claim_kind != field.claim_kind:
+            raise StockAnalysisValidationError(
+                f"claim kind/subject role does not match measure {claim.measure}"
+            )
+        if claim.binding.deterministic_field != field.deterministic_field:
+            raise StockAnalysisValidationError(
+                f"deterministic field must be {field.deterministic_field}"
+            )
+        if claim.binding.asserted_unit != field.asserted_unit:
+            raise StockAnalysisValidationError(
+                f"asserted unit must be {field.asserted_unit}"
+            )
+        expected = packet_value(evidence, field)
+        if expected is None:
+            raise StockAnalysisValidationError(
+                f"measure {claim.measure} has no supplied deterministic field"
+            )
+        if isinstance(expected, bool) != isinstance(claim.binding.asserted_value, bool):
+            raise StockAnalysisValidationError(
+                f"asserted value for {claim.measure} must match the packet value type"
+            )
+        if claim.binding.asserted_value != expected:
+            raise StockAnalysisValidationError(
+                f"asserted value for {claim.measure} must equal the supplied packet value"
+            )
+        ownership_evidence = evidence["research_evidence"]["ownership_liquidity"]
+        supplied = ownership_source_ids_for_measure(ownership_evidence, claim.measure)
+        if not supplied or tuple(claim.binding.source_ids) != supplied:
+            raise StockAnalysisValidationError(
+                f"source IDs {list(claim.binding.source_ids)!r} must equal the exact "
+                f"generated source set {list(supplied)!r} for measure {claim.measure}"
+            )
 
     @staticmethod
     def _validate_portfolio_eligibility(result, *, require_scenario=True):

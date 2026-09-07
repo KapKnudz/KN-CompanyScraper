@@ -6,8 +6,8 @@ from kncompanyscraper.analysis.agent.context_provenance import (
     deterministic_context_sha256,
 )
 from kncompanyscraper.analysis.agent.output_schema import (
-    QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
-    qualitative_thesis_update_json_schema,
+    V3_QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
+    v3_qualitative_thesis_update_json_schema,
 )
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt, AgentPromptBuilder
 
@@ -131,14 +131,33 @@ class ThesisUpdateContextBuilder:
             source_ids.update(evidence.get("source_ids") or [])
         for claim in content.get("ownership_claims") or []:
             source_ids.update(claim.get("source_ids") or [])
+            binding = claim.get("binding") or {}
+            source_ids.update(binding.get("source_ids") or [])
+        structured = content.get("structured_conclusions")
+        if isinstance(structured, dict):
+            def collect(value):
+                if isinstance(value, dict):
+                    source_ids.update(value.get("source_ids") or [])
+                    for child in value.values():
+                        collect(child)
+                elif isinstance(value, list):
+                    for child in value:
+                        collect(child)
+            collect(structured)
         return source_ids
 
 
 class ThesisUpdatePromptBuilder:
     POLICY_NAME = "nordic-thesis-update-policy"
-    POLICY_VERSION = "1.3.0-thesis-calibration"
+    POLICY_VERSION = "1.4.0-thesis-calibration-ownership-source-contract"
+    V3_THESIS_CARD_VERSION = "individual-thesis-card-v3-structured-conclusions"
 
     def build(self, context: ThesisUpdateContext) -> AgentPrompt:
+        current_content = context.current_thesis.get("content") or {}
+        if current_content.get("thesis_card_version") != self.V3_THESIS_CARD_VERSION:
+            raise ValueError(
+                "only v3 theses support incremental updates; v2 theses require a full reassessment"
+            )
         policy = AgentPromptBuilder._read_resource("resources/analyst_policy.md")
         workflow = AgentPromptBuilder._read_resource("resources/analysis_workflow.md")
         incremental_workflow = AgentPromptBuilder._read_resource(
@@ -167,7 +186,7 @@ class ThesisUpdatePromptBuilder:
                 sort_keys=True,
             ),
             output_contract=json.dumps(
-                QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
+                V3_QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
                 ensure_ascii=False,
                 indent=2,
             ),
@@ -178,6 +197,6 @@ class ThesisUpdatePromptBuilder:
             policy_name=self.POLICY_NAME,
             policy_version=self.POLICY_VERSION,
             policy_sha256=policy_sha256,
-            output_schema=qualitative_thesis_update_json_schema(),
+            output_schema=v3_qualitative_thesis_update_json_schema(),
             schema_name="thesis_update",
         )

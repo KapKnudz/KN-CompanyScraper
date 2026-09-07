@@ -7,8 +7,10 @@ from kncompanyscraper.analysis.agent.context_provenance import (
 )
 from kncompanyscraper.analysis.agent.output_schema import (
     QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
+    V3_QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
     _contract_to_json_schema,
     qualitative_thesis_update_json_schema,
+    v3_qualitative_thesis_update_json_schema,
 )
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt, AgentPromptBuilder
 from kncompanyscraper.analysis.agent.result_parser import _parse_contract
@@ -206,6 +208,20 @@ class ThesisChallengeResponsePromptBuilder:
             "scenario-authoring stage handles scenario bundles and calculation. "
             "Return only the required JSON."
         )
+        is_v3 = (
+            context.current_thesis.get("content", {}).get("thesis_card_version")
+            == "individual-thesis-card-v3-structured-conclusions"
+        )
+        output_contract = (
+            V3_QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT
+            if is_v3
+            else QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT
+        )
+        output_schema = (
+            v3_qualitative_thesis_update_json_schema()
+            if is_v3
+            else qualitative_thesis_update_json_schema()
+        )
         packet = {
             "challenge": {
                 "id": challenge["id"],
@@ -219,7 +235,7 @@ class ThesisChallengeResponsePromptBuilder:
             "current_facts": context.current_facts,
             "original_evidence": evidence,
             "candidate": asdict(context.candidate),
-            "output_contract": QUALITATIVE_THESIS_UPDATE_OUTPUT_CONTRACT,
+            "output_contract": output_contract,
         }
         return AgentPrompt(
             system=system,
@@ -227,7 +243,7 @@ class ThesisChallengeResponsePromptBuilder:
             policy_name=self.POLICY_NAME,
             policy_version=self.POLICY_VERSION,
             policy_sha256=sha256(system.encode("utf-8")).hexdigest(),
-            output_schema=qualitative_thesis_update_json_schema(),
+            output_schema=output_schema,
             schema_name="thesis_update",
         )
 

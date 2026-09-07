@@ -176,7 +176,9 @@ def _cmd_rank_analyzed_candidates(args):
 def _verdict_label(analysis):
     if not isinstance(analysis, dict):
         return "n/a"
-    content = analysis.get("content", {})
-    if content.get("verdict") == "latent_case" and content.get("latent_case_type"):
-        return f"{content['latent_case_type']}-latent"
-    return content.get("verdict", "n/a")
+    from kncompanyscraper.models.stored_analysis import as_stored_analysis
+
+    document = as_stored_analysis(analysis)
+    if document.verdict == "latent_case" and document.latent_case_type:
+        return f"{document.latent_case_type}-latent"
+    return document.verdict or "n/a"

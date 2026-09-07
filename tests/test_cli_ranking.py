@@ -1,7 +1,9 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from kncompanyscraper.cli.ranking import _cmd_rank_analyzed_candidates
+from kncompanyscraper.cli.ranking import _cmd_rank_analyzed_candidates, _verdict_label
+from tests.test_agent_result_boundary import _v3_qualitative_response, valid_result
 
 
 def test_rank_analyzed_candidates_runs_canonical_job_and_exports(tmp_path, capsys):
@@ -71,3 +73,24 @@ def test_rank_analyzed_candidates_reports_missing_analyses(capsys):
         _cmd_rank_analyzed_candidates(SimpleNamespace(output=None))
 
     assert "No accepted individual theses found" in capsys.readouterr().out
+
+
+def test_verdict_label_projects_v3_latent_case_type():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["verdict"] = "latent_case"
+    payload["structured_conclusions"]["trigger"] = {
+        "claim_id": "operating_trigger",
+        "trigger_type": "operating",
+        "unresolved_claim_code": "margin_recovery",
+        "observable_metric_code": "ebit_margin",
+        "threshold_code": "above_10_percent",
+        "evidence_window": "0_12m",
+        "single_observation_sufficient": True,
+        "observation_requirement": "single_observation",
+        "source_ids": ["news:21"],
+        "limitation_codes": [],
+    }
+
+    assert _verdict_label({"content": payload, "metadata": {}}) == "operating-latent"

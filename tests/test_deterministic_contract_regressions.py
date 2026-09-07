@@ -13,7 +13,11 @@ from kncompanyscraper.analysis.agent.output_schema import (
     RevenueResilience,
 )
 from kncompanyscraper.analysis.agent.result_parser import StockAnalysisValidationError
-from tests.test_agent_result_boundary import qualitative_response, valid_result
+from tests.test_agent_result_boundary import (
+    _v3_qualitative_response,
+    qualitative_response,
+    valid_result,
+)
 
 
 FIXTURE_PATH = (
@@ -106,6 +110,37 @@ def test_2026_09_04_company_failure_shape_is_frozen(ticker):
         )
 
     assert str(exc_info.value) == case["expected_message"]
+
+
+@pytest.mark.parametrize("ticker", ["GULD", "CLAS B", "NELLY"])
+def test_ownership_regression_shapes_omit_claims_when_source_map_is_empty(ticker):
+    case = _case(ticker)
+    result = _result(case)
+    result.ownership_claims = []
+    result.ownership_and_flow_assessment = ""
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    source_id = case.get("candidate", {}).get("documents", ["news:21"])[0]
+
+    def replace_source_ids(value):
+        if isinstance(value, dict):
+            return {key: replace_source_ids(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [replace_source_ids(item) for item in value]
+        return source_id if value == "news:21" else value
+
+    payload = replace_source_ids(payload)
+
+    validated = AgentExecutionBoundary(MagicMock()).validate_qualitative_response(
+        json.dumps(payload), _candidate(case)
+    )
+
+    assert validated.structured_conclusions is not None
+    assert validated.ownership_claims == []
+    assert validated.ownership_and_flow_assessment == (
+        "Ownership and liquidity evidence are unavailable. "
+        "No inference can be made from their absence."
+    )
 
 
 def test_retry_manifest_has_exactly_seven_active_companies_and_excludes_navigo():

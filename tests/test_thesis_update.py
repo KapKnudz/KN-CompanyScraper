@@ -5,13 +5,9 @@ import pytest
 
 from kncompanyscraper.analysis.agent.agent_candidate import AgentCandidate
 from kncompanyscraper.analysis.agent.context_provenance import deterministic_context_sha256
-from kncompanyscraper.analysis.agent.output_schema import CompanyFact
-from kncompanyscraper.analysis.agent.output_schema import (
-    ActivationTriggerEvidence,
-    ActivationTriggerSpec,
-)
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
+    parse_stock_analysis_result,
     parse_thesis_update_result,
 )
 from kncompanyscraper.analysis.agent.thesis_update import (
@@ -23,7 +19,7 @@ from kncompanyscraper.analysis.agent.thesis_update_service import (
     ThesisUpdateExecutionBoundary,
     ThesisUpdateService,
 )
-from tests.test_agent_result_boundary import valid_result
+from tests.test_agent_result_boundary import _v3_qualitative_response, valid_result
 
 
 def update_response(impact="thesis_strengthened", changed_sections=None):
@@ -39,59 +35,96 @@ def update_response(impact="thesis_strengthened", changed_sections=None):
     )
 
 
-def latent_update_response(*, evidence_status="unresolved", evidence_window="Q3 2026 report"):
+def v3_update_response(impact="thesis_strengthened", changed_sections=None):
     thesis = valid_result()
-    thesis.verdict = "latent_case"
-    thesis.latent_case_type = "operating"
-    thesis.activation_trigger = "The EBIT margin trigger remains unresolved."
-    thesis.activation_trigger_spec = ActivationTriggerSpec(
-        unresolved_claim="The margin recovery is durable.",
-        observable_metric_or_event="EBIT margin in the Q3 2026 report.",
-        threshold_or_direction="Maintain at least 12%.",
-        evidence_window=evidence_window,
-        single_observation_sufficient=True,
-        observation_requirement="One report establishes the stated margin condition.",
-    )
-    thesis.activation_trigger_evidence = [
-        ActivationTriggerEvidence(
-            evidence_item="The new report tests the margin condition.",
-            status=evidence_status,
-            rationale="The supplied report is directly relevant to the stored trigger.",
-            source_ids=["news:new"],
-        )
-    ]
+    thesis.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
     return json.dumps(
         {
-            "impact": "thesis_strengthened",
-            "summary": "The stored trigger was evaluated.",
-            "changed_sections": ["triggers_and_break_conditions"],
-            "thesis": thesis.to_dict(),
+            "impact": impact,
+            "summary": "The new report supports the revenue mechanism.",
+            "changed_sections": (
+                ["revenue_drivers"] if changed_sections is None else changed_sections
+            ),
+            "thesis": json.loads(_v3_qualitative_response(thesis)),
         }
+    )
+
+
+def latent_update_response(*, evidence_status="unresolved", evidence_window="Q3 2026 report"):
+    return v3_latent_update_response(
+        evidence_entries=True,
+        evidence_status=evidence_status,
+        evidence_window={
+            "Q3 2026 report": "0_12m",
+            "Q4 2026 report": "12_24m",
+        }.get(evidence_window, evidence_window),
     )
 
 
 def latent_context():
     candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
     current = valid_result()
-    current.verdict = "latent_case"
-    current.latent_case_type = "operating"
-    current.activation_trigger = "The EBIT margin trigger remains unresolved."
-    current.activation_trigger_spec = ActivationTriggerSpec(
-        unresolved_claim="The margin recovery is durable.",
-        observable_metric_or_event="EBIT margin in the Q3 2026 report.",
-        threshold_or_direction="Maintain at least 12%.",
-        evidence_window="Q3 2026 report",
-        single_observation_sufficient=True,
-        observation_requirement="One report establishes the stated margin condition.",
-    )
+    current.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    current_payload = json.loads(_v3_qualitative_response(current))
+    current_payload["verdict"] = "latent_case"
+    current_payload["structured_conclusions"]["trigger"] = json.loads(
+        v3_latent_update_response()
+    )["thesis"]["structured_conclusions"]["trigger"]
     return ThesisUpdateContext(
         candidate=candidate,
-        current_thesis={"id": 9, "content": current.to_dict()},
+        current_thesis={"id": 9, "content": current_payload},
         current_facts=[],
         prior_source_ids=("news:old",),
         new_source_ids=("news:new",),
         deterministic_context_sha256="hash",
         deterministic_context_changed=False,
+    )
+
+
+def v3_latent_update_response(
+    *, evidence_entries=True, evidence_status="unresolved", evidence_window="0_12m"
+):
+    thesis = valid_result()
+    thesis.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(thesis))
+    payload["verdict"] = "latent_case"
+    payload["structured_conclusions"]["trigger"] = {
+        "claim_id": "operating_trigger",
+        "trigger_type": "operating",
+        "unresolved_claim_code": "margin_recovery",
+        "observable_metric_code": "ebit_margin",
+        "threshold_code": "above_10_percent",
+        "evidence_window": evidence_window,
+        "single_observation_sufficient": True,
+        "observation_requirement": "single_observation",
+        "source_ids": ["news:new"],
+        "limitation_codes": [],
+    }
+    payload["structured_conclusions"]["trigger_evidence"] = (
+        [
+            {
+                "claim": {
+                    "claim_id": "trigger_check",
+                    "domain": "margin",
+                    "predicate": "observation",
+                    "value": "supported",
+                    "source_ids": ["news:new"],
+                    "limitation_codes": [],
+                },
+                "status": evidence_status,
+                "rationale_code": "persistence_unresolved",
+            }
+        ]
+        if evidence_entries
+        else []
+    )
+    return json.dumps(
+        {
+            "impact": "thesis_strengthened",
+            "summary": "The stored typed trigger was evaluated.",
+            "changed_sections": ["triggers_and_break_conditions"],
+            "thesis": payload,
+        }
     )
 
 
@@ -113,6 +146,16 @@ def test_incremental_result_parser_builds_nested_thesis():
 
     assert update.impact == "thesis_strengthened"
     assert update.thesis.company_id == 42
+
+
+def test_full_result_parser_accepts_v3_persisted_thesis():
+    thesis = valid_result()
+    thesis.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+
+    parsed = parse_stock_analysis_result(_v3_qualitative_response(thesis))
+
+    assert parsed.thesis_card_version == "individual-thesis-card-v3-structured-conclusions"
+    assert parsed.structured_conclusions is not None
 
 
 def test_context_builder_supplies_only_new_sources_and_detects_unchanged_context():
@@ -187,7 +230,9 @@ def test_incremental_boundary_persists_material_update_with_linkage_metadata():
         candidate=candidate,
         current_thesis={
             "id": 9,
-            "content": {"thesis_card_version": "individual-thesis-card-v2"},
+            "content": {
+                "thesis_card_version": "individual-thesis-card-v3-structured-conclusions"
+            },
         },
         current_facts=[],
         prior_source_ids=(),
@@ -199,7 +244,7 @@ def test_incremental_boundary_persists_material_update_with_linkage_metadata():
     stock_boundary.persist_response.return_value = MagicMock(analysis_id=15)
 
     accepted = ThesisUpdateExecutionBoundary(stock_boundary).persist_response(
-        update_response(), context, "test-model", {"prior_thesis_revision_id": 9}
+        v3_update_response(), context, "test-model", {"prior_thesis_revision_id": 9}
     )
 
     assert accepted.persisted_analysis.analysis_id == 15
@@ -222,9 +267,11 @@ def test_incremental_boundary_rejects_changed_sections_for_no_material_change():
 
 def test_incremental_boundary_preserves_thesis_for_no_material_change():
     candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
+    current = valid_result()
+    current.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
     context = ThesisUpdateContext(
         candidate=candidate,
-        current_thesis={"id": 9, "content": valid_result().to_dict()},
+        current_thesis={"id": 9, "content": json.loads(_v3_qualitative_response(current))},
         current_facts=[],
         prior_source_ids=(),
         new_source_ids=(),
@@ -235,7 +282,7 @@ def test_incremental_boundary_preserves_thesis_for_no_material_change():
     stock_boundary.persist_response.return_value = MagicMock(analysis_id=16)
 
     accepted = ThesisUpdateExecutionBoundary(stock_boundary).persist_response(
-        update_response("no_material_change", []), context, "test-model"
+        v3_update_response("no_material_change", []), context, "test-model"
     )
 
     assert accepted.persisted_analysis.analysis_id == 16
@@ -273,7 +320,9 @@ def test_legacy_thesis_requires_full_reassessment_before_incremental_update():
 
 def test_no_material_change_ignores_calculated_forward_scenario_output():
     candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
-    current = valid_result().to_dict()
+    current_result = valid_result()
+    current_result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    current = json.loads(_v3_qualitative_response(current_result))
     current["forward_scenario_analysis"] = {"status": "calculated"}
     context = ThesisUpdateContext(
         candidate=candidate,
@@ -288,7 +337,7 @@ def test_no_material_change_ignores_calculated_forward_scenario_output():
     stock_boundary.persist_response.return_value = MagicMock(analysis_id=17)
 
     accepted = ThesisUpdateExecutionBoundary(stock_boundary).persist_response(
-        update_response("no_material_change", []), context, "test-model"
+        v3_update_response("no_material_change", []), context, "test-model"
     )
 
     assert accepted.persisted_analysis.analysis_id == 17
@@ -296,7 +345,9 @@ def test_no_material_change_ignores_calculated_forward_scenario_output():
 
 def test_no_material_change_reports_differing_thesis_fields():
     candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
-    current = valid_result().to_dict()
+    current_result = valid_result()
+    current_result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    current = json.loads(_v3_qualitative_response(current_result))
     context = ThesisUpdateContext(
         candidate=candidate,
         current_thesis={"id": 9, "content": current},
@@ -306,56 +357,44 @@ def test_no_material_change_reports_differing_thesis_fields():
         deterministic_context_sha256="hash",
         deterministic_context_changed=True,
     )
-    changed = valid_result()
-    changed.one_sentence_thesis = "Quietly rewritten thesis."
+    changed = json.loads(v3_update_response("no_material_change", [])
+    )
+    changed["thesis"]["structured_conclusions"]["headline_case"]["break_condition"][
+        "value"
+    ] = "Quietly rewritten thesis."
     response = json.dumps(
         {
-            "impact": "no_material_change",
-            "summary": "Nothing changed.",
-            "changed_sections": [],
-            "thesis": changed.to_dict(),
+            **changed,
         }
     )
 
-    with pytest.raises(StockAnalysisValidationError, match="one_sentence_thesis"):
+    with pytest.raises(StockAnalysisValidationError, match="structured_conclusions"):
         ThesisUpdateExecutionBoundary(MagicMock()).persist_response(
             response, context, "test-model"
         )
 
 
-def test_no_material_change_discards_ledger_only_rewrite():
+def test_incremental_boundary_rejects_audit_only_v2_thesis():
     candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
-    current = valid_result().to_dict()
     context = ThesisUpdateContext(
         candidate=candidate,
-        current_thesis={"id": 9, "content": current},
+        current_thesis={
+            "id": 9,
+            "content": {
+                "thesis_card_version": "individual-thesis-card-v2"
+            },
+        },
         current_facts=[],
         prior_source_ids=(),
         new_source_ids=(),
         deterministic_context_sha256="hash",
         deterministic_context_changed=True,
     )
-    changed = valid_result()
-    changed.company_fact_ledger.business_model = [
-        CompanyFact("Reconstructed legacy fact.", "analyst_inference", ["news:21"])
-    ]
-    response = json.dumps(
-        {
-            "impact": "no_material_change",
-            "summary": "Nothing changed.",
-            "changed_sections": [],
-            "thesis": changed.to_dict(),
-        }
-    )
-    stock_boundary = MagicMock()
-    stock_boundary.persist_response.return_value = MagicMock(analysis_id=19)
 
-    ThesisUpdateExecutionBoundary(stock_boundary).persist_response(
-        response, context, "test-model"
-    )
-
-    persisted_payload = json.loads(stock_boundary.persist_response.call_args.args[0])
-    assert persisted_payload["company_fact_ledger"] == current["company_fact_ledger"]
+    with pytest.raises(StockAnalysisValidationError, match="audit-only"):
+        ThesisUpdateExecutionBoundary(MagicMock()).persist_response(
+            v3_update_response("no_material_change", []), context, "test-model"
+        )
 
 
 def test_incremental_boundary_does_not_replace_thesis_when_reassessment_is_required():
@@ -375,9 +414,11 @@ def test_incremental_boundary_does_not_replace_thesis_when_reassessment_is_requi
 
 def test_update_prompt_has_incremental_schema_and_current_thesis():
     candidate = AgentCandidate(1, 42, "TEST", "Testbolaget")
+    current = valid_result()
+    current.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
     context = ThesisUpdateContext(
         candidate=candidate,
-        current_thesis={"id": 9, "content": valid_result().to_dict()},
+        current_thesis={"id": 9, "content": json.loads(_v3_qualitative_response(current))},
         current_facts=[],
         prior_source_ids=(),
         new_source_ids=("news:new",),
@@ -394,14 +435,102 @@ def test_update_prompt_has_incremental_schema_and_current_thesis():
     assert "Current thesis and provenance" in prompt.user
 
 
+def test_update_prompt_rejects_audit_only_v2_thesis():
+    context = ThesisUpdateContext(
+        candidate=AgentCandidate(1, 42, "TEST", "Testbolaget"),
+        current_thesis={
+            "id": 9,
+            "content": {"thesis_card_version": "individual-thesis-card-v2"},
+        },
+        current_facts=[],
+        prior_source_ids=(),
+        new_source_ids=("news:new",),
+        deterministic_context_sha256="hash",
+        deterministic_context_changed=False,
+    )
+
+    with pytest.raises(ValueError, match="v2 theses require"):
+        ThesisUpdatePromptBuilder().build(context)
+
+
 def test_incremental_update_must_record_trigger_evaluation():
     context = latent_context()
     response = json.loads(latent_update_response())
-    response["thesis"]["activation_trigger_evidence"] = []
+    response["thesis"]["structured_conclusions"]["trigger_evidence"] = []
 
     with pytest.raises(StockAnalysisValidationError, match="must evaluate the stored activation trigger"):
         ThesisUpdateExecutionBoundary(MagicMock()).persist_response(
             json.dumps(response), context, "test-model"
+        )
+
+
+def test_v3_incremental_update_must_evaluate_structured_trigger():
+    current = valid_result()
+    current.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    current_payload = json.loads(_v3_qualitative_response(current))
+    current_payload["verdict"] = "latent_case"
+    current_payload["structured_conclusions"]["trigger"] = json.loads(
+        v3_latent_update_response()
+    )["thesis"]["structured_conclusions"]["trigger"]
+    context = ThesisUpdateContext(
+        candidate=AgentCandidate(1, 42, "TEST", "Testbolaget"),
+        current_thesis={"id": 9, "content": current_payload},
+        current_facts=[],
+        prior_source_ids=("news:old",),
+        new_source_ids=("news:new",),
+        deterministic_context_sha256="hash",
+        deterministic_context_changed=False,
+    )
+
+    stock_boundary = MagicMock()
+    stock_boundary.persist_response.return_value = MagicMock(analysis_id=22)
+    accepted = ThesisUpdateExecutionBoundary(stock_boundary).persist_response(
+        v3_latent_update_response(), context, "test-model"
+    )
+
+    assert accepted.persisted_analysis.analysis_id == 22
+
+
+def test_v3_incremental_update_cannot_downgrade_to_v2():
+    current = valid_result()
+    current.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    context = ThesisUpdateContext(
+        candidate=AgentCandidate(1, 42, "TEST", "Testbolaget"),
+        current_thesis={"id": 9, "content": current.to_dict()},
+        current_facts=[],
+        prior_source_ids=(),
+        new_source_ids=(),
+        deterministic_context_sha256="hash",
+        deterministic_context_changed=False,
+    )
+
+    with pytest.raises(StockAnalysisValidationError, match="require v3"):
+        ThesisUpdateExecutionBoundary(MagicMock()).persist_response(
+            update_response(), context, "test-model"
+        )
+
+
+def test_v3_incremental_update_rejects_unchecked_structured_trigger():
+    current = valid_result()
+    current.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    current_payload = json.loads(_v3_qualitative_response(current))
+    current_payload["verdict"] = "latent_case"
+    current_payload["structured_conclusions"]["trigger"] = json.loads(
+        v3_latent_update_response()
+    )["thesis"]["structured_conclusions"]["trigger"]
+    context = ThesisUpdateContext(
+        candidate=AgentCandidate(1, 42, "TEST", "Testbolaget"),
+        current_thesis={"id": 9, "content": current_payload},
+        current_facts=[],
+        prior_source_ids=("news:old",),
+        new_source_ids=("news:new",),
+        deterministic_context_sha256="hash",
+        deterministic_context_changed=False,
+    )
+
+    with pytest.raises(StockAnalysisValidationError, match="must evaluate"):
+        ThesisUpdateExecutionBoundary(MagicMock()).persist_response(
+            v3_latent_update_response(evidence_entries=False), context, "test-model"
         )
 
 

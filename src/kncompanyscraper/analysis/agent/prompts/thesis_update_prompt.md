@@ -16,20 +16,25 @@ Update the persisted company thesis using the incremental workflow.
 
 Only textual sources, insider events, and ownership/liquidity flow source IDs not present in the prior thesis are included. Deterministic results are current and may be unchanged. Keep insider transactions, executed company buybacks, short-interest snapshots, and long-holder ownership analytically distinct. Treat `_raw` flow fields as semantically unverified.
 
-Keep `ownership_claims` synchronized with every material ownership/liquidity
-assessment and cite the exact supplied source IDs. Do not retain a precise
-ownership claim when its current deterministic field is null.
+Keep `ownership_claims` as the closed typed union synchronized with every
+material ownership/liquidity assessment. Each binding must use the canonical
+packet field, exact typed value/unit, and exact
+`research_evidence.ownership_liquidity.source_ids_by_measure` entry. Do not
+retain a precise ownership claim when its current deterministic field is null.
+Documentary citations cannot be relabeled as ownership evidence; with an empty
+source map, omit claims and retain only the deterministic no-data assessment.
 
-Re-evaluate the stored activation trigger directly. Add one
-`activation_trigger_evidence` entry for each relevant new evidence item with
-`confirms`, `weakens`, or `unresolved`; do not invent another reporting-period
-wait. If the trigger is resolved, activate or revise the thesis and explain the
-changed sections. Preserve explicit missing-information classes and impacts.
-Re-test `falsifiable_case`, both decisive-evidence fields, and every structured
-`thesis_break_tests` item against the new evidence. Preserve unchanged tests;
-update their baselines or responses only when the supplied evidence supports
-the change. When a break test fires, use `thesis_break_triggered` and identify
-the affected section.
+Re-evaluate the stored typed `structured_conclusions.trigger` directly. Add
+one `structured_conclusions.trigger_evidence` entry for each relevant new
+evidence item with `confirms`, `weakens`, or `unresolved`; do not invent
+another reporting-period wait. If the trigger is resolved, activate or revise
+the thesis and explain the changed sections. Preserve explicit typed
+missing-information classes and impacts.
+Re-test the typed falsifiable case, both typed decisive-evidence fields, and
+every structured `thesis_break_tests` item against the new evidence. Preserve
+unchanged tests; update their code fields or responses only when the supplied
+evidence supports the change. When a break test fires, use
+`thesis_break_triggered` and identify the affected section.
 
 Valid trigger examples include: one announced customer replacement that
 restores at least the quantified ARR loss; one report showing EBIT margin at or

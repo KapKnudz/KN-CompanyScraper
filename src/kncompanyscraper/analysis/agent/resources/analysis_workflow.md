@@ -14,7 +14,7 @@ Follow the steps in order. If a core step cannot be completed, preserve the miss
 
 Describe the customer, problem, product or service, pricing, route to market, gross economics, operating-cost structure, reinvestment needs, and principal dependencies. State whether the business falls within the defined circle of competence.
 
-Populate `business_model_profile` as the normalized comparison layer. Permit
+Populate the typed `business_model_facts` graph as the normalized comparison layer. Permit
 multiple revenue-model types for genuinely hybrid businesses; do not force one
 label. `recurring_revenue_profile` describes the economics of the revenue, not
 merely repeat customer behavior. Pricing power requires evidence of retained
@@ -34,7 +34,7 @@ State the two-to-three-year revenue mechanism. Distinguish organic growth from a
 
 Estimate a defensible EBIT-margin path. If gross margin is available, investigate the gross-to-EBIT spread. Explain the operational change required for every material margin increase.
 
-Populate `margin_expansion_case` separately from the scenario arithmetic. Its
+Populate the typed `margin_facts` graph separately from the scenario arithmetic. Its
 status identifies whether the mechanism is latent, has early evidence, is
 active, stalled, invalidated, not applicable, or unassessable. Name the operating
 mechanism and required changes, cite supporting and contrary evidence, and leave
@@ -136,15 +136,19 @@ Analyze insider activity, executed buybacks, short-interest snapshots, ownership
 
 Use this evidence to modify confidence or timing. Do not allow it to replace the fundamental case.
 
-Repeat each material liquidity, executed-buyback, short-interest, or ownership
-conclusion in `ownership_claims` with an atomic statement, evidence kind, and
-the exact supplied ownership/liquidity source IDs. Do not state a precise
-free-float, holder, institutional, concentration, voting, or ownership-change
-value when the corresponding deterministic field is null. When no
-ownership/liquidity source IDs are supplied, leave the claims empty and use the
-deterministic no-data assessment.
+`ownership_claims` is a closed typed union with no model-authored statement or
+destination. Each claim selects a fixed `claim_kind`, `subject_role`, and
+`measure`, then supplies the registry's canonical `deterministic_field`, exact
+packet value/unit, and exact generated source set from
+`research_evidence.ownership_liquidity.source_ids_by_measure`.
+Documentary founder/shareholder language cannot authorize an ownership claim.
+If that source map has no approved IDs, omit every ownership claim and use only
+the deterministic no-data assessment. Changing a documentary citation into an
+ownership citation is not permitted. A null deterministic field makes the
+measure unavailable; do not substitute insider events, buybacks, liquidity, or
+short interest.
 
-Populate `timing_assessment` with the fixed case horizon and observable catalyst
+Populate the typed `timing_facts` graph with the fixed case horizon and observable catalyst
 windows: `0_12m`, `12_24m`, `24_48m`, or `uncertain`. Every catalyst must say what
 future evidence would confirm it and cite the evidence establishing why it is
 expected. Do not invent a numeric confirmation threshold. Use a sourced threshold,
@@ -153,7 +157,7 @@ An assumption horizon alone is not a timing catalyst.
 
 Insider transactions are deliberately supplied as raw events with subsequent unadjusted price returns. Do not convert them into a mechanical score. Compare like-for-like transaction types, roles, sizes, repeated behavior, and the outcomes visible at the evidence cutoff. Do not treat missing future horizons as failed outcomes.
 
-Repeat each material insider conclusion in `insider_claims` with an atomic
+Repeat each material insider conclusion in `structured_conclusions.insider_claims` with an atomic
 statement, an evidence kind, and the exact insider event source IDs supporting
 it. Analyst inferences must cite the underlying events. If there are no insider
 events, leave the claims empty and use the deterministic no-data wording.
@@ -179,7 +183,7 @@ After sharp price moves, re-evaluate the evidence independently of the entry pri
 
 Return the required structured result. Use decimal fractions for rates, for example `0.15` for 15%. Use `null` for unavailable scalar values and list every absence in `missing_information`. For every listed absence, add one matching `missing_information_details` entry with `limitation_class` `core` or `supplemental` and a short explanation of its impact on the conclusion.
 
-Choose `reject`, `watch`, `latent_case`, or `activated_case`. Explain why the selected status is more appropriate than the next-more-positive status. When choosing `latent_case`, set exactly one `latent_case_type` and provide one primary `activation_trigger` plus its structured `activation_trigger_spec`. Use `price` only when the current price or valuation is the blocker; use `operating` only when the return range can clear the hurdle but a named operating mechanism remains unresolved.
+Choose `reject`, `watch`, `latent_case`, or `activated_case`. Explain why the selected status is more appropriate than the next-more-positive status. When choosing `latent_case`, set exactly one typed `structured_conclusions.trigger` and provide its structured trigger fields. Use `price` only when the current price or valuation is the blocker; use `operating` only when the return range can clear the hurdle but a named operating mechanism remains unresolved.
 
 Populate the structured company fact ledger with concise, reusable observations rather than thesis prose. Each item must be atomic, identify whether it is a fact, management claim, or analyst inference, and cite original supplied evidence. Use an ISO date for `source_date` when the source date is known. Empty headings are preferable to unsupported entries.
 
@@ -192,5 +196,5 @@ exclusion, weak business quality, insufficient evidence, an unactivated thesis,
 liquidity, balance-sheet risk, or another stated reason. An investable case must
 use the `investable` reason code and no reconsideration trigger. A
 `valuation_only` or `thesis_not_activated` exclusion must provide a concrete,
-observable `reconsideration_trigger`; do not give a generic lower-price or
+observable typed reconsideration trigger; do not give a generic lower-price or
 better-results statement without identifying what changes the case.

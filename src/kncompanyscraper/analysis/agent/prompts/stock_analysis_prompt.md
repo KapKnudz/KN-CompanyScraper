@@ -1,16 +1,11 @@
 Analyze the company candidate below using the system policy and workflow.
 
 Do not repeat the deterministic ranking as your conclusion. Reconcile conflicting evidence, distinguish facts from assumptions, and make missing information visible. Do not invent financial values or management history.
-Every material factual claim derived from a textual document or insider transaction must have an entry in `citations` using the exact supplied `source_id`. Keep source IDs in structured claims, ledger entries, assumptions, and citations; synthesize readable prose without printing source-ID lists or repeating methodology labels.
-For each major narrative section, write one causal paragraph connecting the
-observation to its implication, a counterpoint, and the limiting uncertainty;
-keep those rhetorical parts in prose rather than adding schema fields.
-Also populate `management_claims` and `insider_claims` for the corresponding
-assessment sections. Each claim must be a short, atomic statement with an
-`evidence_kind`, one or more exact supplied `source_ids`, and any relevant
-`limitations`. Mark interpretations as `analyst_inference` and cite the facts
-they rely on. A non-empty management or insider assessment must have matching
-structured claims; do not rely on the global `citations` list alone.
+Every material factual claim derived from a textual document or insider transaction must be represented in the relevant `structured_conclusions` claim or fact with the exact supplied `source_ids`. Use only the closed typed fields in that graph; readable prose is rendered deterministically after validation.
+For each material conclusion, choose atomic typed claims and facts that connect
+the observation to its implication, counterpoint, and limiting uncertainty.
+Use the dedicated management, capital-allocation, evidence, and break-test
+arrays rather than adding narrative or unstructured fields.
 Use only source IDs listed in `evidence_catalog` or exact supplied
 `full_results.*` paths. Never turn reverse-DCF curve labels, sensitivity names,
 or other descriptive packet keys into source IDs.
@@ -22,18 +17,12 @@ Preserve the complete namespace of peer IDs: target metrics use
 `peer:target:...`, while comparable-company metrics use `peer:...`; do not
 shorten a target ID such as `peer:target:financial:114:2025-12-31` to
 `peer:financial:114:2025-12-31`.
-For `management_credibility_ledger`, cite the original management statement in
-`claim_source_ids` and cite the later report or release that supports an
-observed outcome in `outcome_source_ids`. Keep `source_ids` as the union of
-those lists. Use `result: unverifiable` with a null `observed_outcome` when a
-claim is too recent or too vague to evaluate; do not treat a missing outcome
-as a miss. Populate `management_credibility_coverage` from material,
-testable claims in the supplied history: count evaluated claims, pending
-claims, and eligible claims omitted from the ledger. Explain every omission
-in `omission_reasons`; do not add repetitive entries to reach a target count.
-When `omitted_claim_count` is zero, `omission_reasons` must be an empty list.
-Pending or unverifiable claims are not omissions.
-Build `company_fact_ledger` from short, atomic observations under the fixed headings. Distinguish facts, management claims, and analyst inferences. Every ledger item must cite at least one exact supplied source ID; leave a heading empty when it lacks support. Do not duplicate the same observation under several headings.
+In `structured_conclusions.management_ledger`, use the closed management
+fact codes and cite the supplied source IDs for each observation. Build
+`company_facts` from closed capital-allocation fact codes and keep management
+facts in `management_claims` or `management_ledger`; do not cross-route facts
+between those sections. Every fact must cite at least one exact supplied
+source ID; leave a section empty when it lacks support.
 When `full_results.financial_history.half_year_comparison` is available, compare
 the latest complete H1 with the same prior-year H1 and the supplied H1 history.
 Use its exact fields and source IDs; do not reconstruct H1 by adding reports in
@@ -60,15 +49,14 @@ exact `full_results.peer_comparison` path. Do not invent peer explanations or
 use peer ranges as a new valuation calculation. When peer coverage is
 insufficient, state that limitation without weakening the core historical
 valuation result.
-Produce one `individual-thesis-card-v2`. Set `evidence_as_of` to the exact supplied research-evidence cutoff. Use `full_results.financial_history` for report-by-report comparisons and cite its supplied `financial:*` source IDs. Structure the business model consistently in `business_model_profile`; do not label recurring revenue, pricing power, capital intensity, operating leverage, or circle of competence more positively than the cited evidence supports. Keep unsupported dimensions `unassessable`.
-Make `one_sentence_thesis` a single falsifiable case statement and repeat it
-verbatim in `falsifiable_case.statement`. State the concrete observation that
-would falsify it, use the same horizon as `case_horizon_months`, and cite the
-evidence establishing the current baseline. Do not use a valuation target or a
-generic phrase such as "results disappoint" as the falsification test.
+Produce one `individual-thesis-card-v3-structured-conclusions`. Set `evidence_as_of` to the exact supplied research-evidence cutoff. Use `full_results.financial_history` for report-by-report comparisons and cite its supplied `financial:*` source IDs. Put business-model, timing, margin, and resilience conclusions in their corresponding typed graph arrays; keep unsupported dimensions `unassessable`.
+Use the typed `headline_case` and `falsifiable_case` components to define one
+code-owned falsifiable case. State the concrete observation that would falsify
+it, use the same horizon as `case_horizon_months`, and cite the evidence
+establishing the current baseline. Do not use a valuation target or a generic
+phrase such as "results disappoint" as the falsification test.
 Set `analysis_status` to `complete`. Evidence-blocked and method-unsupported candidates are handled before this prompt by the deterministic readiness gate. Deterministic valuation limitations may still be present: preserve unavailable reverse-DCF conclusions as `unassessable`. Forward scenarios are produced by a separate scenario-authoring stage after this response; do not provide calculated prices, returns, or fair values here. Do not use `watch` merely as a synonym for a missing valuation calculation; choose the verdict from the remaining business and operating evidence.
-Define timing through observable catalysts rather than a vague near-term/long-term label. Every catalyst must state what would confirm it, use one fixed timing window, and cite supplied evidence. `timing_assessment.horizon_months` must match `case_horizon_months` when both are present.
-Populate `revenue_resilience` with an evidence-backed assessment of contractual
+Define timing through typed timing facts rather than a vague near-term/long-term label. Populate `revenue_resilience` with an evidence-backed assessment of contractual
 or subscription stickiness versus message, transaction, usage, project, or
 order volume. Discuss observed revenue, margin, or cash-flow variability when
 supplied. Use `unassessable` and explain the limitation when evidence is thin;
@@ -79,38 +67,50 @@ are not supplied. Keep insider transactions, executed company buybacks,
 short-interest snapshots, and long-holder ownership distinct. Cite the exact
 flow source IDs for any supplied flow assertion, and describe `_raw` fields
 without adding percentage, currency, or trend interpretations.
-Repeat every material liquidity, buyback, short-interest, or ownership
-conclusion in `ownership_claims` using atomic statements and the exact supplied
-ownership/liquidity source IDs. If the packet has no source IDs, leave the
-claims empty and use the deterministic no-data wording.
+Put supplied insider-transaction observations in
+`structured_conclusions.insider_claims` with domain `insider` and exact insider
+event source IDs; do not use ownership claims as a proxy for insider evidence.
+`ownership_claims` is a closed typed union. Each item contains only
+`claim_kind`, `subject_role`, `measure`, `binding`, and `limitation_codes`;
+`binding` must use the exact canonical `deterministic_field`, packet value,
+unit, and the exact `source_ids_by_measure` entry in
+`research_evidence.ownership_liquidity`. It has no statement, destination, or
+render-target field. Documentary founder/shareholder language is never an
+ownership source. When that generated source map is empty, omit all ownership
+claims and do not write a best-effort summary: the boundary supplies exactly
+`Ownership and liquidity evidence are unavailable. No inference can be made
+from their absence.` in the ownership projection. Changing a documentary
+citation into an ownership citation is not permitted.
 Treat every packet subsection whose `status` is `empty` or `unknown` and whose
 `source_ids` list is empty as a limitation only. It is not citable evidence:
 do not turn its packet location into a `full_results.*` citation or use it to
 support a factual claim.
 
-For `missing_information`, provide one matching `missing_information_details`
-entry per item. Use `core` only for an unresolved conclusion-determining input;
-use `supplemental` for context that does not determine the fundamental case.
-For a latent case, choose exactly one subtype and define one primary trigger in
-`activation_trigger_spec`. The trigger must name the unresolved claim, an
-observable company-specific metric or event, a threshold or direction, an
-evidence window, and why one observation is or is not sufficient.
+For `structured_conclusions.missing_information_details`, provide one typed
+entry per missing input. Use `core` only for an unresolved
+conclusion-determining input; use `supplemental` for context that does not
+determine the fundamental case.
+For a latent case, choose exactly one subtype and define one primary typed
+`trigger`. The closed trigger codes must name the unresolved claim, an
+observable company metric or event, a threshold or direction, an evidence
+window, and why one observation is or is not sufficient.
 When a trigger combines a price observation with a later report, state that the
 report rechecks the named operating baseline or persistence risk; do not leave
 the reason for multiple observations implicit.
 
-Select exactly one `strongest_confirming_evidence` item and one
-`strongest_disconfirming_evidence` item when citable evidence exists. Each must
-explain why that item is decision-relevant and cite exact supplied source IDs;
-use `null` only when the corresponding side genuinely has no citable evidence.
+Select exactly one typed `strongest_confirming_evidence` item and one typed
+`strongest_disconfirming_evidence` item when citable evidence exists. Each
+must select a claim, use a closed relevance code, and cite exact supplied
+source IDs; use `null` only when the corresponding side genuinely has no
+citable evidence.
 
-Populate `thesis_break_tests` with one distinct test for each of the six fixed
+Populate typed `thesis_break_tests` with one distinct test for each of the six fixed
 types: `revenue_or_demand`, `margin_or_execution`,
 `balance_sheet_or_dilution`, `management_credibility`,
-`valuation_overshoot`, and `superior_evidence_or_opportunity`. Each test must
-name an observable metric or event, a threshold or direction, the response
-(`reassess`, `reduce`, or `sell`), and the source IDs establishing its current
-baseline. These are future decision rules, not restatements of current risks.
+`valuation_overshoot`, and `superior_evidence_or_opportunity`. Use only the
+closed condition, metric, threshold, and response codes; cite the source IDs
+establishing each current baseline. These are future decision rules, not
+restatements of current risks.
 
 For `revenue_resilience`, use `resilient` only for sourced retention, renewal,
 contractual, or equivalent persistence evidence; use `mixed` only when both
