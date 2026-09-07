@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from typing import Iterable, Literal
 
 from kncompanyscraper.analysis.agent.output_schema import (
+    AnalysisVerdict,
     SpecialistAgentName,
     SpecialistClaimDirection,
     SpecialistOutput,
@@ -20,7 +21,6 @@ ConflictRuleId = Literal[
 ]
 ConflictSeverity = Literal["medium", "high"]
 ConflictAction = Literal["annotate", "block_activation"]
-FinalDirection = Literal["reject", "watch", "latent_case", "activated_case"]
 
 
 @dataclass(frozen=True)
@@ -44,7 +44,7 @@ class SpecialistConflict:
 def evaluate_specialist_conflicts(
     outputs: Iterable[SpecialistOutput],
     *,
-    final_direction: FinalDirection | None = None,
+    final_direction: AnalysisVerdict | None = None,
 ) -> tuple[SpecialistConflict, ...]:
     """Evaluate only the named conflicts over typed specialist outputs.
 
@@ -60,7 +60,7 @@ def evaluate_specialist_conflicts(
     if margin is not None and _margin_conflict(margin, sell):
         margin_claims = _envelope_claims(margin)
         sell_test = _margin_sell_test(sell)
-        blockers = _margin_blockers(sell, margin_claims)
+        blockers = _margin_blockers(sell)
         conflicts.append(
             SpecialistConflict(
                 rule_id="margin_vs_sell_condition",
@@ -169,7 +169,7 @@ def evaluate_specialist_conflicts(
 
     margin_output = by_agent.get(SpecialistAgentName.MARGIN)
     if growth is not None and _multiple_conflict(
-        growth, margin_output, final_direction
+        growth, margin_output, business, final_direction
     ):
         growth_claims = growth.growth_valuation.claims
         margin_claims = margin_output.claims if margin_output is not None else []
@@ -210,7 +210,7 @@ def _margin_conflict(margin: SpecialistOutput, sell: SpecialistOutput | None) ->
     } or margin_payload.margin_dependency not in {"material", "primary"}:
         return False
     return _margin_sell_test(sell) is not None or bool(
-        _margin_blockers(sell, _envelope_claims(margin))
+        _margin_blockers(sell)
     )
 
 
@@ -226,17 +226,13 @@ def _margin_sell_test(output: SpecialistOutput | None) -> dict | None:
     return None
 
 
-def _margin_blockers(
-    output: SpecialistOutput | None, margin_claims
-) -> list[dict]:
+def _margin_blockers(output: SpecialistOutput | None) -> list[dict]:
     if output is None or output.sell_conditions is None:
         return []
-    margin_claim_ids = {claim.claim_id for claim in margin_claims}
     return [
         blocker
         for blocker in output.sell_conditions.activation_blockers
         if blocker.get("blocker_code") == "margin_or_execution"
-        or margin_claim_ids.intersection(blocker.get("claim_ids", []))
     ]
 
 
@@ -262,42 +258,51 @@ def _circle_conflict(business: SpecialistOutput, growth: SpecialistOutput) -> bo
     if business_payload is None or growth_payload is None:
         return False
     outside_circle = business_payload.circle_of_competence in {"outside", "unassessable"}
-    valuation_claim = growth_payload.reverse_dcf_assessment in {
-        "plausible",
-        "demanding",
-        "unsupported",
-    }
-    return outside_circle and valuation_claim
+    valuation_claims = [*growth.claims, *growth_payload.claims]
+    valuation_unassessable = growth_payload.reverse_dcf_assessment == "unassessable"
+    valuation_unassessable |= any(
+        claim.domain == "valuation"
+        and claim.direction is SpecialistClaimDirection.UNASSESSABLE
+        and claim.source_ids
+        for claim in valuation_claims
+    )
+    return outside_circle and valuation_unassessable and any(
+        claim.source_ids for claim in valuation_claims
+    )
 
 
 def _multiple_conflict(
     growth: SpecialistOutput,
     margin: SpecialistOutput | None,
-    final_direction: FinalDirection | None,
+    business: SpecialistOutput | None,
+    final_direction: AnalysisVerdict | None,
 ) -> bool:
     growth_payload = growth.growth_valuation
     if growth_payload is None or final_direction not in {"latent_case", "activated_case"}:
         return False
     if growth_payload.engine_dependency not in {"multiple_primary", "multiple_only"}:
         return False
-    return not _has_supported_fundamental_engine(growth, margin)
+    return not _has_supported_fundamental_engine(growth, margin, business)
 
 
 def _has_supported_fundamental_engine(
-    growth: SpecialistOutput, margin: SpecialistOutput | None
+    growth: SpecialistOutput,
+    margin: SpecialistOutput | None,
+    business: SpecialistOutput | None,
 ) -> bool:
     claims = list(growth.claims)
     if growth.growth_valuation is not None:
         claims.extend(growth.growth_valuation.claims)
     if margin is not None:
         claims.extend(margin.claims)
+    if business is not None:
+        claims.extend(business.claims)
+        if business.business_model is not None:
+            claims.extend(business.business_model.claims)
     return any(
         claim.domain in {"revenue", "margin"}
         and claim.source_ids
-        and (
-            claim.direction is SpecialistClaimDirection.POSITIVE
-            or claim.value in {"supported", "positive", "confirmed", "improving", "resilient"}
-        )
+        and claim.direction is SpecialistClaimDirection.POSITIVE
         for claim in claims
     )
 

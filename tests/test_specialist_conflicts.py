@@ -25,12 +25,22 @@ from kncompanyscraper.analysis.agent.specialist_conflicts import (
 _SOURCE = "source:fixture"
 
 
-def _claim(claim_id, domain, *, direction=SpecialistClaimDirection.POSITIVE):
+def _claim(
+    claim_id,
+    domain,
+    *,
+    direction=SpecialistClaimDirection.POSITIVE,
+    value=None,
+):
     return SpecialistClaim(
         claim_id=claim_id,
         domain=domain,
         predicate="assessment",
-        value="supported" if direction is SpecialistClaimDirection.POSITIVE else None,
+        value=(
+            "supported"
+            if value is None and direction is SpecialistClaimDirection.POSITIVE
+            else value
+        ),
         direction=direction,
         source_ids=[_SOURCE],
     )
@@ -132,12 +142,12 @@ def _insider(*, signal="positive", strength="strong"):
     )
 
 
-def _business(circle="outside"):
+def _business(circle="outside", claims=None):
     return _output(
         SpecialistAgentName.BUSINESS_MODEL,
         business_model=BusinessModelSpecialistOutput(
             circle_of_competence=circle,
-            claims=[_claim("business.circle", "business_model")],
+            claims=claims or [_claim("business.circle", "business_model")],
         ),
     )
 
@@ -158,7 +168,7 @@ def _growth(*, reverse="demanding", dependency="fundamental", claims=None):
 EVALUATION_CASES = [
     (("margin", (_margin(), _sell()), None), {"margin_vs_sell_condition"}),
     (("insider", (_management(), _insider()), None), {"insider_vs_credibility_record"}),
-    (("circle", (_business("outside"), _growth()), None), {"circle_of_competence_vs_valuation"}),
+    (("circle", (_business("outside"), _growth(reverse="unassessable")), None), {"circle_of_competence_vs_valuation"}),
     (("multiple", (_growth(dependency="multiple_only"),), "latent_case"), {"multiple_expansion_vs_activation"}),
     (("margin-near-miss", (_margin(state="active"), _sell(triggered=True)), None), set()),
     (("shock-near-miss", (_management(result="external_shock"), _insider()), None), set()),
@@ -173,8 +183,8 @@ EVALUATION_CASES = [
         (( _margin(), _sell()), None, "margin_vs_sell_condition"),
         (( _margin(), _sell(triggered=False, blocker=True)), None, "margin_vs_sell_condition"),
         (( _management(), _insider()), None, "insider_vs_credibility_record"),
-        ((_business("outside"), _growth()), None, "circle_of_competence_vs_valuation"),
-        ((_business("unassessable"), _growth(reverse="unsupported")), None, "circle_of_competence_vs_valuation"),
+        ((_business("outside"), _growth(reverse="unassessable")), None, "circle_of_competence_vs_valuation"),
+        ((_business("unassessable"), _growth(reverse="unassessable")), None, "circle_of_competence_vs_valuation"),
         ((_growth(dependency="multiple_only"),), "latent_case", "multiple_expansion_vs_activation"),
     ],
 )
@@ -201,7 +211,7 @@ def test_explicit_conflict_rules_surface_typed_triggers(
         ((_management(result="external_shock"), _insider()), None),
         ((_management(result="kept", pattern=ManagementPatternState.SUPPORTIVE), _insider(), _business("outside")), None),
         ((_business("inside"), _growth()), None),
-        ((_business("outside"), _growth(reverse="unassessable")), None),
+        ((_business("outside"), _growth(reverse="plausible")), None),
         ((_growth(dependency="multiple_only"),), None),
         ((_growth(dependency="multiple_only", claims=[_claim("revenue.engine", "revenue")]),), "activated_case"),
     ],
@@ -210,6 +220,54 @@ def test_near_miss_bundles_do_not_surface_generic_disagreement(
     bundle, final_direction
 ):
     assert evaluate_specialist_conflicts(bundle, final_direction=final_direction) == ()
+
+
+def test_margin_claim_overlap_does_not_make_other_blockers_margin_conflicts():
+    sell = _output(
+        SpecialistAgentName.SELL_CONDITIONS,
+        sell_conditions=SellConditionsSpecialistOutput(
+            activation_blockers=[
+                {
+                    "blocker_code": "valuation",
+                    "source_ids": [_SOURCE],
+                    "claim_ids": ["margin.engine"],
+                }
+            ]
+        ),
+    )
+
+    assert evaluate_specialist_conflicts((_margin(), sell)) == ()
+
+
+def test_negative_engine_claim_does_not_support_multiple_expansion():
+    claims = [
+        _claim(
+            "revenue.decline",
+            "revenue",
+            direction=SpecialistClaimDirection.NEGATIVE,
+            value="confirmed",
+        )
+    ]
+
+    conflicts = evaluate_specialist_conflicts(
+        (_growth(dependency="multiple_only", claims=claims),),
+        final_direction="latent_case",
+    )
+
+    assert [conflict.rule_id for conflict in conflicts] == [
+        "multiple_expansion_vs_activation"
+    ]
+
+
+def test_business_model_revenue_engine_supports_multiple_expansion():
+    business = _business(
+        "inside", claims=[_claim("revenue.engine", "revenue")]
+    )
+
+    assert evaluate_specialist_conflicts(
+        (business, _growth(dependency="multiple_only")),
+        final_direction="latent_case",
+    ) == ()
 
 
 def test_evaluation_fixture_has_precision_oriented_evidence():
