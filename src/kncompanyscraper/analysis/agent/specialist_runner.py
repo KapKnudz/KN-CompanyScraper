@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from hashlib import sha256
+from importlib import resources
 from uuid import uuid4
 
 from kncompanyscraper.analysis.agent.agent_packet import (
@@ -32,21 +33,14 @@ FIRST_WAVE_SPECIALISTS = (
     SpecialistAgentName.GROWTH_VALUATION,
 )
 
-_SPECIALIST_INSTRUCTIONS = {
-    SpecialistAgentName.BUSINESS_MODEL: (
-        "Assess business mechanics and understandability only."
-    ),
+_SPECIALIST_PROMPT_RESOURCES = {
+    SpecialistAgentName.BUSINESS_MODEL: "specialist_business_model_prompt.md",
     SpecialistAgentName.MANAGEMENT_CREDIBILITY: (
-        "Assess observable management execution and the coverage-tiered ledger only."
+        "specialist_management_credibility_prompt.md"
     ),
-    SpecialistAgentName.MARGIN: "Assess current and defensible margin mechanics only.",
-    SpecialistAgentName.INSIDER_OWNERSHIP: (
-        "Classify insider, ownership, liquidity, and flow evidence only."
-    ),
-    SpecialistAgentName.GROWTH_VALUATION: (
-        "Assess sourced growth and valuation expectations; do not calculate prices "
-        "or returns."
-    ),
+    SpecialistAgentName.MARGIN: "specialist_margin_prompt.md",
+    SpecialistAgentName.INSIDER_OWNERSHIP: "specialist_insider_ownership_prompt.md",
+    SpecialistAgentName.GROWTH_VALUATION: "specialist_growth_valuation_prompt.md",
 }
 
 
@@ -88,29 +82,42 @@ class ShadowSpecialistRun:
 class SpecialistPromptBuilder:
     """Build a narrow prompt while preserving the normal adapter seam."""
 
-    CONTRACT_VERSION = "specialist-shadow-prompt-v1"
+    CONTRACT_VERSION = "specialist-shadow-prompt-v2-first-wave"
     POLICY_NAME = "specialist-shadow-analysis"
     POLICY_VERSION = "1.0.0"
 
     def build(
         self, packet: AgentCandidatePacket | dict, agent_name: SpecialistAgentName
     ) -> AgentPrompt:
+        agent_name = SpecialistAgentName(agent_name)
+        try:
+            instruction_resource = _SPECIALIST_PROMPT_RESOURCES[agent_name]
+        except KeyError as exc:
+            raise ValueError(
+                f"no first-wave specialist prompt for agent {agent_name.value!r}"
+            ) from exc
+        instructions = self._read_resource(instruction_resource)
         packet_json = serialize_packet(packet)
         schema = specialist_output_json_schema(agent_name.value)
         return AgentPrompt(
             system=(
-                "You are a non-authoritative shadow specialist. Return only the closed "
-                "specialist-output-v1 JSON object. Do not emit a verdict, scenario "
-                "prices, returns, fair value, position size, or prose outside JSON. "
-                f"Your responsibility: {_SPECIALIST_INSTRUCTIONS[agent_name]} "
+                "You are a non-authoritative shadow specialist. Return exactly one "
+                "JSON object valid against the specialist-output-v1 schema supplied "
+                "for this request. Set agent_name exactly to "
+                f"{agent_name.value!r} and include only the "
+                f"{agent_name.value!r} domain payload. Do not emit markdown, prose "
+                "outside JSON, a verdict, activation decision, or position size.\n\n"
+                f"{instructions}\n"
                 "Use exact source IDs from the frozen packet and mark missing evidence "
                 "explicitly."
             ),
             user=(
-                f"Agent name: {agent_name.value}\n\n"
+                f"Agent name: {agent_name.value}\n"
+                f"Domain payload: {agent_name.value}\n\n"
                 "Frozen AgentCandidatePacket:\n"
                 f"{packet_json}\n\n"
-                "Return the specialist contract for this agent."
+                "Return only the complete specialist-output-v1 JSON object for this "
+                "agent and domain."
             ),
             policy_name=self.POLICY_NAME,
             policy_version=self.POLICY_VERSION,
@@ -120,6 +127,11 @@ class SpecialistPromptBuilder:
             packet_measurement=asdict(measure_packet(packet, pretty=False)),
             contract_version=self.CONTRACT_VERSION,
         )
+
+    @staticmethod
+    def _read_resource(filename: str) -> str:
+        root = resources.files("kncompanyscraper.analysis.agent")
+        return root.joinpath("prompts", filename).read_text(encoding="utf-8").strip()
 
 
 class ShadowSpecialistRunner:
@@ -190,6 +202,7 @@ class ShadowSpecialistRunner:
                 "analysis_attempt": attempt,
                 "model_response_id": getattr(response, "response_id", None),
                 "usage": getattr(response, "usage", {}),
+                "prompt_artifact": prompt_artifact,
                 "prompt_sha256": prompt_hash,
                 "prompt_contract_version": prompt.contract_version,
                 "packet_measurement": prompt.packet_measurement,

@@ -2,11 +2,18 @@ import json
 from hashlib import sha256
 from types import SimpleNamespace
 
+import pytest
+
 from kncompanyscraper.analysis.agent.agent_packet import (
     AgentCandidatePacket,
     serialize_packet,
 )
-from kncompanyscraper.analysis.agent.specialist_runner import ShadowSpecialistRunner
+from kncompanyscraper.analysis.agent.prompt_artifact import serialize_prompt
+from kncompanyscraper.analysis.agent.specialist_runner import (
+    FIRST_WAVE_SPECIALISTS,
+    ShadowSpecialistRunner,
+    SpecialistPromptBuilder,
+)
 
 
 def packet():
@@ -138,6 +145,47 @@ def test_shadow_runner_uses_frozen_hash_and_persists_non_authoritative_metadata(
     assert artifacts.saved[0]["metadata"]["packet_hash"] == frozen_hash
     assert artifacts.saved[0]["metadata"]["analysis_attempt"] == 1
     assert artifacts.validation == [(1, "accepted", None)]
+    prompt_artifact = artifacts.saved[0]["metadata"]["prompt_artifact"]
+    assert artifacts.saved[0]["metadata"]["prompt_sha256"] == sha256(
+        prompt_artifact.encode()
+    ).hexdigest()
+    assert json.loads(prompt_artifact)["prompt"]["schema_name"] == (
+        "specialist_management_credibility"
+    )
+
+
+def test_first_wave_prompt_selection_targets_one_closed_domain_per_agent():
+    expected = {
+        "business_model": ("revenue mechanics", "activation decision"),
+        "management_credibility": ("coverage_tier", "binary investability gate"),
+        "margin": ("defensible peak EBIT margin", "fair value"),
+        "insider_ownership": ("data_coverage", "rescue weak business fundamentals"),
+        "growth_valuation": ("deterministic scenario engine", "target price"),
+    }
+
+    for agent_name in FIRST_WAVE_SPECIALISTS:
+        prompt = SpecialistPromptBuilder().build(packet(), agent_name)
+        domain = agent_name.value
+
+        assert prompt.schema_name == f"specialist_{domain}"
+        assert set(prompt.output_schema["properties"]) >= {
+            "agent_name",
+            domain,
+        }
+        assert prompt.output_schema["properties"][domain]["type"] == "object"
+        assert f"Set agent_name exactly to {domain!r}" in prompt.system
+        assert f"include only the {domain!r} domain payload" in prompt.system
+        assert expected[domain][0] in prompt.system
+        assert expected[domain][1] in prompt.system
+        assert f"Agent name: {domain}" in prompt.user
+        assert f"Domain payload: {domain}" in prompt.user
+
+
+def test_prompt_builder_does_not_select_second_wave_sell_conditions():
+    from kncompanyscraper.analysis.agent.output_schema import SpecialistAgentName
+
+    with pytest.raises(ValueError, match="no first-wave specialist prompt"):
+        SpecialistPromptBuilder().build(packet(), SpecialistAgentName.SELL_CONDITIONS)
 
 
 def test_parse_failure_is_recorded_and_does_not_raise():
