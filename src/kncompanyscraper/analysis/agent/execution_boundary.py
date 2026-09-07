@@ -1921,7 +1921,9 @@ class AgentExecutionBoundary:
             )
 
         assessed_count = sum(claim.result in assessed_results for claim in ledger)
-        pending_count = sum(claim.result == "unverifiable" for claim in ledger)
+        pending_count = sum(
+            claim.result in {"unverifiable", "too_vague_to_test"} for claim in ledger
+        )
         coverage.assessed_claim_count = assessed_count
         coverage.pending_claim_count = pending_count
         coverage.eligible_claim_count = (

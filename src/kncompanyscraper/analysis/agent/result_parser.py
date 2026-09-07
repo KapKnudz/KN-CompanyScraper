@@ -224,6 +224,7 @@ def parse_specialist_output(raw_response: str) -> SpecialistOutput:
             raw_response, object_pairs_hook=_object_without_duplicates
         )
         agent_name = SpecialistAgentName(initial.get("agent_name"))
+        status = SpecialistStatus(initial.get("status"))
     except (
         json.JSONDecodeError,
         StockAnalysisValidationError,
@@ -236,6 +237,10 @@ def parse_specialist_output(raw_response: str) -> SpecialistOutput:
         ) from exc
     contract = _specialist_envelope_contract()
     domain_name = agent_name.value
+    if status is SpecialistStatus.COMPLETE and domain_name not in initial:
+        raise StockAnalysisValidationError(
+            f"complete specialist output requires {domain_name} payload"
+        )
     if domain_name in initial:
         contract[domain_name] = _SPECIALIST_DOMAIN_CONTRACTS[domain_name]
     payload = _parse_contract(raw_response, contract, "specialist-output")
@@ -476,6 +481,22 @@ def _validate_specialist_management(payload: dict, claim_ids: list[str]) -> None
         raise StockAnalysisValidationError(
             "management eligible_claim_count must equal assessed, pending, and omitted counts"
         )
+    assessed_results = {"kept", "delayed", "missed", "external_shock"}
+    pending_results = {"unverifiable", "too_vague_to_test"}
+    assessed_count = sum(
+        row["result"] in assessed_results for row in management["ledger"]
+    )
+    pending_count = sum(
+        row["result"] in pending_results for row in management["ledger"]
+    )
+    if coverage["assessed_claim_count"] != assessed_count:
+        raise StockAnalysisValidationError(
+            "management assessed_claim_count must match ledger rows"
+        )
+    if coverage["pending_claim_count"] != pending_count:
+        raise StockAnalysisValidationError(
+            "management pending_claim_count must match ledger rows"
+        )
     if coverage["omitted_claim_count"] and not coverage["omission_reasons"]:
         raise StockAnalysisValidationError(
             "omitted management claims require omission_reasons"
@@ -483,6 +504,10 @@ def _validate_specialist_management(payload: dict, claim_ids: list[str]) -> None
     if not coverage["omitted_claim_count"] and coverage["omission_reasons"]:
         raise StockAnalysisValidationError(
             "management omission_reasons require omitted claims"
+        )
+    if any(not reason.strip() for reason in coverage["omission_reasons"]):
+        raise StockAnalysisValidationError(
+            "management omission reasons cannot be empty"
         )
 
     for row in management["ledger"]:
@@ -519,6 +544,16 @@ def _validate_specialist_management(payload: dict, claim_ids: list[str]) -> None
         } and (not row["claim_source_ids"] or not row["outcome_source_ids"]):
             raise StockAnalysisValidationError(
                 f"assessed management ledger claim {row_id} requires claim and outcome source IDs"
+            )
+        if row["result"] in assessed_results and (
+            not row["observed_outcome"] or not row["observed_outcome"].strip()
+        ):
+            raise StockAnalysisValidationError(
+                f"assessed management ledger claim {row_id} requires observed_outcome"
+            )
+        if row["result"] in pending_results and row["observed_outcome"] is not None:
+            raise StockAnalysisValidationError(
+                f"non-assessable management ledger claim {row_id} cannot retain observed_outcome"
             )
 
 

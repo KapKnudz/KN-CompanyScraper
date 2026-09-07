@@ -88,6 +88,17 @@ def test_valid_specialist_output_parses_to_typed_objects():
     ]["required"] == ["coverage", "pattern_state", "ledger", "claims"]
 
 
+def test_complete_specialist_output_requires_matching_domain_payload():
+    payload = _management_payload()
+    payload.pop("management_credibility")
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="complete specialist output requires management_credibility payload",
+    ):
+        parse_specialist_output(json.dumps(payload))
+
+
 @pytest.mark.parametrize("field", ["status", "agent_name"])
 def test_specialist_closed_enums_reject_invalid_values(field):
     payload = _management_payload()
@@ -132,6 +143,85 @@ def test_management_coverage_enforces_quarter_confidence_caps(quarters, cap):
 def test_management_coverage_rejects_high_cap_for_partial_history():
     with pytest.raises(StockAnalysisValidationError, match="4-7 quarters"):
         parse_specialist_output(json.dumps(_management_payload(4, "high")))
+
+
+def _management_ledger_row(*, result, observed_outcome):
+    return {
+        "quarter": "2026-Q1",
+        "claim_id": "management.claim",
+        "claim": "Margins will improve.",
+        "expected_timing": "2026-Q2",
+        "observed_outcome": observed_outcome,
+        "result": result,
+        "claim_source_ids": ["report:claim"],
+        "outcome_source_ids": ["report:outcome"],
+        "source_ids": ["report:claim", "report:outcome"],
+        "notes": [],
+    }
+
+
+def test_management_coverage_counts_must_match_ledger_rows():
+    payload = _management_payload()
+    payload["management_credibility"]["ledger"] = [
+        _management_ledger_row(result="kept", observed_outcome="Margins improved.")
+    ]
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="assessed_claim_count must match ledger rows",
+    ):
+        parse_specialist_output(json.dumps(payload))
+
+
+def test_management_ledger_requires_outcome_for_assessed_rows():
+    payload = _management_payload()
+    payload["management_credibility"]["ledger"] = [
+        _management_ledger_row(result="kept", observed_outcome=None)
+    ]
+    payload["management_credibility"]["coverage"].update(
+        eligible_claim_count=1,
+        assessed_claim_count=1,
+    )
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="requires observed_outcome",
+    ):
+        parse_specialist_output(json.dumps(payload))
+
+
+def test_management_ledger_rejects_outcome_for_non_assessable_rows():
+    payload = _management_payload()
+    payload["management_credibility"]["ledger"] = [
+        _management_ledger_row(
+            result="too_vague_to_test", observed_outcome="Not testable."
+        )
+    ]
+    payload["management_credibility"]["coverage"].update(
+        eligible_claim_count=1,
+        pending_claim_count=1,
+    )
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="cannot retain observed_outcome",
+    ):
+        parse_specialist_output(json.dumps(payload))
+
+
+def test_management_coverage_rejects_blank_omission_reasons():
+    payload = _management_payload()
+    payload["management_credibility"]["coverage"].update(
+        eligible_claim_count=1,
+        omitted_claim_count=1,
+        omission_reasons=["  "],
+    )
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="omission reasons cannot be empty",
+    ):
+        parse_specialist_output(json.dumps(payload))
 
 
 def test_specialist_output_serializes_and_round_trips():
