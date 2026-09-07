@@ -1,7 +1,11 @@
 import json
+from hashlib import sha256
 from types import SimpleNamespace
 
-from kncompanyscraper.analysis.agent.agent_packet import AgentCandidatePacket
+from kncompanyscraper.analysis.agent.agent_packet import (
+    AgentCandidatePacket,
+    serialize_packet,
+)
 from kncompanyscraper.analysis.agent.specialist_runner import ShadowSpecialistRunner
 
 
@@ -94,7 +98,13 @@ class Artifacts:
             "validation_status": "pending",
         }
         self.saved.append(
-            {"id": artifact_id, "company_id": company_id, "content": raw_response, "metadata": metadata, **kwargs}
+            {
+                "id": artifact_id,
+                "company_id": company_id,
+                "content": raw_response,
+                "metadata": metadata,
+                **kwargs,
+            }
         )
         return artifact_id
 
@@ -112,11 +122,7 @@ def test_shadow_runner_uses_frozen_hash_and_persists_non_authoritative_metadata(
         specialists=("management_credibility",),
     )
     frozen = packet()
-    from hashlib import sha256
-    from kncompanyscraper.analysis.agent.agent_packet import serialize_packet
-
     frozen_hash = sha256(serialize_packet(frozen).encode()).hexdigest()
-    model.response_factory = lambda prompt: management_output(frozen, run_id)
     # The response factory needs the hash produced by the runner, so replace the
     # placeholder after the prompt is built by using a response-aware adapter.
     model.response_factory = lambda prompt: management_output(frozen, run_id).replace(
@@ -154,11 +160,10 @@ def test_accepted_specialist_artifact_is_reused_for_same_run_and_packet():
     artifacts = Artifacts()
     frozen = packet()
     run_id = "company-analysis-9"
-    from hashlib import sha256
-    from kncompanyscraper.analysis.agent.agent_packet import serialize_packet
-
     packet_hash = sha256(serialize_packet(frozen).encode()).hexdigest()
-    raw = management_output(frozen, run_id).replace('"placeholder"', json.dumps(packet_hash))
+    raw = management_output(frozen, run_id).replace(
+        '"placeholder"', json.dumps(packet_hash)
+    )
     artifacts.saved.append(
         {
             "id": 91,

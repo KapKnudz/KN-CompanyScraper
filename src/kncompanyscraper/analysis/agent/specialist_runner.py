@@ -33,11 +33,20 @@ FIRST_WAVE_SPECIALISTS = (
 )
 
 _SPECIALIST_INSTRUCTIONS = {
-    SpecialistAgentName.BUSINESS_MODEL: "Assess business mechanics and understandability only.",
-    SpecialistAgentName.MANAGEMENT_CREDIBILITY: "Assess observable management execution and the coverage-tiered ledger only.",
+    SpecialistAgentName.BUSINESS_MODEL: (
+        "Assess business mechanics and understandability only."
+    ),
+    SpecialistAgentName.MANAGEMENT_CREDIBILITY: (
+        "Assess observable management execution and the coverage-tiered ledger only."
+    ),
     SpecialistAgentName.MARGIN: "Assess current and defensible margin mechanics only.",
-    SpecialistAgentName.INSIDER_OWNERSHIP: "Classify insider, ownership, liquidity, and flow evidence only.",
-    SpecialistAgentName.GROWTH_VALUATION: "Assess sourced growth and valuation expectations; do not calculate prices or returns.",
+    SpecialistAgentName.INSIDER_OWNERSHIP: (
+        "Classify insider, ownership, liquidity, and flow evidence only."
+    ),
+    SpecialistAgentName.GROWTH_VALUATION: (
+        "Assess sourced growth and valuation expectations; do not calculate prices "
+        "or returns."
+    ),
 }
 
 
@@ -142,7 +151,9 @@ class ShadowSpecialistRunner:
             raise ValueError("specialist packet hash does not match frozen packet")
         packet_hash = packet_hash or computed_hash
         run_id = run_id or f"shadow-{uuid4()}"
-        company_id = packet["company_id"] if isinstance(packet, dict) else packet.company_id
+        company_id = (
+            packet["company_id"] if isinstance(packet, dict) else packet.company_id
+        )
         results = tuple(
             self._run_one(packet, company_id, run_id, packet_hash, agent_name)
             for agent_name in self.specialists
@@ -203,7 +214,9 @@ class ShadowSpecialistRunner:
                     self.raw_response_repository.update_raw_validation(
                         artifact_id, "rejected", str(exc)
                     )
-                if attempt == 1 and callable(getattr(self.model_adapter, "repair", None)):
+                if attempt == 1 and callable(
+                    getattr(self.model_adapter, "repair", None)
+                ):
                     continue
                 return SpecialistArtifactResult(
                     agent_name.value,
@@ -214,7 +227,9 @@ class ShadowSpecialistRunner:
                 )
 
             if artifact_id is not None:
-                self.raw_response_repository.update_raw_validation(artifact_id, "accepted")
+                self.raw_response_repository.update_raw_validation(
+                    artifact_id, "accepted"
+                )
             return SpecialistArtifactResult(
                 agent_name.value,
                 "accepted",
@@ -234,7 +249,9 @@ class ShadowSpecialistRunner:
 
     @staticmethod
     def _validate_identity(parsed, packet, run_id, packet_hash, agent_name):
-        company_id = packet["company_id"] if isinstance(packet, dict) else packet.company_id
+        company_id = (
+            packet["company_id"] if isinstance(packet, dict) else packet.company_id
+        )
         ticker = packet["ticker"] if isinstance(packet, dict) else packet.ticker
         if parsed.agent_name is not agent_name:
             raise ValueError("specialist agent_name does not match requested agent")
@@ -246,18 +263,29 @@ class ShadowSpecialistRunner:
             raise ValueError("specialist packet_hash does not match frozen packet")
 
     def _reuse_completed(self, company_id, run_id, packet_hash, agent_name):
-        getter = getattr(self.raw_response_repository, "get_specialist_artifacts_for_run", None)
+        getter = getattr(
+            self.raw_response_repository, "get_specialist_artifacts_for_run", None
+        )
         if not callable(getter):
             return None
         for artifact in getter(company_id, run_id):
             metadata = artifact.get("metadata") or {}
             if metadata.get("agent_name") != agent_name.value:
                 continue
-            if metadata.get("packet_hash") != packet_hash or metadata.get("validation_status") != "accepted":
+            if (
+                metadata.get("packet_hash") != packet_hash
+                or metadata.get("validation_status") != "accepted"
+            ):
                 continue
             try:
                 parsed = parse_specialist_output(artifact["content"])
-                self._validate_identity(parsed, {"company_id": company_id, "ticker": parsed.ticker}, run_id, packet_hash, agent_name)
+                self._validate_identity(
+                    parsed,
+                    {"company_id": company_id, "ticker": parsed.ticker},
+                    run_id,
+                    packet_hash,
+                    agent_name,
+                )
             except (KeyError, StockAnalysisValidationError, ValueError, TypeError):
                 continue
             return SpecialistArtifactResult(

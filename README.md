@@ -28,6 +28,7 @@ Tracks companies, scrapes financial/news data, stores results in PostgreSQL, and
    - `DEEPSEEK_MODEL` — optional DeepSeek model override (default: `deepseek-v4-pro`)
    - `DEEPSEEK_REASONING_EFFORT` — optional reasoning effort (default: `high`)
    - `DEEPSEEK_MAX_OUTPUT_TOKENS` — per-company output cap (default: `30000`)
+   - `SHADOW_SPECIALISTS_ENABLED` — enable non-authoritative specialist execution for exact-company analysis (default: `false`)
 
 3. Set up the database:
    ```
@@ -338,8 +339,6 @@ python -m kncompanyscraper.main analyze-shortlist --provider deepseek --max-cand
 The `openai` and `deepseek` providers make paid API calls and require the
 selected provider's API key. The mandatory candidate limit prevents
 accidentally analyzing the entire shortlist.
-For the five-company shadow pilot, pass `--max-candidates 5` after inspecting
-the exported prompts.
 
 Run a fresh, exact-company full reassessment for active watchlist companies with
 one selector form:
@@ -348,6 +347,12 @@ one selector form:
 python -m kncompanyscraper.main analyze-company --company-ids 114
 python -m kncompanyscraper.main analyze-company --tickers "MSAB B" "AVT B"
 ```
+
+Set `SHADOW_SPECIALISTS_ENABLED=true` to run the first-wave specialist agents
+after the company packet is frozen. Their raw outputs are persisted as
+non-authoritative shadow artifacts; the existing qualitative and scenario
+analysis remains the source of the accepted verdict. The setting defaults to
+`false`.
 
 Selectors must identify distinct active companies. The command refreshes every
 mandatory upstream domain before model invocation (reports, the mutable price
