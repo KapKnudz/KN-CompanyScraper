@@ -145,6 +145,18 @@ def test_management_coverage_rejects_high_cap_for_partial_history():
         parse_specialist_output(json.dumps(_management_payload(4, "high")))
 
 
+def test_management_coverage_cap_limits_specialist_confidence():
+    payload = _management_payload(0, "low")
+    payload["confidence"] = "high"
+    payload["confidence_cap"] = "high"
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="specialist confidence cannot exceed management coverage confidence_cap",
+    ):
+        parse_specialist_output(json.dumps(payload))
+
+
 def _management_ledger_row(*, result, observed_outcome):
     return {
         "quarter": "2026-Q1",
@@ -158,6 +170,57 @@ def _management_ledger_row(*, result, observed_outcome):
         "source_ids": ["report:claim", "report:outcome"],
         "notes": [],
     }
+
+
+def _schema_enum(schema, *path):
+    value = schema
+    for key in path:
+        value = value["items"] if key == "items" else value["properties"][key]
+    return set(value["enum"])
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        (("status",), {"complete", "insufficient_evidence", "failed"}),
+        (("agent_name",), {
+            "business_model",
+            "management_credibility",
+            "margin",
+            "insider_ownership",
+            "growth_valuation",
+            "sell_conditions",
+        }),
+        (
+            ("management_credibility", "coverage", "coverage_tier"),
+            {"no_ledger", "partial_coverage", "full_coverage"},
+        ),
+        (
+            ("management_credibility", "coverage", "data_source_type"),
+            {"none", "primary_reports", "company_releases", "mixed_primary", "secondary_only"},
+        ),
+        (
+            ("management_credibility", "pattern_state"),
+            {"supportive", "mixed", "weak", "unassessable"},
+        ),
+        (
+            ("management_credibility", "ledger", "items", "result"),
+            {"kept", "delayed", "missed", "unverifiable", "too_vague_to_test", "external_shock"},
+        ),
+    ],
+)
+def test_specialist_schema_exposes_exact_closed_enums(path, expected):
+    schema = specialist_output_json_schema("management_credibility")
+
+    assert _schema_enum(schema, *path) == expected
+
+
+def test_specialist_parser_rejects_nested_closed_enum_values():
+    payload = _management_payload()
+    payload["management_credibility"]["coverage"]["coverage_tier"] = "invalid"
+
+    with pytest.raises(StockAnalysisValidationError):
+        parse_specialist_output(json.dumps(payload))
 
 
 def test_management_coverage_counts_must_match_ledger_rows():

@@ -391,6 +391,10 @@ def _validate_specialist_output(payload: dict, agent_name: SpecialistAgentName) 
             raise StockAnalysisValidationError(
                 "management coverage confidence_cap cannot exceed envelope confidence_cap"
             )
+        if coverage is not None and confidence_rank[payload["confidence"]] > confidence_rank[coverage["confidence_cap"]]:
+            raise StockAnalysisValidationError(
+                "specialist confidence cannot exceed management coverage confidence_cap"
+            )
     if agent_name == SpecialistAgentName.SELL_CONDITIONS:
         _validate_specialist_sell_conditions(payload)
 
