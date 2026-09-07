@@ -130,7 +130,7 @@ def test_shadow_runner_uses_frozen_hash_and_persists_non_authoritative_metadata(
     assert artifacts.saved[0]["metadata"]["agent_name"] == "management_credibility"
     assert artifacts.saved[0]["metadata"]["run_id"] == run_id
     assert artifacts.saved[0]["metadata"]["packet_hash"] == frozen_hash
-    assert artifacts.saved[0]["metadata"]["attempt"] == 1
+    assert artifacts.saved[0]["metadata"]["analysis_attempt"] == 1
     assert artifacts.validation == [(1, "accepted", None)]
 
 
@@ -170,7 +170,7 @@ def test_accepted_specialist_artifact_is_reused_for_same_run_and_packet():
                 "run_id": run_id,
                 "packet_hash": packet_hash,
                 "validation_status": "accepted",
-                "attempt": 1,
+                "analysis_attempt": 1,
             },
         }
     )

@@ -755,8 +755,8 @@ def test_shadow_specialists_are_opt_in_and_do_not_change_authoritative_result():
     assert shadow.calls == 0
     assert "shadow_specialists" not in jobs.jobs[100]["result"]["stages"]
 
-    service.shadow_specialists_enabled = False
-    on = service.run(companies, settings={"shadow_specialists": True})[0]
+    service.shadow_specialists_enabled = True
+    on = service.run(companies)[0]
     assert on.status == "accepted"
     assert shadow.calls == 1
     assert jobs.jobs[101]["result"]["stages"]["shadow_specialists"]["status"] == "accepted"

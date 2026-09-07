@@ -177,7 +177,6 @@ class ShadowSpecialistRunner:
             metadata = {
                 "analysis_stage": "specialist",
                 "analysis_attempt": attempt,
-                "attempt": attempt,
                 "model_response_id": getattr(response, "response_id", None),
                 "usage": getattr(response, "usage", {}),
                 "prompt_sha256": prompt_hash,
@@ -264,7 +263,7 @@ class ShadowSpecialistRunner:
             return SpecialistArtifactResult(
                 agent_name.value,
                 "accepted",
-                int(metadata.get("analysis_attempt", metadata.get("attempt", 1))),
+                int(metadata.get("analysis_attempt", 1)),
                 (artifact["id"],),
                 (),
                 parsed,

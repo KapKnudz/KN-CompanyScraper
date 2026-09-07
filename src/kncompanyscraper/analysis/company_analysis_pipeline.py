@@ -179,7 +179,6 @@ class CompanyAnalysisPipeline:
                 job_id,
                 result,
                 deserialize_packet(result["packet_json"]),
-                result.get("settings") or {},
             )
             qualitative, metadata, created_by = self._resume_model_stages(
                 job_id, result, candidate
@@ -275,7 +274,7 @@ class CompanyAnalysisPipeline:
                 packet_hash=result["packet_hash"],
                 packet_measurement=result["packet_measurement"],
             )
-            self._run_shadow_specialists(job_id, result, packet, settings)
+            self._run_shadow_specialists(job_id, result, packet)
 
             qualitative, metadata, created_by = self._run_model_stages(
                 job_id, result, candidate
@@ -307,11 +306,8 @@ class CompanyAnalysisPipeline:
                 resumable=resumable,
             )
 
-    def _run_shadow_specialists(self, job_id, result, packet, settings):
-        if self.shadow_specialist_runner is None or not (
-            self.shadow_specialists_enabled
-            or settings.get("shadow_specialists") is True
-        ):
+    def _run_shadow_specialists(self, job_id, result, packet):
+        if self.shadow_specialist_runner is None or not self.shadow_specialists_enabled:
             return
         stage = result.setdefault("stages", {}).get("shadow_specialists", {})
         if stage.get("status") == "accepted":
