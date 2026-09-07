@@ -149,8 +149,6 @@ class ShadowSpecialistRunner:
         )
         return ShadowSpecialistRun(run_id, company_id, packet_hash, results)
 
-    execute = run
-
     def _run_one(self, packet, company_id, run_id, packet_hash, agent_name):
         reused = self._reuse_completed(company_id, run_id, packet_hash, agent_name)
         if reused is not None:
@@ -272,6 +270,3 @@ class ShadowSpecialistRunner:
                 parsed,
             )
         return None
-
-
-SpecialistRunner = ShadowSpecialistRunner
