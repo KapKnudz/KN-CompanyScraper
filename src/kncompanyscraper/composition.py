@@ -254,6 +254,17 @@ def build_agent_analysis_service(model_adapter):
     )
 
 
+def build_shadow_specialist_runner(model_adapter, raw_response_repository=None):
+    """Build the opt-in, non-authoritative specialist runner."""
+    from kncompanyscraper.analysis.agent.specialist_runner import ShadowSpecialistRunner
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
+
+    return ShadowSpecialistRunner(
+        model_adapter,
+        raw_response_repository or AnalysisRepository(),
+    )
+
+
 def build_company_analysis_pipeline(model_adapter, *, progress=None):
     """Build the exact-company refresh, snapshot, packet, and agent workflow."""
     from kncompanyscraper.analysis.company_analysis_pipeline import (
@@ -262,14 +273,24 @@ def build_company_analysis_pipeline(model_adapter, *, progress=None):
     from kncompanyscraper.repositories.company_repository import CompanyRepository
     from kncompanyscraper.repositories.job_repository import JobRepository
 
+    analysis_service = build_agent_analysis_service(model_adapter)
+    shadow_runner = (
+        build_shadow_specialist_runner(
+            model_adapter, analysis_service.raw_response_repository
+        )
+        if config.SHADOW_SPECIALISTS_ENABLED
+        else None
+    )
     return CompanyAnalysisPipeline(
         CompanyRepository(),
         build_company_refresh_service(),
         build_company_deterministic_snapshot_service(),
         build_agent_context_builder(),
-        build_agent_analysis_service(model_adapter),
+        analysis_service,
         JobRepository(),
         progress=progress,
+        shadow_specialist_runner=shadow_runner,
+        shadow_specialists_enabled=config.SHADOW_SPECIALISTS_ENABLED,
     )
 
 

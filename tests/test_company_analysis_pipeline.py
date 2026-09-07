@@ -722,3 +722,43 @@ def test_selector_resolution_rejects_duplicate_and_inactive_selectors_before_ref
     with pytest.raises(ValueError, match="unknown or inactive"):
         service.resolve_companies(company_ids=[2])
     assert service.resolve_companies(tickers=["c1"])[0] is active
+
+
+class ShadowRun:
+    run_id = "company-analysis-100"
+    packet_hash = "packet-hash"
+    results = ()
+
+    def to_dict(self):
+        return {"run_id": self.run_id, "packet_hash": self.packet_hash, "results": []}
+
+
+class ShadowSpy:
+    def __init__(self):
+        self.calls = 0
+
+    def run(self, packet, *, run_id, packet_hash):
+        self.calls += 1
+        assert packet.company_id == 1
+        assert packet_hash
+        return ShadowRun()
+
+
+def test_shadow_specialists_are_opt_in_and_do_not_change_authoritative_result():
+    companies = [company(1)]
+    service, _, agent, jobs = pipeline(companies)
+    shadow = ShadowSpy()
+    service.shadow_specialist_runner = shadow
+
+    off = service.run(companies)[0]
+    assert off.status == "accepted"
+    assert shadow.calls == 0
+    assert "shadow_specialists" not in jobs.jobs[100]["result"]["stages"]
+
+    service.shadow_specialists_enabled = False
+    on = service.run(companies, settings={"shadow_specialists": True})[0]
+    assert on.status == "accepted"
+    assert shadow.calls == 1
+    assert jobs.jobs[101]["result"]["stages"]["shadow_specialists"]["status"] == "accepted"
+    assert jobs.jobs[101]["result"]["final_analysis_id"] == 801
+    assert agent.persisted_metadata[-1]["analysis_mode"] == "initial"

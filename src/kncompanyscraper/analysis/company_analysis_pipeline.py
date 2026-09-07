@@ -61,6 +61,8 @@ class CompanyAnalysisPipeline:
         clock: Callable[[], datetime] | None = None,
         timer: Callable[[], float] | None = None,
         progress: Callable[[str], None] | None = None,
+        shadow_specialist_runner=None,
+        shadow_specialists_enabled: bool = False,
     ):
         self.company_repository = company_repository
         self.refresh_service = refresh_service
@@ -71,6 +73,8 @@ class CompanyAnalysisPipeline:
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.timer = timer or perf_counter
         self.progress = progress or print
+        self.shadow_specialist_runner = shadow_specialist_runner
+        self.shadow_specialists_enabled = shadow_specialists_enabled
         self._job_starts = {}
         self._stage_starts = {}
 
@@ -171,6 +175,12 @@ class CompanyAnalysisPipeline:
         try:
             self._verify_packet_hash(job_id, result)
             self._verify_frozen_stage_inputs(job_id, result)
+            self._run_shadow_specialists(
+                job_id,
+                result,
+                deserialize_packet(result["packet_json"]),
+                result.get("settings") or {},
+            )
             qualitative, metadata, created_by = self._resume_model_stages(
                 job_id, result, candidate
             )
@@ -265,6 +275,7 @@ class CompanyAnalysisPipeline:
                 packet_hash=result["packet_hash"],
                 packet_measurement=result["packet_measurement"],
             )
+            self._run_shadow_specialists(job_id, result, packet, settings)
 
             qualitative, metadata, created_by = self._run_model_stages(
                 job_id, result, candidate
@@ -294,6 +305,47 @@ class CompanyAnalysisPipeline:
                 "resumable" if resumable else "failed",
                 exc,
                 resumable=resumable,
+            )
+
+    def _run_shadow_specialists(self, job_id, result, packet, settings):
+        if self.shadow_specialist_runner is None or not (
+            self.shadow_specialists_enabled
+            or settings.get("shadow_specialists") is True
+        ):
+            return
+        stage = result.setdefault("stages", {}).get("shadow_specialists", {})
+        if stage.get("status") == "accepted":
+            return
+        self._start_stage(result, job_id, "shadow_specialists")
+        try:
+            run = self.shadow_specialist_runner.run(
+                packet,
+                run_id=f"company-analysis-{job_id}",
+                packet_hash=result.get("packet_hash"),
+            )
+            result["shadow_specialists"] = run.to_dict()
+            self._complete_stage(
+                result,
+                job_id,
+                "shadow_specialists",
+                run_id=run.run_id,
+                packet_hash=run.packet_hash,
+                results=[item.to_dict() for item in run.results],
+            )
+        except Exception as exc:
+            # Shadow work is deliberately non-authoritative: a runner failure
+            # must never prevent the existing qualitative path from completing.
+            result["shadow_specialists"] = {
+                "run_id": f"company-analysis-{job_id}",
+                "packet_hash": result.get("packet_hash"),
+                "error": str(exc),
+            }
+            self._complete_stage(
+                result,
+                job_id,
+                "shadow_specialists",
+                execution_status="failed",
+                error=str(exc),
             )
 
     def _run_model_stages(

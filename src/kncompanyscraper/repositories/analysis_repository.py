@@ -78,6 +78,25 @@ class AnalysisRepository(BaseRepository):
             return None
         return artifact
 
+    def get_specialist_artifacts_for_run(
+        self, company_id: int, run_id: str
+    ) -> list[dict]:
+        """Return shadow artifacts for one frozen company run for idempotent resume."""
+        query = """
+            SELECT id, company_id, content, created_by, metadata
+            FROM analysis
+            WHERE company_id = %s
+              AND analysis_type = 'stock_analysis_raw'
+              AND metadata->>'analysis_mode' = 'specialist'
+              AND metadata->>'run_id' = %s
+            ORDER BY id ASC
+        """
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, (company_id, run_id))
+                rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
     def update_raw_validation(
         self,
         analysis_id: int,
