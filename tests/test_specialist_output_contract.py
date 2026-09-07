@@ -236,6 +236,23 @@ def test_management_coverage_counts_must_match_ledger_rows():
         parse_specialist_output(json.dumps(payload))
 
 
+def test_management_ledger_rejects_blank_claims():
+    payload = _management_payload()
+    row = _management_ledger_row(result="kept", observed_outcome="Margins improved.")
+    row["claim"] = "  "
+    payload["management_credibility"]["ledger"] = [row]
+    payload["management_credibility"]["coverage"].update(
+        eligible_claim_count=1,
+        assessed_claim_count=1,
+    )
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="management ledger claim management.claim cannot be empty",
+    ):
+        parse_specialist_output(json.dumps(payload))
+
+
 def test_management_ledger_requires_outcome_for_assessed_rows():
     payload = _management_payload()
     payload["management_credibility"]["ledger"] = [
@@ -268,6 +285,23 @@ def test_management_ledger_rejects_outcome_for_non_assessable_rows():
     with pytest.raises(
         StockAnalysisValidationError,
         match="cannot retain observed_outcome",
+    ):
+        parse_specialist_output(json.dumps(payload))
+
+
+def test_management_ledger_rejects_outcome_sources_for_non_assessable_rows():
+    payload = _management_payload()
+    payload["management_credibility"]["ledger"] = [
+        _management_ledger_row(result="too_vague_to_test", observed_outcome=None)
+    ]
+    payload["management_credibility"]["coverage"].update(
+        eligible_claim_count=1,
+        pending_claim_count=1,
+    )
+
+    with pytest.raises(
+        StockAnalysisValidationError,
+        match="cannot retain outcome_source_ids",
     ):
         parse_specialist_output(json.dumps(payload))
 

@@ -515,6 +515,10 @@ def _validate_specialist_management(payload: dict, claim_ids: list[str]) -> None
         )
 
     for row in management["ledger"]:
+        if not row["claim"].strip():
+            raise StockAnalysisValidationError(
+                f"management ledger claim {row['claim_id']} cannot be empty"
+            )
         if not re.fullmatch(r"\d{4}-Q[1-4]", row["quarter"]):
             raise StockAnalysisValidationError(
                 f"invalid management ledger quarter: {row['quarter']!r}"
@@ -558,6 +562,10 @@ def _validate_specialist_management(payload: dict, claim_ids: list[str]) -> None
         if row["result"] in pending_results and row["observed_outcome"] is not None:
             raise StockAnalysisValidationError(
                 f"non-assessable management ledger claim {row_id} cannot retain observed_outcome"
+            )
+        if row["result"] in pending_results and row["outcome_source_ids"]:
+            raise StockAnalysisValidationError(
+                f"non-assessable management ledger claim {row_id} cannot retain outcome_source_ids"
             )
 
 
