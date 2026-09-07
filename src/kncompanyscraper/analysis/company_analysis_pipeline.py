@@ -327,6 +327,7 @@ class CompanyAnalysisPipeline:
                 run_id=run.run_id,
                 packet_hash=run.packet_hash,
                 results=[item.to_dict() for item in run.results],
+                conflicts=[item.to_dict() for item in run.conflicts],
             )
         except Exception as exc:
             # Shadow work is deliberately non-authoritative: a runner failure
