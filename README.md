@@ -349,7 +349,9 @@ python -m kncompanyscraper.main analyze-company --tickers "MSAB B" "AVT B"
 ```
 
 Set `SHADOW_SPECIALISTS_ENABLED=true` to run the first-wave specialist agents
-after the company packet is frozen. Their raw outputs are persisted as
+after the company packet is frozen. The first wave covers `business_model`,
+`management_credibility`, `margin`, `insider_ownership`, and `growth_valuation`.
+Their raw outputs are persisted as
 non-authoritative shadow artifacts; the existing qualitative and scenario
 analysis remains the source of the accepted verdict. The setting defaults to
 `false`.

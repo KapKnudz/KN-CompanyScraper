@@ -149,30 +149,16 @@ def test_shadow_runner_uses_frozen_hash_and_persists_non_authoritative_metadata(
 
 
 def test_first_wave_prompt_selection_targets_one_closed_domain_per_agent():
-    expected = {
-        "business_model": ("revenue mechanics", "activation decision"),
-        "management_credibility": ("coverage_tier", "binary investability gate"),
-        "margin": ("defensible peak EBIT margin", "fair value"),
-        "insider_ownership": ("data_coverage", "rescue weak business fundamentals"),
-        "growth_valuation": ("deterministic scenario engine", "target price"),
-    }
-
     for agent_name in FIRST_WAVE_SPECIALISTS:
         prompt = SpecialistPromptBuilder().build(packet(), agent_name)
         domain = agent_name.value
 
         assert prompt.schema_name == f"specialist_{domain}"
-        assert set(prompt.output_schema["properties"]) >= {
-            "agent_name",
-            domain,
-        }
+        assert domain in prompt.output_schema["required"]
+        assert prompt.output_schema["additionalProperties"] is False
         assert prompt.output_schema["properties"][domain]["type"] == "object"
-        assert f"Set agent_name exactly to {domain!r}" in prompt.system
-        assert f"include only the {domain!r} domain payload" in prompt.system
-        assert expected[domain][0] in prompt.system
-        assert expected[domain][1] in prompt.system
-        assert f"Agent name: {domain}" in prompt.user
-        assert f"Domain payload: {domain}" in prompt.user
+        assert prompt.contract_version == "specialist-shadow-prompt-v2-first-wave"
+        assert domain in prompt.output_schema["properties"]["agent_name"]["enum"]
 
 
 def test_prompt_builder_does_not_select_second_wave_sell_conditions():

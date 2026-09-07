@@ -132,6 +132,7 @@ class SpecialistPromptBuilder:
             contract_version=self.CONTRACT_VERSION,
         )
 
+
 class ShadowSpecialistRunner:
     """Run first-wave specialists without entering the authoritative analysis path."""
 
