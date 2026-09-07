@@ -153,9 +153,9 @@ Build a **management credibility ledger** from at least 8–12 quarters where av
 
 | Date | Management claim | Expected timing | Observed outcome | Result |
 |---|---|---|---|---|
-| YYYY-Qn | Concrete statement | Quarter/year | Evidence | Kept / delayed / missed / unverifiable |
+| YYYY-Qn | Concrete statement | Quarter/year | Evidence | Contract-defined outcome |
 
-Do not reduce this to a naive promise-hit ratio. Distinguish external shocks, cautious communicators, chronic promotional language, changed assumptions, and statements too vague to test. The objective is pattern recognition: learn how this specific management team communicates and whether subtle changes have historically predicted results. [S2][S6]
+Do not reduce this to a naive promise-hit ratio. Apply the closed outcome values in the specialist output contract, distinguishing external shocks, cautious communicators, chronic promotional language, changed assumptions, and statements too vague to test. The objective is pattern recognition: learn how this specific management team communicates and whether subtle changes have historically predicted results. [S2][S6]
 
 For cases longer than one year, management interaction is especially valuable. Public presentations, capital-markets days, calls, interviews, and industry podcasts are valid evidence; private access is not required.
 

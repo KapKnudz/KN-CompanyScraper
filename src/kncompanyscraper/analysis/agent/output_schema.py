@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass, field
+from enum import StrEnum
 from typing import Literal
 
 from kncompanyscraper.analysis.valuation.forward_scenario import (
@@ -29,7 +30,15 @@ PortfolioReasonCode = Literal[
     "balance_sheet",
     "other",
 ]
-ClaimResult = Literal["kept", "delayed", "missed", "changed", "unverifiable"]
+ClaimResult = Literal[
+    "kept",
+    "delayed",
+    "missed",
+    "changed",
+    "unverifiable",
+    "too_vague_to_test",
+    "external_shock",
+]
 RevenueResilienceAssessment = Literal[
     "resilient",
     "mixed",
@@ -82,6 +91,197 @@ RevenueModelType = Literal[
 ]
 
 
+class SpecialistAgentName(StrEnum):
+    BUSINESS_MODEL = "business_model"
+    MANAGEMENT_CREDIBILITY = "management_credibility"
+    MARGIN = "margin"
+    INSIDER_OWNERSHIP = "insider_ownership"
+    GROWTH_VALUATION = "growth_valuation"
+    SELL_CONDITIONS = "sell_conditions"
+
+
+class SpecialistStatus(StrEnum):
+    COMPLETE = "complete"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    FAILED = "failed"
+
+
+class SpecialistConfidence(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class SpecialistClaimDirection(StrEnum):
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
+    MIXED = "mixed"
+    NEUTRAL = "neutral"
+    UNASSESSABLE = "unassessable"
+
+
+class ManagementCoverageTier(StrEnum):
+    NO_LEDGER = "no_ledger"
+    PARTIAL_COVERAGE = "partial_coverage"
+    FULL_COVERAGE = "full_coverage"
+
+
+class ManagementCoverageState(StrEnum):
+    INSUFFICIENT_FOR_PATTERN_RECOGNITION = "insufficient_for_pattern_recognition"
+    PARTIAL_COVERAGE = "partial_coverage"
+    FULL_COVERAGE = "full_coverage"
+
+
+class ManagementDataSourceType(StrEnum):
+    NONE = "none"
+    PRIMARY_REPORTS = "primary_reports"
+    COMPANY_RELEASES = "company_releases"
+    MIXED_PRIMARY = "mixed_primary"
+    SECONDARY_ONLY = "secondary_only"
+
+
+class ManagementLedgerResult(StrEnum):
+    KEPT = "kept"
+    DELAYED = "delayed"
+    MISSED = "missed"
+    UNVERIFIABLE = "unverifiable"
+    TOO_VAGUE_TO_TEST = "too_vague_to_test"
+    EXTERNAL_SHOCK = "external_shock"
+
+
+class ManagementPatternState(StrEnum):
+    SUPPORTIVE = "supportive"
+    MIXED = "mixed"
+    WEAK = "weak"
+    UNASSESSABLE = "unassessable"
+
+
+@dataclass
+class SpecialistClaim:
+    claim_id: str
+    domain: str
+    predicate: str
+    value: str | int | float | bool | None
+    direction: SpecialistClaimDirection
+    source_ids: list[str] = field(default_factory=list)
+    limitation_codes: list[str] = field(default_factory=list)
+    depends_on_claim_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SpecialistMissingInformation:
+    item_code: str
+    limitation_class: LimitationClass
+    impact_code: str
+
+
+@dataclass
+class ManagementLedgerRow:
+    quarter: str
+    claim_id: str
+    claim: str
+    expected_timing: str | None
+    observed_outcome: str | None
+    result: ManagementLedgerResult
+    claim_source_ids: list[str] = field(default_factory=list)
+    outcome_source_ids: list[str] = field(default_factory=list)
+    source_ids: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class BusinessModelSpecialistOutput:
+    revenue_model_types: list[str] = field(default_factory=list)
+    recurring_revenue_profile: str = "unassessable"
+    operating_leverage: str = "unassessable"
+    circle_of_competence: str = "unassessable"
+    profitability_state: str = "unassessable"
+    claims: list[SpecialistClaim] = field(default_factory=list)
+
+
+@dataclass
+class ManagementCredibilitySpecialistOutput:
+    coverage: "ManagementCredibilityCoverage" = field(
+        default_factory=lambda: ManagementCredibilityCoverage()
+    )
+    pattern_state: ManagementPatternState = ManagementPatternState.UNASSESSABLE
+    ledger: list[ManagementLedgerRow] = field(default_factory=list)
+    claims: list[SpecialistClaim] = field(default_factory=list)
+
+
+@dataclass
+class MarginSpecialistOutput:
+    margin_state: str = "unassessable"
+    current_ebit_margin: float | None = None
+    defensible_peak_ebit_margin: float | None = None
+    mechanism: str = ""
+    supporting_source_ids: list[str] = field(default_factory=list)
+    contrary_source_ids: list[str] = field(default_factory=list)
+    margin_dependency: str = "none"
+
+
+@dataclass
+class InsiderOwnershipSpecialistOutput:
+    insider_signal: str = "unassessable"
+    signal_strength: str = "none"
+    flow_effect: str = "unassessable"
+    event_claims: list[SpecialistClaim] = field(default_factory=list)
+    data_coverage: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class GrowthValuationSpecialistOutput:
+    growth_state: str = "unassessable"
+    revenue_mechanism: str = "unassessable"
+    reverse_dcf_assessment: str = "unassessable"
+    engine_dependency: str = "fundamental"
+    scenario_bundles: list[dict] = field(default_factory=list)
+    claims: list[SpecialistClaim] = field(default_factory=list)
+
+
+@dataclass
+class SellConditionsSpecialistOutput:
+    tests: list[dict] = field(default_factory=list)
+    current_break_status: str = "unassessable"
+    activation_blockers: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class SpecialistOutput:
+    schema_version: str
+    run_id: str
+    agent_name: SpecialistAgentName
+    company_id: int
+    ticker: str
+    evidence_as_of: str
+    status: SpecialistStatus
+    confidence: SpecialistConfidence
+    confidence_cap: SpecialistConfidence
+    claims: list[SpecialistClaim]
+    missing_information: list[SpecialistMissingInformation]
+    packet_hash: str
+    business_model: BusinessModelSpecialistOutput | None = None
+    management_credibility: ManagementCredibilitySpecialistOutput | None = None
+    margin: MarginSpecialistOutput | None = None
+    insider_ownership: InsiderOwnershipSpecialistOutput | None = None
+    growth_valuation: GrowthValuationSpecialistOutput | None = None
+    sell_conditions: SellConditionsSpecialistOutput | None = None
+
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        for field_name in (
+            "business_model",
+            "management_credibility",
+            "margin",
+            "insider_ownership",
+            "growth_valuation",
+            "sell_conditions",
+        ):
+            if data[field_name] is None:
+                data.pop(field_name)
+        return data
+
+
 @dataclass
 class ManagementClaimAssessment:
     date: str
@@ -96,11 +296,25 @@ class ManagementClaimAssessment:
 
 @dataclass
 class ManagementCredibilityCoverage:
+    coverage_tier: ManagementCoverageTier = ManagementCoverageTier.NO_LEDGER
+    coverage_state: ManagementCoverageState = (
+        ManagementCoverageState.INSUFFICIENT_FOR_PATTERN_RECOGNITION
+    )
+    quarters_covered: int = 0
+    data_source_type: ManagementDataSourceType = ManagementDataSourceType.NONE
     eligible_claim_count: int = 0
     assessed_claim_count: int = 0
     pending_claim_count: int = 0
     omitted_claim_count: int = 0
     omission_reasons: list[str] = field(default_factory=list)
+    confidence_cap: SpecialistConfidence = SpecialistConfidence.LOW
+
+
+# Versioned names mirror the specialist contract while preserving the existing
+# qualitative result class names used by stored analyses.
+ManagementCredibilityCoverageV2 = ManagementCredibilityCoverage
+ManagementLedgerRowV2 = ManagementLedgerRow
+SpecialistOutputEnvelope = SpecialistOutput
 
 
 @dataclass
@@ -541,18 +755,30 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
             "claim": "string",
             "expected_timing": "string | null",
             "observed_outcome": "string | null",
-            "result": "kept | delayed | missed | changed | unverifiable",
+            "result": (
+                "kept | delayed | missed | changed | unverifiable | "
+                "too_vague_to_test | external_shock"
+            ),
             "source_ids": ["string"],
             "claim_source_ids": ["string"],
             "outcome_source_ids": ["string"],
         }
     ],
     "management_credibility_coverage": {
+        "coverage_tier": "no_ledger | partial_coverage | full_coverage",
+        "coverage_state": (
+            "insufficient_for_pattern_recognition | partial_coverage | full_coverage"
+        ),
+        "quarters_covered": "integer",
+        "data_source_type": (
+            "none | primary_reports | company_releases | mixed_primary | secondary_only"
+        ),
         "eligible_claim_count": "integer",
         "assessed_claim_count": "integer",
         "pending_claim_count": "integer",
         "omitted_claim_count": "integer",
         "omission_reasons": ["string"],
+        "confidence_cap": "low | medium | high",
     },
     "ownership_and_flow_assessment": "string",
     "ownership_claims": [
@@ -918,6 +1144,169 @@ SCENARIO_AUTHORING_OUTPUT_CONTRACT = {
 }
 
 
+_SPECIALIST_CLAIM_CONTRACT = {
+    "claim_id": "string",
+    "domain": "string",
+    "predicate": "string",
+    "value": "string | number | boolean | null",
+    "direction": "positive | negative | mixed | neutral | unassessable",
+    "source_ids": ["string"],
+    "limitation_codes": ["string"],
+    "depends_on_claim_ids": ["string"],
+}
+_SPECIALIST_MISSING_INFORMATION_CONTRACT = {
+    "item_code": "string",
+    "limitation_class": "core | supplemental",
+    "impact_code": "string",
+}
+_SPECIALIST_COVERAGE_CONTRACT = {
+    "coverage_tier": "no_ledger | partial_coverage | full_coverage",
+    "coverage_state": (
+        "insufficient_for_pattern_recognition | partial_coverage | full_coverage"
+    ),
+    "quarters_covered": "integer",
+    "data_source_type": (
+        "none | primary_reports | company_releases | mixed_primary | secondary_only"
+    ),
+    "eligible_claim_count": "integer",
+    "assessed_claim_count": "integer",
+    "pending_claim_count": "integer",
+    "omitted_claim_count": "integer",
+    "omission_reasons": ["string"],
+    "confidence_cap": "low | medium | high",
+}
+_SPECIALIST_LEDGER_CONTRACT = {
+    "quarter": "string",
+    "claim_id": "string",
+    "claim": "string",
+    "expected_timing": "string | null",
+    "observed_outcome": "string | null",
+    "result": (
+        "kept | delayed | missed | unverifiable | too_vague_to_test | external_shock"
+    ),
+    "claim_source_ids": ["string"],
+    "outcome_source_ids": ["string"],
+    "source_ids": ["string"],
+    "notes": ["string"],
+}
+_SPECIALIST_DOMAIN_CONTRACTS = {
+    "business_model": {
+        "revenue_model_types": ["string"],
+        "recurring_revenue_profile": "none | partial | majority | unassessable",
+        "operating_leverage": "absent | limited | credible | demonstrated | unassessable",
+        "circle_of_competence": "inside | borderline | outside | unassessable",
+        "profitability_state": "profitable | loss_making | recovering | unassessable",
+        "claims": [_SPECIALIST_CLAIM_CONTRACT],
+    },
+    "management_credibility": {
+        "coverage": _SPECIALIST_COVERAGE_CONTRACT,
+        "pattern_state": "supportive | mixed | weak | unassessable",
+        "ledger": [_SPECIALIST_LEDGER_CONTRACT],
+        "claims": [_SPECIALIST_CLAIM_CONTRACT],
+    },
+    "margin": {
+        "margin_state": (
+            "not_applicable | latent | early_evidence | active | stalled | "
+            "invalidated | unassessable"
+        ),
+        "current_ebit_margin": "number | null",
+        "defensible_peak_ebit_margin": "number | null",
+        "mechanism": "string",
+        "supporting_source_ids": ["string"],
+        "contrary_source_ids": ["string"],
+        "margin_dependency": "none | secondary | material | primary",
+    },
+    "insider_ownership": {
+        "insider_signal": "none | positive | negative | mixed | unassessable",
+        "signal_strength": "none | weak | medium | strong",
+        "flow_effect": "supportive | adverse | mixed | unassessable",
+        "event_claims": [_SPECIALIST_CLAIM_CONTRACT],
+        "data_coverage": {
+            "insider": "available | empty | stale | unknown",
+            "ownership": "available | partial | unavailable | stale",
+            "liquidity": "available | partial | unavailable | stale",
+        },
+    },
+    "growth_valuation": {
+        "growth_state": "supported | mixed | weak | unassessable",
+        "revenue_mechanism": (
+            "organic_growth | price | volume | acquisition | recurring | variable | "
+            "project | transaction | unassessable"
+        ),
+        "reverse_dcf_assessment": "plausible | demanding | unsupported | unassessable",
+        "engine_dependency": (
+            "fundamental | fundamental_plus_multiple | multiple_primary | multiple_only"
+        ),
+        "scenario_bundles": [_scenario_bundle_contract()],
+        "claims": [_SPECIALIST_CLAIM_CONTRACT],
+    },
+    "sell_conditions": {
+        "tests": [
+            {
+                "break_type": (
+                    "revenue_or_demand | margin_or_execution | "
+                    "balance_sheet_or_dilution | management_credibility | "
+                    "valuation_overshoot | superior_evidence_or_opportunity"
+                ),
+                "condition": "string",
+                "observable_metric_or_event": "string",
+                "threshold_or_direction": "string",
+                "current_break_status": "not_triggered | triggered | unassessable",
+                "response": "reassess | reduce | sell",
+                "source_ids": ["string"],
+                "claim_ids": ["string"],
+            }
+        ],
+        "current_break_status": "not_triggered | triggered | unassessable",
+        "activation_blockers": [
+            {
+                "blocker_code": "string",
+                "source_ids": ["string"],
+                "claim_ids": ["string"],
+            }
+        ],
+    },
+}
+
+
+def _specialist_envelope_contract() -> dict:
+    return {
+        "schema_version": "specialist-output-v1",
+        "run_id": "string",
+        "agent_name": "business_model | management_credibility | margin | insider_ownership | growth_valuation | sell_conditions",
+        "company_id": "integer",
+        "ticker": "string",
+        "evidence_as_of": "string",
+        "status": "complete | insufficient_evidence | failed",
+        "confidence": "low | medium | high",
+        "confidence_cap": "low | medium | high",
+        "claims": [_SPECIALIST_CLAIM_CONTRACT],
+        "missing_information": [_SPECIALIST_MISSING_INFORMATION_CONTRACT],
+        "packet_hash": "string",
+    }
+
+
+
+SPECIALIST_OUTPUT_CONTRACT = _specialist_envelope_contract()
+SPECIALIST_DOMAIN_CONTRACTS = _SPECIALIST_DOMAIN_CONTRACTS
+
+
+def specialist_output_json_schema(agent_name: str | None = None) -> dict:
+    """Return the closed JSON schema for a specialist envelope.
+
+    Passing an agent name includes that specialist's required domain payload;
+    omitting it returns the common envelope used for failed/partial outputs.
+    """
+    contract = _specialist_envelope_contract()
+    if agent_name is not None:
+        try:
+            normalized_name = SpecialistAgentName(agent_name).value
+        except ValueError as exc:
+            raise ValueError(f"unknown specialist agent name: {agent_name!r}") from exc
+        contract[normalized_name] = _SPECIALIST_DOMAIN_CONTRACTS[normalized_name]
+    return _contract_to_json_schema(contract)
+
+
 def stock_analysis_json_schema() -> dict:
     return _contract_to_json_schema(STOCK_ANALYSIS_OUTPUT_CONTRACT)
 
@@ -996,7 +1385,9 @@ def _contract_to_json_schema(specification) -> dict:
         }
 
     options = specification.split(" | ")
-    primitive_types = {"boolean", "integer", "number", "string", "null"}
+    primitive_types = {
+        "array", "boolean", "integer", "number", "object", "string", "null"
+    }
     primitive_options = [option for option in options if option in primitive_types]
     literal_options = [option for option in options if option not in primitive_types]
     if not literal_options:

@@ -1,6 +1,7 @@
 import json
 import math
 import re
+from datetime import date
 from kncompanyscraper.analysis.agent.output_schema import (
     AssessmentClaim,
     OwnershipClaim,
@@ -14,6 +15,27 @@ from kncompanyscraper.analysis.agent.output_schema import (
     FalsifiableCase,
     ManagementClaimAssessment,
     ManagementCredibilityCoverage,
+    ManagementCredibilitySpecialistOutput,
+    ManagementLedgerRow,
+    BusinessModelSpecialistOutput,
+    GrowthValuationSpecialistOutput,
+    InsiderOwnershipSpecialistOutput,
+    MarginSpecialistOutput,
+    SellConditionsSpecialistOutput,
+    ManagementCoverageState,
+    ManagementCoverageTier,
+    ManagementDataSourceType,
+    ManagementLedgerResult,
+    ManagementPatternState,
+    SpecialistAgentName,
+    SpecialistClaim,
+    SpecialistClaimDirection,
+    SpecialistConfidence,
+    SpecialistMissingInformation,
+    SpecialistOutput,
+    SpecialistStatus,
+    _SPECIALIST_DOMAIN_CONTRACTS,
+    _specialist_envelope_contract,
     MarginExpansionCase,
     ActivationTriggerEvidence,
     ActivationTriggerSpec,
@@ -195,6 +217,358 @@ def parse_scenario_authoring_result(raw_response: str):
     }
 
 
+def parse_specialist_output(raw_response: str) -> SpecialistOutput:
+    """Parse and semantically validate one non-authoritative specialist output."""
+    try:
+        initial = json.loads(
+            raw_response, object_pairs_hook=_object_without_duplicates
+        )
+        agent_name = SpecialistAgentName(initial.get("agent_name"))
+        status = SpecialistStatus(initial.get("status"))
+    except (
+        json.JSONDecodeError,
+        StockAnalysisValidationError,
+        ValueError,
+        TypeError,
+        AttributeError,
+    ) as exc:
+        raise StockAnalysisValidationError(
+            f"Invalid specialist-output JSON: {exc}"
+        ) from exc
+    contract = _specialist_envelope_contract()
+    domain_name = agent_name.value
+    if status is SpecialistStatus.COMPLETE and domain_name not in initial:
+        raise StockAnalysisValidationError(
+            f"complete specialist output requires {domain_name} payload"
+        )
+    if domain_name in initial:
+        contract[domain_name] = _SPECIALIST_DOMAIN_CONTRACTS[domain_name]
+    payload = _parse_contract(raw_response, contract, "specialist-output")
+    _validate_specialist_output(payload, agent_name)
+
+    domain = {}
+    if "business_model" in payload:
+        business = payload["business_model"]
+        domain["business_model"] = BusinessModelSpecialistOutput(
+            **{
+                **business,
+                "claims": [_specialist_claim(item) for item in business["claims"]],
+            }
+        )
+    if "management_credibility" in payload:
+        management = payload["management_credibility"]
+        coverage_payload = {
+            **management["coverage"],
+            "coverage_tier": ManagementCoverageTier(
+                management["coverage"]["coverage_tier"]
+            ),
+            "coverage_state": ManagementCoverageState(
+                management["coverage"]["coverage_state"]
+            ),
+            "data_source_type": ManagementDataSourceType(
+                management["coverage"]["data_source_type"]
+            ),
+            "confidence_cap": SpecialistConfidence(
+                management["coverage"]["confidence_cap"]
+            ),
+        }
+        coverage = ManagementCredibilityCoverage(**coverage_payload)
+        domain["management_credibility"] = ManagementCredibilitySpecialistOutput(
+            coverage=coverage,
+            pattern_state=ManagementPatternState(management["pattern_state"]),
+            ledger=[
+                ManagementLedgerRow(
+                    **row, result=ManagementLedgerResult(row["result"])
+                )
+                for row in management["ledger"]
+            ],
+            claims=[_specialist_claim(item) for item in management["claims"]],
+        )
+    if "margin" in payload:
+        domain["margin"] = MarginSpecialistOutput(**payload["margin"])
+    if "insider_ownership" in payload:
+        insider = payload["insider_ownership"]
+        domain["insider_ownership"] = InsiderOwnershipSpecialistOutput(
+            **{
+                **insider,
+                "event_claims": [
+                    _specialist_claim(item) for item in insider["event_claims"]
+                ],
+            }
+        )
+    if "growth_valuation" in payload:
+        growth = payload["growth_valuation"]
+        domain["growth_valuation"] = GrowthValuationSpecialistOutput(
+            **{
+                **growth,
+                "claims": [_specialist_claim(item) for item in growth["claims"]],
+            }
+        )
+    if "sell_conditions" in payload:
+        domain["sell_conditions"] = SellConditionsSpecialistOutput(
+            **payload["sell_conditions"]
+        )
+    return SpecialistOutput(
+        schema_version=payload["schema_version"],
+        run_id=payload["run_id"],
+        agent_name=agent_name,
+        company_id=payload["company_id"],
+        ticker=payload["ticker"],
+        evidence_as_of=payload["evidence_as_of"],
+        status=SpecialistStatus(payload["status"]),
+        confidence=SpecialistConfidence(payload["confidence"]),
+        confidence_cap=SpecialistConfidence(payload["confidence_cap"]),
+        claims=[_specialist_claim(item) for item in payload["claims"]],
+        missing_information=[
+            SpecialistMissingInformation(**item)
+            for item in payload["missing_information"]
+        ],
+        packet_hash=payload["packet_hash"],
+        **domain,
+    )
+
+
+def validate_specialist_output(raw_response: str) -> SpecialistOutput:
+    """Validate a specialist response without routing or persisting it."""
+    return parse_specialist_output(raw_response)
+
+
+def _specialist_claim(value: dict) -> SpecialistClaim:
+    return SpecialistClaim(
+        claim_id=value["claim_id"],
+        domain=value["domain"],
+        predicate=value["predicate"],
+        value=value["value"],
+        direction=SpecialistClaimDirection(value["direction"]),
+        source_ids=list(value["source_ids"]),
+        limitation_codes=list(value["limitation_codes"]),
+        depends_on_claim_ids=list(value["depends_on_claim_ids"]),
+    )
+
+
+def _validate_specialist_output(payload: dict, agent_name: SpecialistAgentName) -> None:
+    confidence_rank = {"low": 0, "medium": 1, "high": 2}
+    if confidence_rank[payload["confidence"]] > confidence_rank[payload["confidence_cap"]]:
+        raise StockAnalysisValidationError(
+            "specialist confidence cannot exceed confidence_cap"
+        )
+    try:
+        date.fromisoformat(payload["evidence_as_of"])
+    except ValueError as exc:
+        raise StockAnalysisValidationError(
+            "specialist evidence_as_of must be an ISO date"
+        ) from exc
+
+    claim_ids = []
+    claims = list(payload["claims"])
+    domain = payload.get(agent_name.value) or {}
+    for claim in claims + list(domain.get("claims", [])) + list(
+        domain.get("event_claims", [])
+    ):
+        claim_id = claim["claim_id"]
+        if not _SPECIALIST_CLAIM_ID.fullmatch(claim_id):
+            raise StockAnalysisValidationError(
+                f"specialist claim ID must be a code identifier: {claim_id!r}"
+            )
+        if claim_id in claim_ids:
+            raise StockAnalysisValidationError(
+                f"duplicate specialist claim ID: {claim_id}"
+            )
+        claim_ids.append(claim_id)
+        if claim["direction"] != "unassessable" and not claim["source_ids"]:
+            raise StockAnalysisValidationError(
+                f"specialist claim {claim_id} requires source_ids unless unassessable"
+            )
+        if len(claim["source_ids"]) != len(set(claim["source_ids"])):
+            raise StockAnalysisValidationError(
+                f"specialist claim {claim_id} contains duplicate source IDs"
+            )
+
+    if agent_name == SpecialistAgentName.MANAGEMENT_CREDIBILITY:
+        _validate_specialist_management(payload, claim_ids)
+        coverage = payload.get("management_credibility", {}).get("coverage")
+        if coverage is not None and confidence_rank[coverage["confidence_cap"]] > confidence_rank[payload["confidence_cap"]]:
+            raise StockAnalysisValidationError(
+                "management coverage confidence_cap cannot exceed envelope confidence_cap"
+            )
+        if coverage is not None and confidence_rank[payload["confidence"]] > confidence_rank[coverage["confidence_cap"]]:
+            raise StockAnalysisValidationError(
+                "specialist confidence cannot exceed management coverage confidence_cap"
+            )
+    if agent_name == SpecialistAgentName.SELL_CONDITIONS:
+        _validate_specialist_sell_conditions(payload)
+
+
+def _validate_specialist_sell_conditions(payload: dict) -> None:
+    sell = payload.get("sell_conditions")
+    if sell is None:
+        return
+    required_types = {
+        "revenue_or_demand",
+        "margin_or_execution",
+        "balance_sheet_or_dilution",
+        "management_credibility",
+        "valuation_overshoot",
+        "superior_evidence_or_opportunity",
+    }
+    actual_types = [test["break_type"] for test in sell["tests"]]
+    if set(actual_types) != required_types or len(actual_types) != len(required_types):
+        raise StockAnalysisValidationError(
+            "sell conditions must contain exactly one test for each thesis break type"
+        )
+    for test in sell["tests"]:
+        if (
+            test["current_break_status"] != "unassessable"
+            and not test["source_ids"]
+        ):
+            raise StockAnalysisValidationError(
+                "assessable sell conditions require source_ids"
+            )
+
+
+def _validate_specialist_management(payload: dict, claim_ids: list[str]) -> None:
+    management = payload.get("management_credibility")
+    if management is None:
+        return
+    coverage = management["coverage"]
+    quarters = coverage["quarters_covered"]
+    if quarters < 0:
+        raise StockAnalysisValidationError(
+            "management quarters_covered must be non-negative"
+        )
+    tier_by_quarters = (
+        (3, "no_ledger", "insufficient_for_pattern_recognition", "low"),
+        (7, "partial_coverage", "partial_coverage", None),
+    )
+    for maximum, expected_tier, expected_state, expected_cap in tier_by_quarters:
+        if quarters <= maximum:
+            if coverage["coverage_tier"] != expected_tier:
+                raise StockAnalysisValidationError(
+                    f"management coverage tier for {quarters} quarters must be {expected_tier}"
+                )
+            if coverage["coverage_state"] != expected_state:
+                raise StockAnalysisValidationError(
+                    f"management coverage state for {quarters} quarters must be {expected_state}"
+                )
+            if expected_cap and coverage["confidence_cap"] != expected_cap:
+                raise StockAnalysisValidationError(
+                    "management coverage from 0-3 quarters must cap confidence at low"
+                )
+            if quarters >= 4 and coverage["confidence_cap"] == "high":
+                raise StockAnalysisValidationError(
+                    "management coverage from 4-7 quarters cannot cap confidence at high"
+                )
+            break
+    else:
+        if coverage["coverage_tier"] != "full_coverage":
+            raise StockAnalysisValidationError(
+                "management coverage from 8 or more quarters must be full_coverage"
+            )
+        if coverage["coverage_state"] != "full_coverage":
+            raise StockAnalysisValidationError(
+                "management coverage from 8 or more quarters must be full_coverage state"
+            )
+
+    count_fields = (
+        "eligible_claim_count",
+        "assessed_claim_count",
+        "pending_claim_count",
+        "omitted_claim_count",
+    )
+    if any(coverage[field] < 0 for field in count_fields):
+        raise StockAnalysisValidationError(
+            "management claim counts must be non-negative"
+        )
+    counts = coverage["assessed_claim_count"] + coverage["pending_claim_count"]
+    counts += coverage["omitted_claim_count"]
+    if coverage["eligible_claim_count"] != counts:
+        raise StockAnalysisValidationError(
+            "management eligible_claim_count must equal assessed, pending, and omitted counts"
+        )
+    assessed_results = {"kept", "delayed", "missed", "external_shock"}
+    pending_results = {"unverifiable", "too_vague_to_test"}
+    assessed_count = sum(
+        row["result"] in assessed_results for row in management["ledger"]
+    )
+    pending_count = sum(
+        row["result"] in pending_results for row in management["ledger"]
+    )
+    if coverage["assessed_claim_count"] != assessed_count:
+        raise StockAnalysisValidationError(
+            "management assessed_claim_count must match ledger rows"
+        )
+    if coverage["pending_claim_count"] != pending_count:
+        raise StockAnalysisValidationError(
+            "management pending_claim_count must match ledger rows"
+        )
+    if coverage["omitted_claim_count"] and not coverage["omission_reasons"]:
+        raise StockAnalysisValidationError(
+            "omitted management claims require omission_reasons"
+        )
+    if not coverage["omitted_claim_count"] and coverage["omission_reasons"]:
+        raise StockAnalysisValidationError(
+            "management omission_reasons require omitted claims"
+        )
+    if any(not reason.strip() for reason in coverage["omission_reasons"]):
+        raise StockAnalysisValidationError(
+            "management omission reasons cannot be empty"
+        )
+
+    for row in management["ledger"]:
+        if not row["claim"].strip():
+            raise StockAnalysisValidationError(
+                f"management ledger claim {row['claim_id']} cannot be empty"
+            )
+        if not re.fullmatch(r"\d{4}-Q[1-4]", row["quarter"]):
+            raise StockAnalysisValidationError(
+                f"invalid management ledger quarter: {row['quarter']!r}"
+            )
+        row_id = row["claim_id"]
+        if not _SPECIALIST_CLAIM_ID.fullmatch(row_id):
+            raise StockAnalysisValidationError(
+                f"specialist claim ID must be a code identifier: {row_id!r}"
+            )
+        if row_id in claim_ids:
+            raise StockAnalysisValidationError(
+                f"duplicate specialist claim ID: {row_id}"
+            )
+        claim_ids.append(row_id)
+        for source_ids in (row["claim_source_ids"], row["outcome_source_ids"]):
+            if len(source_ids) != len(set(source_ids)):
+                raise StockAnalysisValidationError(
+                    f"management ledger claim contains duplicate source IDs: {row_id}"
+                )
+        union = list(dict.fromkeys(row["claim_source_ids"] + row["outcome_source_ids"]))
+        if row["source_ids"] != union:
+            raise StockAnalysisValidationError(
+                f"management ledger source_ids must be the claim/outcome union: {row_id}"
+            )
+        if row["result"] not in {"unverifiable", "too_vague_to_test"} and not union:
+            raise StockAnalysisValidationError(
+                f"management ledger claim {row_id} requires source IDs"
+            )
+        if row["result"] in {
+            "kept", "delayed", "missed", "external_shock"
+        } and (not row["claim_source_ids"] or not row["outcome_source_ids"]):
+            raise StockAnalysisValidationError(
+                f"assessed management ledger claim {row_id} requires claim and outcome source IDs"
+            )
+        if row["result"] in assessed_results and (
+            not row["observed_outcome"] or not row["observed_outcome"].strip()
+        ):
+            raise StockAnalysisValidationError(
+                f"assessed management ledger claim {row_id} requires observed_outcome"
+            )
+        if row["result"] in pending_results and row["observed_outcome"] is not None:
+            raise StockAnalysisValidationError(
+                f"non-assessable management ledger claim {row_id} cannot retain observed_outcome"
+            )
+        if row["result"] in pending_results and row["outcome_source_ids"]:
+            raise StockAnalysisValidationError(
+                f"non-assessable management ledger claim {row_id} cannot retain outcome_source_ids"
+            )
+
+
 def _parse_contract(raw_response: str, contract: dict, label: str) -> dict:
     try:
         payload = json.loads(raw_response, object_pairs_hook=_object_without_duplicates)
@@ -218,6 +592,7 @@ def _parse_contract(raw_response: str, contract: dict, label: str) -> dict:
 
 
 _STRUCTURED_CLAIM_ID = re.compile(r"^[a-z][a-z0-9_:-]*$")
+_SPECIALIST_CLAIM_ID = re.compile(r"^[a-z][a-z0-9_.:-]*$")
 
 
 def _validate_structured_claim_identifiers(value) -> None:
@@ -465,23 +840,39 @@ def _normalize_management_ledger_contract(payload: dict) -> None:
                 ]
             )
         )
+    coverage = payload.get("management_credibility_coverage")
+    if isinstance(coverage, dict):
+        coverage.setdefault("coverage_tier", "no_ledger")
+        coverage.setdefault(
+            "coverage_state", "insufficient_for_pattern_recognition"
+        )
+        coverage.setdefault("quarters_covered", 0)
+        coverage.setdefault("data_source_type", "none")
+        coverage.setdefault("confidence_cap", "low")
     if "management_credibility_coverage" not in payload:
         assessed = sum(
-            assessment.get("result") in {"kept", "delayed", "missed", "changed"}
+            assessment.get("result") in {
+                "kept", "delayed", "missed", "changed", "external_shock"
+            }
             for assessment in ledger
             if isinstance(assessment, dict)
         )
         pending = sum(
-            assessment.get("result") == "unverifiable"
+            assessment.get("result") in {"unverifiable", "too_vague_to_test"}
             for assessment in ledger
             if isinstance(assessment, dict)
         )
         payload["management_credibility_coverage"] = {
+            "coverage_tier": "no_ledger",
+            "coverage_state": "insufficient_for_pattern_recognition",
+            "quarters_covered": 0,
+            "data_source_type": "none",
             "eligible_claim_count": assessed + pending,
             "assessed_claim_count": assessed,
             "pending_claim_count": pending,
             "omitted_claim_count": 0,
             "omission_reasons": [],
+            "confidence_cap": "low",
         }
 
 
@@ -704,6 +1095,10 @@ def _validate_value(value, specification, path: str) -> None:
 
 
 def _matches_option(value, option: str) -> bool:
+    if option == "array":
+        return isinstance(value, list)
+    if option == "object":
+        return isinstance(value, dict)
     if option == "null":
         return value is None
     if option == "integer":

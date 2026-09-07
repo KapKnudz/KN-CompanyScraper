@@ -2767,7 +2767,8 @@ def test_execution_boundary_accepts_assessed_management_claim_with_outcome_prove
     ]["assessed_claim_count"] == 1
 
 
-def test_execution_boundary_removes_outcome_from_unverifiable_management_claim():
+@pytest.mark.parametrize("result", ["unverifiable", "too_vague_to_test"])
+def test_execution_boundary_removes_outcome_from_non_assessable_management_claim(result):
     repository = MagicMock()
     repository.save_stock_analysis.return_value = 109
     candidate = AgentCandidate(
@@ -2784,6 +2785,7 @@ def test_execution_boundary_removes_outcome_from_unverifiable_management_claim()
     )
     payload = valid_result()
     claim = payload.management_credibility_ledger[0]
+    claim.result = result
     claim.observed_outcome = "An unsupported outcome assertion."
     claim.claim_source_ids = ["news:21"]
     claim.outcome_source_ids = ["news:22"]
