@@ -42,6 +42,42 @@ class AnalysisRepository(BaseRepository):
                 )
                 return cur.fetchone()[0]
 
+    def save_specialist_artifact(
+        self,
+        company_id: int,
+        raw_response: str,
+        created_by: str,
+        *,
+        agent_name: str,
+        run_id: str,
+        packet_hash: str,
+        metadata: dict | None = None,
+    ) -> int:
+        """Persist a specialist response in the existing raw-analysis store."""
+        specialist_metadata = {
+            **(metadata or {}),
+            "analysis_mode": "specialist",
+            "agent_name": agent_name,
+            "run_id": run_id,
+            "packet_hash": packet_hash,
+            "artifact_type": "specialist_output",
+        }
+        return self.save_stock_analysis_raw(
+            company_id,
+            raw_response,
+            created_by,
+            metadata=specialist_metadata,
+        )
+
+    def get_specialist_artifact(self, analysis_id: int) -> dict | None:
+        """Read a raw artifact only when it is marked as specialist output."""
+        artifact = self.get_stock_analysis_raw(analysis_id)
+        if artifact is None:
+            return None
+        if (artifact.get("metadata") or {}).get("analysis_mode") != "specialist":
+            return None
+        return artifact
+
     def update_raw_validation(
         self,
         analysis_id: int,

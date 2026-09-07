@@ -1865,7 +1865,9 @@ class AgentExecutionBoundary:
 
     @staticmethod
     def _validate_management_ledger(result):
-        assessed_results = {"kept", "delayed", "missed", "changed"}
+        assessed_results = {
+            "kept", "delayed", "missed", "changed", "external_shock"
+        }
         ledger = result.management_credibility_ledger
         for index, claim in enumerate(ledger):
             claim.claim = claim.claim.strip()
@@ -1903,7 +1905,7 @@ class AgentExecutionBoundary:
                     raise StockAnalysisValidationError(
                         "assessed management credibility claims require outcome_source_ids"
                     )
-            elif claim.result == "unverifiable":
+            elif claim.result in {"unverifiable", "too_vague_to_test"}:
                 claim.observed_outcome = None
                 claim.outcome_source_ids = []
                 claim.source_ids = list(claim.claim_source_ids)

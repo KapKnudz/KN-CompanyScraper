@@ -1,0 +1,193 @@
+import json
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from kncompanyscraper.analysis.agent.output_schema import (
+    ManagementCredibilityCoverage,
+    ManagementCredibilitySpecialistOutput,
+    SpecialistAgentName,
+    SpecialistConfidence,
+    SpecialistOutput,
+    SpecialistStatus,
+    specialist_output_json_schema,
+)
+from kncompanyscraper.analysis.agent.result_parser import (
+    StockAnalysisValidationError,
+    parse_specialist_output,
+)
+from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
+
+
+def _claim(*, claim_id="margin.margin_state", direction="unassessable", source_ids=None):
+    return {
+        "claim_id": claim_id,
+        "domain": "margin",
+        "predicate": "assessment",
+        "value": None,
+        "direction": direction,
+        "source_ids": source_ids or [],
+        "limitation_codes": [],
+        "depends_on_claim_ids": [],
+    }
+
+
+def _management_payload(quarters=0, confidence_cap=None):
+    if confidence_cap is None:
+        confidence_cap = "low" if quarters < 8 else "high"
+    tier = "no_ledger" if quarters < 4 else "partial_coverage" if quarters < 8 else "full_coverage"
+    state = (
+        "insufficient_for_pattern_recognition"
+        if quarters < 4
+        else "partial_coverage"
+        if quarters < 8
+        else "full_coverage"
+    )
+    return {
+        "schema_version": "specialist-output-v1",
+        "run_id": "run-1",
+        "agent_name": "management_credibility",
+        "company_id": 42,
+        "ticker": "TEST",
+        "evidence_as_of": "2026-08-16",
+        "status": "complete",
+        "confidence": "low",
+        "confidence_cap": confidence_cap,
+        "claims": [],
+        "missing_information": [],
+        "packet_hash": "a" * 64,
+        "management_credibility": {
+            "coverage": {
+                "coverage_tier": tier,
+                "coverage_state": state,
+                "quarters_covered": quarters,
+                "data_source_type": "primary_reports",
+                "eligible_claim_count": 0,
+                "assessed_claim_count": 0,
+                "pending_claim_count": 0,
+                "omitted_claim_count": 0,
+                "omission_reasons": [],
+                "confidence_cap": confidence_cap,
+            },
+            "pattern_state": "unassessable",
+            "ledger": [],
+            "claims": [],
+        },
+    }
+
+
+def test_valid_specialist_output_parses_to_typed_objects():
+    parsed = parse_specialist_output(json.dumps(_management_payload()))
+
+    assert parsed.agent_name is SpecialistAgentName.MANAGEMENT_CREDIBILITY
+    assert parsed.status is SpecialistStatus.COMPLETE
+    assert isinstance(parsed.management_credibility, ManagementCredibilitySpecialistOutput)
+    assert parsed.management_credibility.coverage.quarters_covered == 0
+    assert specialist_output_json_schema("management_credibility")["properties"][
+        "management_credibility"
+    ]["required"] == ["coverage", "pattern_state", "ledger", "claims"]
+
+
+@pytest.mark.parametrize("field", ["status", "agent_name"])
+def test_specialist_closed_enums_reject_invalid_values(field):
+    payload = _management_payload()
+    payload[field] = "not-a-valid-enum"
+
+    with pytest.raises(StockAnalysisValidationError):
+        parse_specialist_output(json.dumps(payload))
+
+
+def test_specialist_rejects_duplicate_claim_ids():
+    payload = _management_payload()
+    payload["claims"] = [_claim(), _claim()]
+
+    with pytest.raises(StockAnalysisValidationError, match="duplicate specialist claim ID"):
+        parse_specialist_output(json.dumps(payload))
+
+
+def test_assessable_specialist_claim_requires_source_ids():
+    payload = _management_payload()
+    payload["claims"] = [_claim(direction="positive")]
+
+    with pytest.raises(StockAnalysisValidationError, match="requires source_ids"):
+        parse_specialist_output(json.dumps(payload))
+
+
+def test_unassessable_specialist_claim_may_omit_source_ids():
+    payload = _management_payload()
+    payload["claims"] = [_claim()]
+
+    assert parse_specialist_output(json.dumps(payload)).claims[0].source_ids == []
+
+
+@pytest.mark.parametrize(
+    ("quarters", "cap"), [(0, "low"), (3, "low"), (4, "medium"), (7, "medium"), (8, "high"), (12, "high")]
+)
+def test_management_coverage_enforces_quarter_confidence_caps(quarters, cap):
+    parsed = parse_specialist_output(json.dumps(_management_payload(quarters, cap)))
+
+    assert parsed.management_credibility.coverage.confidence_cap == cap
+
+
+def test_management_coverage_rejects_high_cap_for_partial_history():
+    with pytest.raises(StockAnalysisValidationError, match="4-7 quarters"):
+        parse_specialist_output(json.dumps(_management_payload(4, "high")))
+
+
+def test_specialist_output_serializes_and_round_trips():
+    parsed = parse_specialist_output(json.dumps(_management_payload()))
+    serialized = json.dumps(parsed.to_dict())
+
+    assert parse_specialist_output(serialized).packet_hash == "a" * 64
+
+
+def test_specialist_artifact_uses_existing_raw_storage_metadata():
+    cursor = MagicMock()
+    cursor.fetchone.return_value = (77,)
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.cursor.return_value.__enter__.return_value = cursor
+
+    with patch(
+        "kncompanyscraper.repositories.base_repository.get_connection",
+        return_value=connection,
+    ):
+        artifact_id = AnalysisRepository().save_specialist_artifact(
+            42,
+            json.dumps(_management_payload()),
+            "specialist-model",
+            agent_name="management_credibility",
+            run_id="run-1",
+            packet_hash="a" * 64,
+            metadata={"attempt": 1},
+        )
+
+    assert artifact_id == 77
+    params = cursor.execute.call_args.args[1]
+    assert params[3].adapted == {
+        "validation_status": "pending",
+        "attempt": 1,
+        "analysis_mode": "specialist",
+        "agent_name": "management_credibility",
+        "run_id": "run-1",
+        "packet_hash": "a" * 64,
+        "artifact_type": "specialist_output",
+    }
+
+
+def test_existing_qualitative_contract_remains_separate():
+    result = SpecialistOutput(
+        schema_version="specialist-output-v1",
+        run_id="run-1",
+        agent_name=SpecialistAgentName.MANAGEMENT_CREDIBILITY,
+        company_id=42,
+        ticker="TEST",
+        evidence_as_of="2026-08-16",
+        status=SpecialistStatus.COMPLETE,
+        confidence=SpecialistConfidence.LOW,
+        confidence_cap=SpecialistConfidence.LOW,
+        claims=[],
+        missing_information=[],
+        packet_hash="a" * 64,
+    )
+    assert "verdict" not in result.to_dict()
