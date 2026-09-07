@@ -8,7 +8,6 @@ from kncompanyscraper.analysis.agent.agent_packet import (
     AgentCandidatePacket,
     serialize_packet,
 )
-from kncompanyscraper.analysis.agent.prompt_artifact import serialize_prompt
 from kncompanyscraper.analysis.agent.specialist_runner import (
     FIRST_WAVE_SPECIALISTS,
     ShadowSpecialistRunner,
@@ -145,13 +144,8 @@ def test_shadow_runner_uses_frozen_hash_and_persists_non_authoritative_metadata(
     assert artifacts.saved[0]["metadata"]["packet_hash"] == frozen_hash
     assert artifacts.saved[0]["metadata"]["analysis_attempt"] == 1
     assert artifacts.validation == [(1, "accepted", None)]
-    prompt_artifact = artifacts.saved[0]["metadata"]["prompt_artifact"]
-    assert artifacts.saved[0]["metadata"]["prompt_sha256"] == sha256(
-        prompt_artifact.encode()
-    ).hexdigest()
-    assert json.loads(prompt_artifact)["prompt"]["schema_name"] == (
-        "specialist_management_credibility"
-    )
+    assert "prompt_artifact" not in artifacts.saved[0]["metadata"]
+    assert len(artifacts.saved[0]["metadata"]["prompt_sha256"]) == 64
 
 
 def test_first_wave_prompt_selection_targets_one_closed_domain_per_agent():

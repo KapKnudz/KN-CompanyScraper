@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from hashlib import sha256
-from importlib import resources
 from uuid import uuid4
 
 from kncompanyscraper.analysis.agent.agent_packet import (
@@ -18,7 +17,10 @@ from kncompanyscraper.analysis.agent.output_schema import (
 )
 from kncompanyscraper.analysis.agent.packet_measurement import measure_packet
 from kncompanyscraper.analysis.agent.prompt_artifact import serialize_prompt
-from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt
+from kncompanyscraper.analysis.agent.prompt_builder import (
+    AgentPrompt,
+    AgentPromptBuilder,
+)
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
     parse_specialist_output,
@@ -96,7 +98,9 @@ class SpecialistPromptBuilder:
             raise ValueError(
                 f"no first-wave specialist prompt for agent {agent_name.value!r}"
             ) from exc
-        instructions = self._read_resource(instruction_resource)
+        instructions = AgentPromptBuilder._read_resource(
+            f"prompts/{instruction_resource}"
+        )
         packet_json = serialize_packet(packet)
         schema = specialist_output_json_schema(agent_name.value)
         return AgentPrompt(
@@ -127,12 +131,6 @@ class SpecialistPromptBuilder:
             packet_measurement=asdict(measure_packet(packet, pretty=False)),
             contract_version=self.CONTRACT_VERSION,
         )
-
-    @staticmethod
-    def _read_resource(filename: str) -> str:
-        root = resources.files("kncompanyscraper.analysis.agent")
-        return root.joinpath("prompts", filename).read_text(encoding="utf-8").strip()
-
 
 class ShadowSpecialistRunner:
     """Run first-wave specialists without entering the authoritative analysis path."""
@@ -202,7 +200,6 @@ class ShadowSpecialistRunner:
                 "analysis_attempt": attempt,
                 "model_response_id": getattr(response, "response_id", None),
                 "usage": getattr(response, "usage", {}),
-                "prompt_artifact": prompt_artifact,
                 "prompt_sha256": prompt_hash,
                 "prompt_contract_version": prompt.contract_version,
                 "packet_measurement": prompt.packet_measurement,
