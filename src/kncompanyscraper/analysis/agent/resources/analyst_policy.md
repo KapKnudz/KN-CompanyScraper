@@ -108,7 +108,7 @@ Evaluate management through observable behavior:
 - promises compared with subsequent results; and
 - changes in wording or tone across reports.
 
-Use a management credibility ledger when source material permits. Distinguish kept, delayed, missed, changed, and unverifiable claims. Do not reduce credibility to a naive hit ratio.
+Use a management credibility ledger when source material permits. Apply the closed outcome values in the specialist output contract, distinguishing changed assumptions, external shocks, and statements too vague to test from ordinary kept, delayed, missed, or unverifiable claims. Do not reduce credibility to a naive hit ratio.
 
 ## Ownership, insiders, liquidity, and flows
 
