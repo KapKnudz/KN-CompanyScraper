@@ -415,6 +415,8 @@ def _validate_specialist_output(payload: dict, agent_name: SpecialistAgentName) 
             raise StockAnalysisValidationError(
                 "specialist confidence cannot exceed management coverage confidence_cap"
             )
+    if agent_name == SpecialistAgentName.MARGIN:
+        _validate_specialist_margin(payload)
     if agent_name == SpecialistAgentName.SELL_CONDITIONS:
         _validate_specialist_sell_conditions(payload)
 
@@ -428,6 +430,18 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
     if set(actual_types) != required_types or len(actual_types) != len(required_types):
         raise StockAnalysisValidationError(
             "sell conditions must contain exactly one test for each thesis break type"
+        )
+    test_statuses = {test["current_break_status"] for test in sell["tests"]}
+    expected_status = (
+        "triggered"
+        if "triggered" in test_statuses
+        else "unassessable"
+        if "unassessable" in test_statuses
+        else "not_triggered"
+    )
+    if sell["current_break_status"] != expected_status:
+        raise StockAnalysisValidationError(
+            "sell conditions current_break_status must match test statuses"
         )
     for test in sell["tests"]:
         for field_name in (
@@ -508,11 +522,30 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
 def _validate_causal_sell_condition(test: dict) -> None:
     if test["current_break_status"] != "triggered":
         return
-    price_observables = {"price", "share price", "stock price", "market price"}
-    observable = test["observable_metric_or_event"].strip().casefold()
-    if test["break_type"] != "valuation_overshoot" and observable in price_observables:
+    observable_tokens = set(
+        re.findall(
+            r"[a-z0-9]+",
+            test["observable_metric_or_event"].casefold(),
+        )
+    )
+    if test["break_type"] != "valuation_overshoot" and "price" in observable_tokens:
         raise StockAnalysisValidationError(
             "triggered sell conditions must identify a causal thesis break, not price alone"
+        )
+
+
+def _validate_specialist_margin(payload: dict) -> None:
+    margin = payload.get("margin")
+    if margin is None or margin["margin_state"] == "unassessable":
+        return
+    if not any(
+        claim["domain"].casefold() == "margin"
+        and claim["direction"] != "unassessable"
+        and claim["source_ids"]
+        for claim in payload["claims"]
+    ):
+        raise StockAnalysisValidationError(
+            "assessable margin outputs require an evidence-backed typed margin claim"
         )
 
 

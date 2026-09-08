@@ -208,6 +208,8 @@ def _first_wave_payload(agent_name):
             "claims": [],
         },
     }[agent_name]
+    if agent_name == "margin":
+        payload["claims"] = [_claim(direction="positive", source_ids=["financial:margin"])]
     return payload
 
 

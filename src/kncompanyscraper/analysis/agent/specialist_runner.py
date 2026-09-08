@@ -406,6 +406,11 @@ class ShadowSpecialistRunner:
         )
         if result.status == "failed":
             return result
+        if (
+            result.output is not None
+            and result.output.status is SpecialistStatus.INSUFFICIENT_EVIDENCE
+        ):
+            return result
         if result.output is not None and result.output.status is not SpecialistStatus.COMPLETE:
             return self._unassessable_sell_result(
                 packet,
@@ -905,15 +910,6 @@ def _domain_claims(output):
     return list(getattr(domain, "claims", [])) + list(getattr(domain, "event_claims", []))
 
 
-def _upstream_claim_ids(upstream_results, packet=None):
-    references = _upstream_references(upstream_results, packet)
-    return [
-        claim_id
-        for claim_id, reference in references.items()
-        if packet is None or _source_ids_are_permitted(packet, reference[0])
-    ]
-
-
 def _validate_sell_traceability(output, upstream_results, packet=None):
     references_by_id = _upstream_references(upstream_results, packet)
     known_claim_ids = set(references_by_id)
@@ -984,6 +980,14 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
             raise ValueError(
                 "sell condition sources must support cited upstream claims"
             )
+        if test.current_break_status is not SellConditionStatus.UNASSESSABLE and any(
+            references_by_id[claim_id][3]
+            not in _CAUSAL_CLAIM_DOMAINS[test.break_type]
+            for claim_id in test.claim_ids
+        ):
+            raise ValueError(
+                "sell condition claims do not match break semantics"
+            )
         if test.current_break_status is not SellConditionStatus.TRIGGERED:
             continue
         if not any(
@@ -1019,16 +1023,6 @@ def _validate_sell_dependency_blockers(output, inputs_available, scenario_data):
         raise ValueError(
             "sell dependency blocker contradicts available scenario data"
         )
-
-
-def _upstream_source_ids(upstream_results, packet=None):
-    return list(
-        dict.fromkeys(
-            source_id
-            for source_ids, *_ in _upstream_references(upstream_results, packet).values()
-            for source_id in source_ids
-        )
-    )
 
 
 def _upstream_references(upstream_results, packet=None):
@@ -1276,55 +1270,7 @@ def _causal_reference_matches(
         (observable_metric_or_event, condition, threshold_or_direction)
     )
     observable_tokens = _semantic_tokens(observable_metric_or_event)
-    if (
-        break_type != "valuation_overshoot"
-        and "price" in observable_tokens
-        and not {
-            token
-            for token in observable_tokens
-            if token not in {
-                "price",
-                "share",
-                "stock",
-                "market",
-                "decline",
-                "declines",
-                "declined",
-                "fall",
-                "falls",
-                "fell",
-                "drop",
-                "drops",
-                "dropped",
-                "rise",
-                "rises",
-                "rising",
-                "rose",
-                "increase",
-                "increases",
-                "increasing",
-                "decrease",
-                "decreases",
-                "decreasing",
-                "change",
-                "changes",
-                "changed",
-                "move",
-                "moves",
-                "moving",
-                "up",
-                "down",
-                "gain",
-                "gains",
-                "gained",
-                "loss",
-                "losses",
-                "percent",
-                "percentage",
-            }
-            and not token.isdigit()
-        }
-    ):
+    if break_type != "valuation_overshoot" and "price" in observable_tokens:
         return False
     if not observable_tokens.intersection(typed_claim_tokens):
         if not (
