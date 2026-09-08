@@ -161,6 +161,29 @@ def test_unhashable_human_labels_raise_evaluation_format_error():
     with pytest.raises(EvaluationFormatError, match="expected_value"):
         load_cases(invalid)
 
+    invalid = copy.deepcopy(cases)
+    invalid["cases"][0]["labels"]["claims"][0].pop("expected_value")
+    invalid["cases"][0]["labels"]["claims"][0]["expected_direction"] = None
+    with pytest.raises(EvaluationFormatError, match="needs expected_direction"):
+        load_cases(invalid)
+
+
+def test_duplicate_human_labels_are_rejected():
+    cases, _, _ = documents()
+    invalid = copy.deepcopy(cases)
+    invalid["cases"][0]["labels"]["claims"].append(
+        copy.deepcopy(invalid["cases"][0]["labels"]["claims"][0])
+    )
+    with pytest.raises(EvaluationFormatError, match="duplicate claim label"):
+        load_cases(invalid)
+
+    invalid = copy.deepcopy(cases)
+    invalid["cases"][0]["labels"]["management_rows"].append(
+        copy.deepcopy(invalid["cases"][0]["labels"]["management_rows"][0])
+    )
+    with pytest.raises(EvaluationFormatError, match="duplicate management row label"):
+        load_cases(invalid)
+
 
 def test_conflict_false_positive_and_false_negative_counts_are_explicit():
     cases, artifacts, packets = documents()
@@ -471,6 +494,37 @@ def test_paired_comparison_rejects_agent_misalignment():
         compare_paired_specialist_evaluations(
             cases, best_artifacts, candidate_artifacts, packets=packets
         )
+
+
+def test_paired_comparison_allows_case_results_without_tier_metadata():
+    cases, best_artifacts, packets = documents()
+    candidate_artifacts = copy.deepcopy(best_artifacts)
+    for artifact_set, tier in ((best_artifacts, "best"), (candidate_artifacts, "candidate")):
+        case_artifact = artifact_set["artifacts"][0]
+        case_artifact["content"] = case_result_content(cases, "activated_case")
+        case_artifact["metadata"].pop("model_tier", None)
+        case_artifact["metadata"]["final_verdict"] = "activated_case"
+        case_artifact["metadata"]["result_scope"] = "case"
+        artifact_set["artifacts"][1]["metadata"]["model_tier"] = tier
+
+    report = compare_paired_specialist_evaluations(
+        cases, best_artifacts, candidate_artifacts, packets=packets
+    )
+
+    assert report["best_tier_report"]["cases"][0]["case_level_result"]["available"] is True
+    assert report["candidate_tier_report"]["cases"][0]["case_level_result"]["available"] is True
+
+
+def test_unhashable_artifact_run_id_is_rejected_not_crashing():
+    cases, artifacts, packets = documents()
+    payload = json.loads(artifacts["artifacts"][0]["content"])
+    payload["run_id"] = []
+    artifacts["artifacts"][0]["content"] = json.dumps(payload)
+    artifacts["artifacts"][0]["metadata"].pop("run_id")
+
+    report = run(cases, artifacts, packets)
+
+    assert report["metrics"]["parse_semantic_rejection"]["rejected"] == 1
 
 
 def test_multiple_runs_without_case_selection_are_unavailable():

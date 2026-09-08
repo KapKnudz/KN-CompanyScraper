@@ -96,6 +96,7 @@ def _validate_labels(labels: Any, case_id: str) -> None:
     _require(isinstance(labels, Mapping), f"case {case_id}: labels must be an object")
     claims = labels.get("claims", [])
     _require(isinstance(claims, list), f"case {case_id}: labels.claims must be a list")
+    seen_claim_labels = set()
     for index, label in enumerate(claims):
         _require(isinstance(label, Mapping), f"case {case_id}: claim label {index} must be an object")
         if not _na(label):
@@ -106,9 +107,13 @@ def _validate_labels(labels: Any, case_id: str) -> None:
             )
             _require(isinstance(label.get("claim_id"), str), f"case {case_id}: claim label needs claim_id")
             _require(
-                "expected_direction" in label or "expected_value" in label,
+                ("expected_direction" in label and label["expected_direction"] is not None)
+                or "expected_value" in label,
                 f"case {case_id}: claim label needs expected_direction or expected_value",
             )
+            claim_key = (label["agent_name"], label["claim_id"])
+            _require(claim_key not in seen_claim_labels, f"case {case_id}: duplicate claim label")
+            seen_claim_labels.add(claim_key)
             if "expected_direction" in label and label["expected_direction"] is not None:
                 _require(
                     isinstance(label["expected_direction"], str)
@@ -126,10 +131,13 @@ def _validate_labels(labels: Any, case_id: str) -> None:
                 )
     rows = labels.get("management_rows", [])
     _require(isinstance(rows, list), f"case {case_id}: labels.management_rows must be a list")
+    seen_row_labels = set()
     for index, label in enumerate(rows):
         _require(isinstance(label, Mapping), f"case {case_id}: management row label {index} must be an object")
         if not _na(label):
             _require(isinstance(label.get("claim_id"), str), f"case {case_id}: management row needs claim_id")
+            _require(label["claim_id"] not in seen_row_labels, f"case {case_id}: duplicate management row label")
+            seen_row_labels.add(label["claim_id"])
             _require(
                 isinstance(label.get("expected_result"), str)
                 and label["expected_result"] in _MANAGEMENT_LEDGER_RESULTS,
@@ -273,7 +281,7 @@ def _metadata(record: Mapping) -> dict:
 
 def _record_run_id(record: Mapping) -> Any:
     metadata_run_id = _metadata(record).get("run_id")
-    if metadata_run_id is not None:
+    if isinstance(metadata_run_id, str):
         return metadata_run_id
     content = record.get("content")
     if not isinstance(content, str):
@@ -282,7 +290,8 @@ def _record_run_id(record: Mapping) -> Any:
         payload = json.loads(content)
     except json.JSONDecodeError:
         return None
-    return payload.get("run_id") if isinstance(payload, Mapping) else None
+    run_id = payload.get("run_id") if isinstance(payload, Mapping) else None
+    return run_id if isinstance(run_id, str) else None
 
 
 def _record_matches(case: Mapping, record: Mapping) -> bool:
@@ -787,6 +796,8 @@ def _numeric_deltas(best: Any, candidate: Any) -> Any:
 def _require_paired_tier(records: Sequence[Mapping], expected_tier: str, label: str) -> None:
     tiers = set()
     for record in records:
+        if _metadata(record).get("result_scope") == "case":
+            continue
         _require("_malformed" not in record, f"{label} paired artifacts must include tier metadata")
         tier = _metadata(record).get("tier")
         _require(isinstance(tier, str), f"{label} paired artifacts must include tier metadata")
