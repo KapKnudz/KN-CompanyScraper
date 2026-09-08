@@ -150,19 +150,17 @@ _CAUSAL_STATUS_VALUES_BY_BREAK = {
     "superior_evidence_or_opportunity": set(),
 }
 
-_VALUATION_RELATIONSHIP_MARKERS = {
-    "valuation",
-    "multiple",
-    "unsupported",
-    "demanding",
-    "fair",
-    "value",
-    "fundamental",
-    "expectation",
-    "dcf",
-    "margin",
-    "earnings",
-}
+_VALUATION_PRICE_RELATIONSHIP_PATTERNS = (
+    r"\b(?:relative to|against|compared with|compared to|versus|vs\.?)\s+"
+    r"(?:the\s+)?(?:fair|intrinsic|fundamental|sourced|unsupported|demanding|"
+    r"valuation\s+multiple|expectation\w*|reverse\s+dcf)\b",
+    r"\b(?:below|above|exceeds?|surpasses?|under)\s+(?:the\s+)?"
+    r"(?:fair|intrinsic|fundamental|sourced|unsupported|demanding|"
+    r"valuation\s+multiple|expectation\w*|reverse\s+dcf)\b",
+    r"\b(?:fair|intrinsic|fundamental|sourced|unsupported|demanding|"
+    r"valuation\s+multiple|expectation\w*|reverse\s+dcf)\b"
+    r"(?:\s+\w+){0,4}\s+\b(?:below|above|exceeds?|surpasses?|under)\b",
+)
 
 @dataclass(frozen=True)
 class SpecialistArtifactResult:
@@ -1341,10 +1339,9 @@ def _price_trigger_has_causal_relationship(
     if not _contains_share_price_signal(evidence_text, typed_claim_tokens):
         return False
     if break_type == "valuation_overshoot":
-        return bool(
-            _semantic_tokens(evidence_text).intersection(
-                _VALUATION_RELATIONSHIP_MARKERS
-            )
+        return any(
+            re.search(pattern, evidence_text)
+            for pattern in _VALUATION_PRICE_RELATIONSHIP_PATTERNS
         )
     condition_tokens = _semantic_tokens(condition)
     return bool(
