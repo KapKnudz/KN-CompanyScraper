@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, is_dataclass
 from hashlib import sha256
 import json
+import re
 from uuid import uuid4
 
 from kncompanyscraper.analysis.agent.agent_packet import (
@@ -62,32 +63,6 @@ _SPECIALIST_PROMPT_RESOURCES = {
     SpecialistAgentName.SELL_CONDITIONS: "specialist_sell_conditions_prompt.md",
 }
 
-_CAUSAL_CLAIM_DOMAINS = {
-    "revenue_or_demand": {"business_model", "revenue", "demand"},
-    "margin_or_execution": {"margin", "execution"},
-    "balance_sheet_or_dilution": {
-        "balance_sheet",
-        "capital_allocation",
-        "dilution",
-        "insider_ownership",
-    },
-    "management_credibility": {"management", "management_credibility"},
-    "valuation_overshoot": {"growth_valuation", "valuation"},
-    "superior_evidence_or_opportunity": {
-        "balance_sheet",
-        "business_model",
-        "capital_allocation",
-        "demand",
-        "dilution",
-        "execution",
-        "insider_ownership",
-        "management",
-        "management_credibility",
-        "margin",
-        "revenue",
-        "valuation",
-    },
-}
 _CAUSAL_CLAIM_MARKERS = {
     "revenue_or_demand": {"revenue", "demand", "sales", "customer", "churn", "retention"},
     "margin_or_execution": {"margin", "execution", "cost", "profitability"},
@@ -515,7 +490,7 @@ class ShadowSpecialistRunner:
             blocker_codes.append("upstream_specialist_unavailable")
         if not _scenario_data_available(scenario_data):
             blocker_codes.append("deterministic_scenario_unavailable")
-        claim_ids = _upstream_claim_ids(upstream_results)
+        claim_ids = _upstream_claim_ids(upstream_results, packet)
         source_ids = _sell_source_ids_in_catalog(
             packet, _upstream_source_ids(upstream_results, packet)
         )
@@ -548,6 +523,14 @@ class ShadowSpecialistRunner:
                     limitation_class="core",
                     impact_code="sell_conditions_unassessable",
                 )
+            )
+            missing.extend(
+                SpecialistMissingInformation(
+                    item_code=f"upstream_{agent_name}",
+                    limitation_class="core",
+                    impact_code="sell_conditions_unassessable",
+                )
+                for agent_name in missing_agents
             )
         if not _scenario_data_available(scenario_data):
             missing.append(
@@ -763,8 +746,13 @@ def _domain_claims(output):
     return list(getattr(domain, "claims", [])) + list(getattr(domain, "event_claims", []))
 
 
-def _upstream_claim_ids(upstream_results):
-    return list(_upstream_references(upstream_results))
+def _upstream_claim_ids(upstream_results, packet=None):
+    references = _upstream_references(upstream_results, packet)
+    return [
+        claim_id
+        for claim_id, reference in references.items()
+        if packet is None or _source_ids_are_permitted(packet, reference[0])
+    ]
 
 
 def _validate_sell_traceability(output, upstream_results, packet=None):
@@ -810,7 +798,10 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
             continue
         if not any(
             _causal_reference_matches(
-                test.break_type, references_by_id[claim_id], test.source_ids
+                test.break_type,
+                references_by_id[claim_id],
+                test.observable_metric_or_event,
+                test.source_ids,
             )
             for claim_id in test.claim_ids
         ):
@@ -926,21 +917,30 @@ def _source_ids_are_permitted(packet, source_ids):
     return set(source_ids) == set(permitted)
 
 
-def _causal_reference_matches(break_type, reference, sell_source_ids):
+def _semantic_tokens(value):
+    if isinstance(value, (list, tuple, set)):
+        tokens = set()
+        for item in value:
+            tokens.update(_semantic_tokens(item))
+        return tokens
+    return set(re.findall(r"[a-z0-9]+", str(value).casefold()))
+
+
+def _causal_reference_matches(
+    break_type, reference, observable_metric_or_event, sell_source_ids
+):
     source_ids, _, causal, domain, predicate, value = reference
     if not set(source_ids).intersection(sell_source_ids):
         return False
     if not causal:
         return False
-    if domain not in _CAUSAL_CLAIM_DOMAINS[break_type]:
-        semantic_tokens = set()
-        for field in (predicate, value):
-            semantic_tokens.update(
-                str(field).casefold().replace("-", "_").split("_")
-            )
-        if not semantic_tokens.intersection(_CAUSAL_CLAIM_MARKERS[break_type]):
-            return False
-    return bool(source_ids)
+    typed_claim_tokens = _semantic_tokens((predicate, value))
+    if not typed_claim_tokens.intersection(_CAUSAL_CLAIM_MARKERS[break_type]):
+        return False
+    observable_tokens = _semantic_tokens(observable_metric_or_event)
+    if "price" in observable_tokens and break_type != "valuation_overshoot":
+        return False
+    return bool(observable_tokens.intersection({domain, *typed_claim_tokens}))
 
 
 def _packet_as_of(packet):
