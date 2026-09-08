@@ -150,18 +150,6 @@ _CAUSAL_STATUS_VALUES_BY_BREAK = {
     "superior_evidence_or_opportunity": set(),
 }
 
-_VALUATION_PRICE_RELATIONSHIP_PATTERNS = (
-    r"\b(?:relative to|against|compared with|compared to|versus|vs\.?)\s+"
-    r"(?:the\s+)?(?:fair|intrinsic|fundamental|sourced|unsupported|demanding|"
-    r"valuation\s+multiple|expectation\w*|reverse\s+dcf)\b",
-    r"\b(?:below|above|exceeds?|surpasses?|under)\s+(?:the\s+)?"
-    r"(?:fair|intrinsic|fundamental|sourced|unsupported|demanding|"
-    r"valuation\s+multiple|expectation\w*|reverse\s+dcf)\b",
-    r"\b(?:fair|intrinsic|fundamental|sourced|unsupported|demanding|"
-    r"valuation\s+multiple|expectation\w*|reverse\s+dcf)\b"
-    r"(?:\s+\w+){0,4}\s+\b(?:below|above|exceeds?|surpasses?|under)\b",
-)
-
 @dataclass(frozen=True)
 class SpecialistArtifactResult:
     agent_name: str
@@ -1325,30 +1313,20 @@ def _contains_share_price_signal(value, typed_claim_tokens=()):
     }.issubset(typed_claim_tokens)
 
 
-def _price_trigger_has_causal_relationship(
-    break_type,
-    condition,
-    threshold_or_direction,
-    observable_tokens,
-    typed_claim_tokens,
-):
-    evidence_text = " ".join(
-        str(value)
-        for value in (condition, threshold_or_direction)
-    )
-    if not _contains_share_price_signal(evidence_text, typed_claim_tokens):
+def _has_structured_valuation_relationship(reference, sell_source_ids, packet):
+    _, _, source_backed, domain, predicate, value, _ = reference
+    if not source_backed or domain not in _CAUSAL_CLAIM_DOMAINS["valuation_overshoot"]:
         return False
-    if break_type == "valuation_overshoot":
-        return any(
-            re.search(pattern, evidence_text)
-            for pattern in _VALUATION_PRICE_RELATIONSHIP_PATTERNS
-        )
-    condition_tokens = _semantic_tokens(condition)
-    return bool(
-        condition_tokens.intersection(observable_tokens)
-        and condition_tokens.intersection(
-            _CAUSAL_CLAIM_MARKERS[break_type] | set(typed_claim_tokens)
-        )
+    if str(predicate).casefold() != "relation":
+        return False
+    if not _semantic_tokens(value).intersection(
+        {"unsupported", "demanding", "overvalued", "overpriced"}
+    ):
+        return False
+    relationship_source_ids = _resolved_source_ids(packet, sell_source_ids)
+    return any(
+        source_id.endswith(":price_fundamental_attribution")
+        for source_id in relationship_source_ids
     )
 
 
@@ -1532,20 +1510,17 @@ def _causal_reference_matches(
         ),
         typed_claim_tokens,
     )
-    if (price_observable or price_evidence) and not _price_trigger_has_causal_relationship(
-        break_type,
-        condition,
-        threshold_or_direction,
-        observable_tokens,
-        typed_claim_tokens,
-    ):
-        return False
+    structured_valuation_relationship = (
+        break_type == "valuation_overshoot"
+        and _has_structured_valuation_relationship(
+            reference, sell_source_ids, packet
+        )
+    )
+    if price_observable or price_evidence:
+        if not structured_valuation_relationship:
+            return False
     if not observable_tokens.intersection(typed_claim_tokens):
-        if not (
-            break_type == "valuation_overshoot"
-            and "unsupported" in typed_claim_tokens
-            and observable_tokens.intersection({"price", "share", "stock", "market"})
-        ):
+        if not structured_valuation_relationship:
             return False
     return True
 
