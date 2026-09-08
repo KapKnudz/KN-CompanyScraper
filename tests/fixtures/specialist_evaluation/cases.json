@@ -30,7 +30,10 @@
         "source_validity": "all_valid",
         "activation": "not_applicable",
         "final_verdict": "not_applicable",
-        "confidence": "low"
+        "confidence": {
+          "management_credibility": "low",
+          "insider_ownership": "low"
+        }
       }
     }
   ]

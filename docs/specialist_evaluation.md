@@ -16,11 +16,13 @@ are human-authored and are never inferred from an artifact:
 - `management_rows`: expected ledger result by `claim_id`.
 - `conflicts.expected_triggered` and `expected_not_triggered`: the four named
   deterministic conflict rules.
-- `final_verdict`: optional verdict direction when a run stores one in artifact
-  metadata; otherwise use `"not_applicable"`.
+- `final_verdict`: optional case-level verdict from an artifact whose metadata has
+  `result_scope: "case"`; otherwise use `"not_applicable"`.
 - `source_validity`: `all_valid`, `invalid_present`, or `not_applicable`.
-- `activation`: human-labeled boolean or `not_applicable`.
-- `confidence`: expected low/medium/high or `not_applicable`.
+- `activation`: human-labeled boolean or `not_applicable`; reports include full
+  true/false positive and negative outcomes.
+- `confidence`: an `agent_name` to expected low/medium/high mapping, or
+  `not_applicable`.
 
 Missing labels are reported as skipped or unavailable, never as passes. The fixture
 `tests/fixtures/specialist_evaluation/cases.json` is deliberately synthetic and is
@@ -45,8 +47,9 @@ python -m kncompanyscraper.main evaluate-specialists \
 The command prints concise metrics and optionally writes
 `specialist-evaluation-report-v1` JSON. Metrics include parse/semantic rejection,
 source-ID validity, claim and management-row agreement, conflict precision/recall,
-final-verdict agreement, activation false-positive rate, confidence agreement, and
-availability of run metadata.
+final-verdict agreement, activation outcomes and false-positive rate, per-agent
+confidence calibration, and availability of run metadata including run and agent
+identity, packet hash, and prompt hash.
 
 ## Future paired cohort
 

@@ -7,7 +7,6 @@ human-authored labels and never participates in production verdict selection.
 from __future__ import annotations
 
 import json
-from collections import defaultdict
 from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -22,6 +21,7 @@ from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
     parse_specialist_output,
 )
+from kncompanyscraper.analysis.agent.output_schema import SpecialistAgentName
 from kncompanyscraper.analysis.agent.specialist_conflicts import (
     evaluate_specialist_conflicts,
 )
@@ -35,7 +35,10 @@ CONFLICT_RULES = (
     "multiple_expansion_vs_activation",
 )
 _CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
+_SPECIALIST_AGENT_NAMES = {agent.value for agent in SpecialistAgentName}
 _METADATA_FIELDS = (
+    "run_id",
+    "agent_name",
     "model",
     "tier",
     "prompt_hash",
@@ -45,6 +48,8 @@ _METADATA_FIELDS = (
     "cost",
     "attempts",
     "repairs",
+    "validation_status",
+    "result_scope",
 )
 
 
@@ -101,6 +106,12 @@ def _validate_labels(labels: Any, case_id: str) -> None:
             all(isinstance(value, str) and value in CONFLICT_RULES for value in values),
             f"case {case_id}: conflicts.{key} contains an unknown rule",
         )
+    expected_triggered = set(conflicts.get("expected_triggered", []))
+    expected_not_triggered = set(conflicts.get("expected_not_triggered", []))
+    _require(
+        expected_triggered.isdisjoint(expected_not_triggered),
+        f"case {case_id}: conflicts cannot be both triggered and not_triggered",
+    )
     source = labels.get("source_validity", "not_applicable")
     _require(
         _na(source) or source in {"all_valid", "invalid_present", "unavailable"},
@@ -112,10 +123,17 @@ def _validate_labels(labels: Any, case_id: str) -> None:
         f"case {case_id}: activation must be boolean or not_applicable",
     )
     confidence = labels.get("confidence", "not_applicable")
-    _require(
-        _na(confidence) or confidence in _CONFIDENCE_RANK,
-        f"case {case_id}: confidence must be low, medium, high, or not_applicable",
-    )
+    if not _na(confidence):
+        _require(isinstance(confidence, Mapping), f"case {case_id}: confidence must map agent names to labels")
+        for agent_name, expected in confidence.items():
+            _require(
+                agent_name in _SPECIALIST_AGENT_NAMES,
+                f"case {case_id}: confidence contains an unknown agent",
+            )
+            _require(
+                _na(expected) or expected in _CONFIDENCE_RANK,
+                f"case {case_id}: confidence label must be low, medium, high, or not_applicable",
+            )
 
 
 def validate_cases_document(document: Mapping) -> list[dict]:
@@ -208,7 +226,7 @@ def _metadata(record: Mapping) -> dict:
 
 
 def _record_matches(case: Mapping, record: Mapping) -> bool:
-    if record.get("_malformed") is not None:
+    if "_malformed" in record:
         return False
     metadata = _metadata(record)
     company_id = record.get("company_id", metadata.get("company_id"))
@@ -232,13 +250,15 @@ def _output_claims(output) -> list:
     return claims
 
 
-def _actual_final_verdict(records: Sequence[Mapping], parsed: Sequence[Any]) -> str | None:
-    for record in reversed(records):
-        metadata = _metadata(record)
-        value = record.get("final_verdict", metadata.get("final_verdict"))
-        if value is not None:
-            return value
-    return None
+def _actual_final_verdict(records: Sequence[Mapping]) -> str | None:
+    case_level_records = [
+        record for record in records if _metadata(record).get("result_scope") == "case"
+    ]
+    if len(case_level_records) != 1:
+        return None
+    record = case_level_records[0]
+    metadata = _metadata(record)
+    return record.get("final_verdict", metadata.get("final_verdict"))
 
 
 def _metric(correct: int, incorrect: int, skipped: int = 0, unavailable: int = 0) -> dict:
@@ -306,6 +326,7 @@ def compare_specialist_evaluations(
     case_list = load_cases(cases) if not isinstance(cases, list) else validate_cases_document({"schema_version": CASES_SCHEMA_VERSION, "cases": cases})
     records = _artifact_records(artifacts)
     packet_map = _packet_map(packets)
+    malformed_records = [record for record in records if "_malformed" in record]
     totals = {
         "parse_semantic_rejection": {"rejected": 0, "total": 0, "rejection_rate": None},
         "source_id_validity": {"valid": 0, "invalid": 0, "evaluated": 0, "unavailable": 0, "validity_rate": None, "label_correct": 0, "label_incorrect": 0, "label_skipped_not_applicable": 0, "label_agreement_rate": None},
@@ -314,8 +335,11 @@ def compare_specialist_evaluations(
         "conflict_precision_recall": {"true_positive": 0, "false_positive": 0, "false_negative": 0, "precision": None, "recall": None, "skipped_not_applicable": 0},
         "final_verdict_agreement": _metric(0, 0),
         "activation_false_positive_rate": {"false_positives": 0, "eligible": 0, "rate": None, "unavailable": 0},
-        "confidence_calibration": {"correct": 0, "evaluated": 0, "mean_absolute_error": None, "unavailable": 0, "_absolute_error_sum": 0},
+        "activation_outcomes": {"true_positive": 0, "true_negative": 0, "false_positive": 0, "false_negative": 0, "correct": 0, "evaluated": 0, "unavailable": 0, "skipped_not_applicable": 0, "agreement_rate": None},
+        "confidence_calibration": {"correct": 0, "evaluated": 0, "mean_absolute_error": None, "unavailable": 0, "by_agent": {}, "_absolute_error_sum": 0},
     }
+    totals["parse_semantic_rejection"]["total"] += len(malformed_records)
+    totals["parse_semantic_rejection"]["rejected"] += len(malformed_records)
     case_reports = []
     metadata_records = []
     for case in case_list:
@@ -421,9 +445,11 @@ def compare_specialist_evaluations(
             metric["incorrect"] += incorrect
             metric["skipped_not_applicable"] += skipped
             metric["evaluated"] += correct + incorrect
+        outputs_by_agent = {output.agent_name.value: output for output in parsed}
+        case_final_verdict = _actual_final_verdict(valid_records)
         actual_conflicts = {
             conflict.rule_id
-            for conflict in evaluate_specialist_conflicts(parsed, final_direction=_actual_final_verdict(valid_records, parsed))
+            for conflict in evaluate_specialist_conflicts(parsed, final_direction=case_final_verdict)
         }
         expected_conflicts = set(labels.get("conflicts", {}).get("expected_triggered", []))
         explicitly_not = set(labels.get("conflicts", {}).get("expected_not_triggered", []))
@@ -445,7 +471,7 @@ def compare_specialist_evaluations(
             totals["source_id_validity"]["label_correct"] += int(source_actual == source_label)
             totals["source_id_validity"]["label_incorrect"] += int(source_actual != source_label)
         final_expected = labels.get("final_verdict", "not_applicable")
-        final_actual = _actual_final_verdict(valid_records, parsed)
+        final_actual = case_final_verdict
         final_correct = final_incorrect = final_unavailable = final_skipped = 0
         if _na(final_expected):
             final_skipped = 1
@@ -461,26 +487,51 @@ def compare_specialist_evaluations(
         totals["final_verdict_agreement"]["unavailable"] += final_unavailable
         activation_expected = labels.get("activation", "not_applicable")
         activation_actual = final_actual in {"activated_case", "investable"} if final_actual is not None else None
+        activation_outcomes = totals["activation_outcomes"]
         if _na(activation_expected):
-            pass
+            activation_outcomes["skipped_not_applicable"] += 1
         elif activation_actual is None:
+            activation_outcomes["unavailable"] += 1
             totals["activation_false_positive_rate"]["unavailable"] += 1
         else:
-            totals["activation_false_positive_rate"]["eligible"] += 1
-            totals["activation_false_positive_rate"]["false_positives"] += int(activation_actual and not activation_expected)
+            activation_outcomes["evaluated"] += 1
+            if activation_expected and activation_actual:
+                activation_outcomes["true_positive"] += 1
+            elif not activation_expected and not activation_actual:
+                activation_outcomes["true_negative"] += 1
+            elif activation_actual:
+                activation_outcomes["false_positive"] += 1
+            else:
+                activation_outcomes["false_negative"] += 1
+            activation_outcomes["correct"] += int(activation_actual == activation_expected)
+            if not activation_expected:
+                totals["activation_false_positive_rate"]["eligible"] += 1
+                totals["activation_false_positive_rate"]["false_positives"] += int(activation_actual)
         confidence_expected = labels.get("confidence", "not_applicable")
-        confidence_actual = next((getattr(output.confidence, "value", output.confidence) for output in reversed(parsed)), None)
         if _na(confidence_expected):
             pass
-        elif confidence_actual is None:
-            totals["confidence_calibration"]["unavailable"] += 1
         else:
             confidence_metric = totals["confidence_calibration"]
-            confidence_metric["evaluated"] += 1
-            confidence_metric["correct"] += int(confidence_actual == confidence_expected)
-            confidence_metric["_absolute_error_sum"] += abs(
-                _CONFIDENCE_RANK[confidence_actual] - _CONFIDENCE_RANK[confidence_expected]
-            )
+            for agent_name, expected in confidence_expected.items():
+                if _na(expected):
+                    continue
+                agent_metric = confidence_metric["by_agent"].setdefault(
+                    agent_name,
+                    {"correct": 0, "evaluated": 0, "unavailable": 0, "mean_absolute_error": None, "_absolute_error_sum": 0},
+                )
+                output = outputs_by_agent.get(agent_name)
+                if output is None:
+                    confidence_metric["unavailable"] += 1
+                    agent_metric["unavailable"] += 1
+                    continue
+                confidence_actual = getattr(output.confidence, "value", output.confidence)
+                confidence_metric["evaluated"] += 1
+                confidence_metric["correct"] += int(confidence_actual == expected)
+                absolute_error = abs(_CONFIDENCE_RANK[confidence_actual] - _CONFIDENCE_RANK[expected])
+                confidence_metric["_absolute_error_sum"] += absolute_error
+                agent_metric["evaluated"] += 1
+                agent_metric["correct"] += int(confidence_actual == expected)
+                agent_metric["_absolute_error_sum"] += absolute_error
         case_reports.append({
             "case_id": case["case_id"],
             "artifact_count": len(matched),
@@ -488,7 +539,7 @@ def compare_specialist_evaluations(
             "rejected_count": rejection_count,
             "artifact_errors": artifact_errors,
             "packet_status": "available" if packet is not None and not packet.get("_packet_hash_mismatch") and not packet.get("_packet_identity_mismatch") else "unavailable",
-            "metadata": [{field: _metadata(record).get(field) for field in _METADATA_FIELDS} for record in valid_records],
+            "metadata": [{field: _metadata(record).get(field) for field in _METADATA_FIELDS} for record in matched],
         })
     for metric in totals.values():
         if isinstance(metric, dict) and "total" in metric:
@@ -511,10 +562,18 @@ def compare_specialist_evaluations(
         else None
     )
     confidence.pop("_absolute_error_sum")
+    for agent_metric in confidence["by_agent"].values():
+        agent_metric["mean_absolute_error"] = (
+            agent_metric["_absolute_error_sum"] / agent_metric["evaluated"]
+            if agent_metric["evaluated"]
+            else None
+        )
+        agent_metric.pop("_absolute_error_sum")
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
         "case_count": len(case_list),
         "artifact_count": len(records),
+        "malformed_artifact_count": len(malformed_records),
         "metrics": totals,
         "cases": case_reports,
         "metadata_fields": {
