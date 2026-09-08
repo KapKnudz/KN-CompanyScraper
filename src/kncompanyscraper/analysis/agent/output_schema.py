@@ -156,6 +156,12 @@ class ManagementPatternState(StrEnum):
     UNASSESSABLE = "unassessable"
 
 
+class SellConditionStatus(StrEnum):
+    NOT_TRIGGERED = "not_triggered"
+    TRIGGERED = "triggered"
+    UNASSESSABLE = "unassessable"
+
+
 @dataclass
 class SpecialistClaim:
     claim_id: str
@@ -240,10 +246,58 @@ class GrowthValuationSpecialistOutput:
 
 
 @dataclass
+class SellConditionAssessment:
+    """One causal thesis-break assessment and its auditable references."""
+
+    break_type: ThesisBreakType
+    condition: str
+    observable_metric_or_event: str
+    threshold_or_direction: str
+    current_break_status: SellConditionStatus
+    response: ThesisBreakResponse
+    source_ids: list[str] = field(default_factory=list)
+    claim_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SellConditionActivationBlocker:
+    """A stable, source-backed reason why activation cannot proceed."""
+
+    blocker_code: str
+    source_ids: list[str] = field(default_factory=list)
+    claim_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
 class SellConditionsSpecialistOutput:
-    tests: list[dict] = field(default_factory=list)
-    current_break_status: str = "unassessable"
-    activation_blockers: list[dict] = field(default_factory=list)
+    tests: list[SellConditionAssessment] = field(default_factory=list)
+    current_break_status: SellConditionStatus = SellConditionStatus.UNASSESSABLE
+    activation_blockers: list[SellConditionActivationBlocker] = field(
+        default_factory=list
+    )
+
+    def __post_init__(self):
+        # Keep construction convenient for persisted JSON and existing callers,
+        # while exposing typed assessments to the conflict evaluator.
+        self.tests = [
+            item if isinstance(item, SellConditionAssessment)
+            else SellConditionAssessment(
+                **{
+                    **item,
+                    "current_break_status": SellConditionStatus(
+                        item["current_break_status"]
+                    ),
+                }
+            )
+            for item in self.tests
+        ]
+        self.current_break_status = SellConditionStatus(self.current_break_status)
+        self.activation_blockers = [
+            item
+            if isinstance(item, SellConditionActivationBlocker)
+            else SellConditionActivationBlocker(**item)
+            for item in self.activation_blockers
+        ]
 
 
 @dataclass
@@ -1189,6 +1243,25 @@ _SPECIALIST_LEDGER_CONTRACT = {
     "source_ids": ["string"],
     "notes": ["string"],
 }
+_SPECIALIST_SELL_TEST_CONTRACT = {
+    "break_type": (
+        "revenue_or_demand | margin_or_execution | balance_sheet_or_dilution | "
+        "management_credibility | valuation_overshoot | "
+        "superior_evidence_or_opportunity"
+    ),
+    "condition": "string",
+    "observable_metric_or_event": "string",
+    "threshold_or_direction": "string",
+    "current_break_status": "not_triggered | triggered | unassessable",
+    "response": "reassess | reduce | sell",
+    "source_ids": ["string"],
+    "claim_ids": ["string"],
+}
+_SPECIALIST_SELL_BLOCKER_CONTRACT = {
+    "blocker_code": "string",
+    "source_ids": ["string"],
+    "claim_ids": ["string"],
+}
 _SPECIALIST_DOMAIN_CONTRACTS = {
     "business_model": {
         "revenue_model_types": ["string"],
@@ -1241,30 +1314,9 @@ _SPECIALIST_DOMAIN_CONTRACTS = {
         "claims": [_SPECIALIST_CLAIM_CONTRACT],
     },
     "sell_conditions": {
-        "tests": [
-            {
-                "break_type": (
-                    "revenue_or_demand | margin_or_execution | "
-                    "balance_sheet_or_dilution | management_credibility | "
-                    "valuation_overshoot | superior_evidence_or_opportunity"
-                ),
-                "condition": "string",
-                "observable_metric_or_event": "string",
-                "threshold_or_direction": "string",
-                "current_break_status": "not_triggered | triggered | unassessable",
-                "response": "reassess | reduce | sell",
-                "source_ids": ["string"],
-                "claim_ids": ["string"],
-            }
-        ],
+        "tests": [_SPECIALIST_SELL_TEST_CONTRACT],
         "current_break_status": "not_triggered | triggered | unassessable",
-        "activation_blockers": [
-            {
-                "blocker_code": "string",
-                "source_ids": ["string"],
-                "claim_ids": ["string"],
-            }
-        ],
+        "activation_blockers": [_SPECIALIST_SELL_BLOCKER_CONTRACT],
     },
 }
 

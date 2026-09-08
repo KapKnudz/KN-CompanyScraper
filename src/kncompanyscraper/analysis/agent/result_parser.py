@@ -22,6 +22,9 @@ from kncompanyscraper.analysis.agent.output_schema import (
     InsiderOwnershipSpecialistOutput,
     MarginSpecialistOutput,
     SellConditionsSpecialistOutput,
+    SellConditionAssessment,
+    SellConditionActivationBlocker,
+    SellConditionStatus,
     ManagementCoverageState,
     ManagementCoverageTier,
     ManagementDataSourceType,
@@ -305,8 +308,24 @@ def parse_specialist_output(raw_response: str) -> SpecialistOutput:
             }
         )
     if "sell_conditions" in payload:
+        sell = payload["sell_conditions"]
         domain["sell_conditions"] = SellConditionsSpecialistOutput(
-            **payload["sell_conditions"]
+            tests=[
+                SellConditionAssessment(
+                    **{
+                        **test,
+                        "current_break_status": SellConditionStatus(
+                            test["current_break_status"]
+                        ),
+                    }
+                )
+                for test in sell["tests"]
+            ],
+            current_break_status=SellConditionStatus(sell["current_break_status"]),
+            activation_blockers=[
+                SellConditionActivationBlocker(**blocker)
+                for blocker in sell["activation_blockers"]
+            ],
         )
     return SpecialistOutput(
         schema_version=payload["schema_version"],
@@ -417,13 +436,68 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
             "sell conditions must contain exactly one test for each thesis break type"
         )
     for test in sell["tests"]:
-        if (
-            test["current_break_status"] != "unassessable"
-            and not test["source_ids"]
-        ):
+        status = test["current_break_status"]
+        if len(test["source_ids"]) != len(set(test["source_ids"])):
+            raise StockAnalysisValidationError(
+                f"sell condition {test['break_type']} contains duplicate source IDs"
+            )
+        if len(test["claim_ids"]) != len(set(test["claim_ids"])):
+            raise StockAnalysisValidationError(
+                f"sell condition {test['break_type']} contains duplicate claim IDs"
+            )
+        for claim_id in test["claim_ids"]:
+            if not _SPECIALIST_CLAIM_ID.fullmatch(claim_id):
+                raise StockAnalysisValidationError(
+                    f"sell condition claim ID must be a code identifier: {claim_id!r}"
+                )
+        if status != "unassessable" and not test["source_ids"]:
             raise StockAnalysisValidationError(
                 "assessable sell conditions require source_ids"
             )
+        if status != "unassessable" and not test["claim_ids"]:
+            raise StockAnalysisValidationError(
+                "assessable sell conditions require claim_ids"
+            )
+        _validate_causal_sell_condition(test)
+
+    for blocker in sell["activation_blockers"]:
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", blocker["blocker_code"]):
+            raise StockAnalysisValidationError(
+                f"sell activation blocker code must be stable: {blocker['blocker_code']!r}"
+            )
+        for field_name in ("source_ids", "claim_ids"):
+            values = blocker[field_name]
+            if len(values) != len(set(values)):
+                raise StockAnalysisValidationError(
+                    f"sell activation blocker contains duplicate {field_name}"
+                )
+        for claim_id in blocker["claim_ids"]:
+            if not _SPECIALIST_CLAIM_ID.fullmatch(claim_id):
+                raise StockAnalysisValidationError(
+                    f"sell activation blocker claim ID must be a code identifier: {claim_id!r}"
+                )
+
+
+def _validate_causal_sell_condition(test: dict) -> None:
+    """Reject a triggered test whose only stated cause is a price move."""
+    if test["current_break_status"] != "triggered":
+        return
+    text = " ".join(
+        test[field].lower()
+        for field in ("condition", "observable_metric_or_event", "threshold_or_direction")
+    )
+    causal_terms = (
+        "revenue", "demand", "margin", "execution", "balance", "dilution",
+        "management", "valuation", "evidence", "opportunity", "customer",
+        "retention", "cash flow", "financing", "shares",
+    )
+    price_terms = ("price", "share price", "stock price", "decline", "drop", "loss")
+    if any(term in text for term in price_terms) and not any(
+        term in text for term in causal_terms
+    ):
+        raise StockAnalysisValidationError(
+            "triggered sell conditions must identify a causal thesis break, not price alone"
+        )
 
 
 def _validate_specialist_management(payload: dict, claim_ids: list[str]) -> None:

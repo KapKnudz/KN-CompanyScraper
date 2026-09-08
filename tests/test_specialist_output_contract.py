@@ -76,6 +76,71 @@ def _management_payload(quarters=0, confidence_cap=None):
     }
 
 
+def _sell_conditions_payload(*, status="not_triggered", source_ids=None, claim_ids=None):
+    source_ids = ["financial:baseline"] if source_ids is None else source_ids
+    claim_ids = ["margin.engine"] if claim_ids is None else claim_ids
+    break_types = (
+        "revenue_or_demand",
+        "margin_or_execution",
+        "balance_sheet_or_dilution",
+        "management_credibility",
+        "valuation_overshoot",
+        "superior_evidence_or_opportunity",
+    )
+    return {
+        "tests": [
+            {
+                "break_type": break_type,
+                "condition": "The causal operating mechanism fails.",
+                "observable_metric_or_event": "Reported operating evidence",
+                "threshold_or_direction": "Falls below the sourced baseline",
+                "current_break_status": status,
+                "response": "reassess",
+                "source_ids": source_ids,
+                "claim_ids": claim_ids,
+            }
+            for break_type in break_types
+        ],
+        "current_break_status": status,
+        "activation_blockers": [],
+    }
+
+
+def test_sell_conditions_has_one_typed_assessment_for_each_break_type():
+    payload = _first_wave_payload("business_model")
+    payload["agent_name"] = "sell_conditions"
+    payload.pop("business_model")
+    payload["sell_conditions"] = _sell_conditions_payload()
+
+    parsed = parse_specialist_output(json.dumps(payload))
+
+    assert [test.break_type for test in parsed.sell_conditions.tests] == [
+        "revenue_or_demand",
+        "margin_or_execution",
+        "balance_sheet_or_dilution",
+        "management_credibility",
+        "valuation_overshoot",
+        "superior_evidence_or_opportunity",
+    ]
+    assert all(test.current_break_status.value == "not_triggered" for test in parsed.sell_conditions.tests)
+    assert all(test.claim_ids == ["margin.engine"] for test in parsed.sell_conditions.tests)
+
+
+def test_triggered_price_only_sell_condition_is_rejected():
+    payload = _first_wave_payload("business_model")
+    payload["agent_name"] = "sell_conditions"
+    payload.pop("business_model")
+    payload["sell_conditions"] = _sell_conditions_payload(status="triggered")
+    payload["sell_conditions"]["tests"][0].update(
+        condition="The share price declines 20%.",
+        observable_metric_or_event="Share price",
+        threshold_or_direction="Drops below entry price",
+    )
+
+    with pytest.raises(StockAnalysisValidationError, match="causal thesis break"):
+        parse_specialist_output(json.dumps(payload))
+
+
 def test_valid_specialist_output_parses_to_typed_objects():
     parsed = parse_specialist_output(json.dumps(_management_payload()))
 

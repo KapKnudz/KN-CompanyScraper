@@ -329,6 +329,26 @@ class CompanyAnalysisPipeline:
                 results=[item.to_dict() for item in run.results],
                 conflicts=[item.to_dict() for item in run.conflicts],
             )
+            sell_result = next(
+                (
+                    item
+                    for item in run.results
+                    if item.agent_name == "sell_conditions"
+                ),
+                None,
+            )
+            if sell_result is not None:
+                self._complete_stage(
+                    result,
+                    job_id,
+                    "shadow_sell_conditions",
+                    execution_status=sell_result.status,
+                    attempts=sell_result.attempts,
+                    artifact_ids=list(sell_result.artifact_ids),
+                    validation_errors=list(sell_result.validation_errors),
+                    run_id=run.run_id,
+                    packet_hash=run.packet_hash,
+                )
         except Exception as exc:
             # Shadow work is deliberately non-authoritative: a runner failure
             # must never prevent the existing qualitative path from completing.
