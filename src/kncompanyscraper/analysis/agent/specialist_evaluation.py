@@ -569,7 +569,7 @@ def compare_specialist_evaluations(
         if _na(source_label):
             totals["source_id_validity"]["label_skipped_not_applicable"] += 1
         elif source_actual == "unavailable":
-            pass
+            totals["source_id_validity"]["label_correct"] += int(source_label == "unavailable")
         else:
             totals["source_id_validity"]["label_correct"] += int(source_actual == source_label)
             totals["source_id_validity"]["label_incorrect"] += int(source_actual != source_label)
@@ -720,6 +720,16 @@ def _numeric_deltas(best: Any, candidate: Any) -> Any:
     return None
 
 
+def _require_paired_tier(records: Sequence[Mapping], expected_tier: str, label: str) -> None:
+    tiers = set()
+    for record in records:
+        _require("_malformed" not in record, f"{label} paired artifacts must include tier metadata")
+        tier = _metadata(record).get("tier")
+        _require(isinstance(tier, str), f"{label} paired artifacts must include tier metadata")
+        tiers.add(tier)
+    _require(tiers == {expected_tier}, f"{label} paired artifacts must all have tier {expected_tier!r}")
+
+
 def compare_paired_specialist_evaluations(
     cases: str | Path | Mapping | Sequence,
     best_artifacts: str | Path | Mapping | Sequence,
@@ -729,6 +739,10 @@ def compare_paired_specialist_evaluations(
 ) -> dict:
     """Compare separate best-tier and candidate-tier evaluation runs."""
     case_list = load_cases(cases) if not isinstance(cases, list) else validate_cases_document({"schema_version": CASES_SCHEMA_VERSION, "cases": cases})
+    best_records = _artifact_records(best_artifacts)
+    candidate_records = _artifact_records(candidate_artifacts)
+    _require_paired_tier(best_records, "best", "best-tier")
+    _require_paired_tier(candidate_records, "candidate", "candidate-tier")
     best_report = compare_specialist_evaluations(case_list, best_artifacts, packets=packets)
     candidate_report = compare_specialist_evaluations(case_list, candidate_artifacts, packets=packets)
     best_cases = {case["case_id"]: case for case in best_report["cases"]}

@@ -216,6 +216,23 @@ def test_missing_source_ids_are_unavailable_not_all_valid():
     assert source["label_incorrect"] == 0
 
 
+def test_unavailable_source_label_is_scored_as_correct():
+    cases, artifacts, packets = documents()
+    payload = json.loads(artifacts["artifacts"][0]["content"])
+    payload["claims"][0]["source_ids"] = []
+    payload["management_credibility"]["ledger"][0]["claim_source_ids"] = []
+    payload["management_credibility"]["ledger"][0]["outcome_source_ids"] = []
+    payload["management_credibility"]["ledger"][0]["source_ids"] = []
+    artifacts["artifacts"][0]["content"] = json.dumps(payload)
+    cases["cases"][0]["labels"]["source_validity"] = "unavailable"
+
+    source = run(cases, artifacts, packets)["metrics"]["source_id_validity"]
+
+    assert source["label_correct"] == 1
+    assert source["label_incorrect"] == 0
+    assert source["label_agreement_rate"] == 1
+
+
 def test_rejected_and_mismatched_artifacts_are_not_scored():
     cases, artifacts, packets = documents()
     payload = json.loads(artifacts["artifacts"][0]["content"])
@@ -390,7 +407,8 @@ def test_insufficient_evidence_is_accepted_but_unavailable():
 def test_paired_comparison_keeps_tiers_separate_and_reports_deltas():
     cases, best_artifacts, packets = documents()
     candidate_artifacts = copy.deepcopy(best_artifacts)
-    candidate_artifacts["artifacts"][0]["metadata"]["model_tier"] = "candidate"
+    for artifact in candidate_artifacts["artifacts"]:
+        artifact["metadata"]["model_tier"] = "candidate"
     candidate_payload = json.loads(candidate_artifacts["artifacts"][0]["content"])
     candidate_payload["claims"][0]["value"] = "changed"
     candidate_artifacts["artifacts"][0]["content"] = json.dumps(candidate_payload)
@@ -412,6 +430,17 @@ def test_paired_comparison_keeps_tiers_separate_and_reports_deltas():
         "candidate_tier": "complete",
     }
     assert report["metric_deltas"]["claim_label_agreement"]["correct"] == -1
+
+
+def test_paired_comparison_rejects_mixed_tier_metadata():
+    cases, best_artifacts, packets = documents()
+    candidate_artifacts = copy.deepcopy(best_artifacts)
+    candidate_artifacts["artifacts"][0]["metadata"]["model_tier"] = "candidate"
+
+    with pytest.raises(EvaluationFormatError, match="tier"):
+        compare_paired_specialist_evaluations(
+            cases, best_artifacts, candidate_artifacts, packets=packets
+        )
 
 
 def test_conflict_recall_skips_rules_requiring_unavailable_case_verdict():
