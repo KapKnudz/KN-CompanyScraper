@@ -185,6 +185,65 @@ def test_parse_failure_is_recorded_and_does_not_raise():
     assert artifacts.validation[0][1] == "rejected"
 
 
+def test_sell_conditions_prompt_receives_typed_upstream_outputs_and_scenario_data():
+    builder = SpecialistPromptBuilder()
+    prompt = builder.build(
+        packet(),
+        "sell_conditions",
+        upstream_outputs=[{
+            "agent_name": "margin",
+            "status": "accepted",
+            "claims": [{"claim_id": "margin.engine", "source_ids": ["financial:margin"]}],
+        }],
+        deterministic_scenario_data={"status": "available", "base": {"margin": 0.12}},
+    )
+
+    assert "Typed first-wave specialist outputs" in prompt.user
+    assert "margin:margin.engine" in prompt.user
+    assert '"base": {"margin": 0.12}' in prompt.user
+    assert "Frozen AgentCandidatePacket" not in prompt.user
+    assert prompt.schema_name == "specialist_sell_conditions"
+    assert prompt.contract_version == "specialist-shadow-prompt-v3-sell-conditions"
+
+
+def test_missing_first_wave_or_scenario_produces_six_limited_sell_tests():
+    artifacts = Artifacts()
+    result = ShadowSpecialistRunner(Model(lambda prompt: "not-json"), artifacts).run(
+        packet(), run_id="company-analysis-limited"
+    )
+
+    sell = result.results[-1]
+    assert sell.agent_name == "sell_conditions"
+    assert sell.status == "limited"
+    assert sell.output.status.value == "insufficient_evidence"
+    assert len(sell.output.sell_conditions.tests) == 6
+    assert {
+        test.current_break_status.value for test in sell.output.sell_conditions.tests
+    } == {"unassessable"}
+    assert {
+        blocker.blocker_code
+        for blocker in sell.output.sell_conditions.activation_blockers
+    } == {
+        "upstream_specialist_unavailable",
+        "deterministic_scenario_unavailable",
+    }
+    assert all(
+        not blocker.source_ids and not blocker.claim_ids
+        for blocker in sell.output.sell_conditions.activation_blockers
+    )
+    assert {
+        item.item_code for item in sell.output.missing_information
+    } >= {
+        "upstream_specialist_outputs",
+        "upstream_business_model",
+        "upstream_management_credibility",
+        "upstream_margin",
+        "upstream_insider_ownership",
+        "upstream_growth_valuation",
+        "deterministic_scenario_data",
+    }
+
+
 def test_accepted_specialist_artifact_is_reused_for_same_run_and_packet():
     artifacts = Artifacts()
     frozen = packet()

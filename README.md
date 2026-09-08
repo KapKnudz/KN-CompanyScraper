@@ -348,13 +348,14 @@ python -m kncompanyscraper.main analyze-company --company-ids 114
 python -m kncompanyscraper.main analyze-company --tickers "MSAB B" "AVT B"
 ```
 
-Set `SHADOW_SPECIALISTS_ENABLED=true` to run the first-wave specialist agents
-after the company packet is frozen. The first wave covers `business_model`,
-`management_credibility`, `margin`, `insider_ownership`, and `growth_valuation`.
-Their raw outputs are persisted as
-non-authoritative shadow artifacts; the existing qualitative and scenario
-analysis remains the source of the accepted verdict. The run also records
-deterministic, non-authoritative annotations for four explicit conflicts:
+Set `SHADOW_SPECIALISTS_ENABLED=true` to run the specialist graph after the
+company packet is frozen. The first wave covers `business_model`,
+`management_credibility`, `margin`, `insider_ownership`, and `growth_valuation`,
+followed by the `sell_conditions` stage, which consumes their typed outputs and
+deterministic scenario data to assess six thesis-break types. Their raw outputs
+are persisted as non-authoritative shadow artifacts; the existing qualitative
+and scenario analysis remains the source of the accepted verdict. The run also
+records deterministic, non-authoritative annotations for four explicit conflicts:
 `margin_vs_sell_condition`, `insider_vs_credibility_record`,
 `circle_of_competence_vs_valuation`, and `multiple_expansion_vs_activation`.
 These annotations do not change the accepted verdict or activation decision.

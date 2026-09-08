@@ -728,6 +728,7 @@ class ShadowRun:
     run_id = "company-analysis-100"
     packet_hash = "packet-hash"
     results = ()
+    conflicts = ()
 
     def to_dict(self):
         return {"run_id": self.run_id, "packet_hash": self.packet_hash, "results": []}

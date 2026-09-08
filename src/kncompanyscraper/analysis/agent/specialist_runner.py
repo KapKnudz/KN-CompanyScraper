@@ -2,17 +2,30 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from hashlib import sha256
+import json
+import re
 from uuid import uuid4
 
 from kncompanyscraper.analysis.agent.agent_packet import (
     AgentCandidatePacket,
+    SourcePathError,
+    build_evidence_catalog,
+    resolve_source_id,
     serialize_packet,
 )
 from kncompanyscraper.analysis.agent.output_schema import (
+    SellConditionAssessment,
+    SellConditionActivationBlocker,
+    SellConditionStatus,
+    SellConditionsSpecialistOutput,
     SpecialistAgentName,
+    SpecialistConfidence,
+    SpecialistMissingInformation,
     SpecialistOutput,
+    SpecialistStatus,
+    THESIS_BREAK_TYPES,
     specialist_output_json_schema,
 )
 from kncompanyscraper.analysis.agent.packet_measurement import measure_packet
@@ -47,8 +60,88 @@ _SPECIALIST_PROMPT_RESOURCES = {
     SpecialistAgentName.MARGIN: "specialist_margin_prompt.md",
     SpecialistAgentName.INSIDER_OWNERSHIP: "specialist_insider_ownership_prompt.md",
     SpecialistAgentName.GROWTH_VALUATION: "specialist_growth_valuation_prompt.md",
+    SpecialistAgentName.SELL_CONDITIONS: "specialist_sell_conditions_prompt.md",
 }
 
+_CAUSAL_CLAIM_DOMAINS = {
+    "revenue_or_demand": {"revenue", "demand"},
+    "margin_or_execution": {"margin", "execution"},
+    "balance_sheet_or_dilution": {
+        "balance_sheet",
+        "capital_allocation",
+        "dilution",
+        "insider_ownership",
+    },
+    "management_credibility": {"management_credibility"},
+    "valuation_overshoot": {"growth_valuation", "valuation"},
+    "superior_evidence_or_opportunity": {
+        "balance_sheet",
+        "business_model",
+        "capital_allocation",
+        "demand",
+        "dilution",
+        "evidence",
+        "execution",
+        "insider_ownership",
+        "management",
+        "management_credibility",
+        "margin",
+        "opportunity",
+        "revenue",
+        "valuation",
+    },
+}
+_STRUCTURED_CAUSAL_VALUES_BY_BREAK = {
+    "revenue_or_demand": {
+        "declining",
+        "deteriorated",
+        "deteriorating",
+        "fails_to_grow",
+        "weak",
+        "worsening",
+    },
+    "margin_or_execution": {
+        "declining",
+        "deteriorated",
+        "deteriorating",
+        "failed",
+        "invalidated",
+        "stalled",
+        "weak",
+        "worsening",
+    },
+    "balance_sheet_or_dilution": {
+        "deteriorated",
+        "deteriorating",
+        "failed",
+        "increasing",
+        "invalidated",
+        "stalled",
+        "weak",
+        "worsening",
+    },
+    "management_credibility": {
+        "deteriorated",
+        "deteriorating",
+        "failed",
+        "invalidated",
+        "missed",
+        "weak",
+        "worsening",
+    },
+    "valuation_overshoot": {
+        "demanding",
+        "overpriced",
+        "overvalued",
+        "unsupported",
+    },
+    "superior_evidence_or_opportunity": {
+        "confirmed",
+        "plausible",
+        "positive",
+        "supported",
+    },
+}
 
 @dataclass(frozen=True)
 class SpecialistArtifactResult:
@@ -95,22 +188,84 @@ class SpecialistPromptBuilder:
     POLICY_VERSION = "1.0.0"
 
     def build(
-        self, packet: AgentCandidatePacket | dict, agent_name: SpecialistAgentName
+        self,
+        packet: AgentCandidatePacket | dict,
+        agent_name: SpecialistAgentName,
+        *,
+        upstream_outputs=None,
+        deterministic_scenario_data=None,
     ) -> AgentPrompt:
         agent_name = SpecialistAgentName(agent_name)
         try:
             instruction_resource = _SPECIALIST_PROMPT_RESOURCES[agent_name]
         except KeyError as exc:
             raise ValueError(
-                f"no first-wave specialist prompt for agent {agent_name.value!r}"
+                f"no specialist prompt for agent {agent_name.value!r}"
             ) from exc
+        if (
+            agent_name is SpecialistAgentName.SELL_CONDITIONS
+            and upstream_outputs is None
+            and deterministic_scenario_data is None
+        ):
+            raise ValueError(
+                "no first-wave specialist prompt; sell-conditions prompt requires "
+                "typed upstream outputs and deterministic scenario data"
+            )
         instructions = AgentPromptBuilder._read_resource(
             f"prompts/{instruction_resource}"
         )
-        packet_json = serialize_packet(packet)
         schema = specialist_output_json_schema(agent_name.value)
-        return AgentPrompt(
-            system=(
+        measurement = asdict(measure_packet(packet, pretty=False))
+        if agent_name is SpecialistAgentName.SELL_CONDITIONS:
+            instructions = instructions.replace(
+                "{thesis_break_types}",
+                ", ".join(f"`{break_type}`" for break_type in THESIS_BREAK_TYPES),
+            )
+            upstream_json = json.dumps(
+                [
+                    _namespace_upstream_output(item)
+                    for item in (upstream_outputs or ())
+                ],
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            scenario_json = json.dumps(
+                _json_value(deterministic_scenario_data),
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            catalog = _packet_evidence_catalog(packet)
+            user = (
+                "Agent name: sell_conditions\n"
+                "Domain payload: sell_conditions\n\n"
+                "Typed first-wave specialist outputs (not free-form reports):\n"
+                f"{upstream_json}\n\n"
+                "Deterministic scenario data (authoritative, may be unavailable):\n"
+                f"{scenario_json}\n\n"
+                "Permitted frozen-packet source IDs:\n"
+                f"{json.dumps(catalog, ensure_ascii=False, sort_keys=True)}\n\n"
+                "Return only the complete specialist-output-v1 JSON object for this agent."
+            )
+            system = (
+                "You are a non-authoritative shadow specialist. Return exactly one "
+                "JSON object valid against the specialist-output-v1 schema supplied "
+                "for this request. Set agent_name exactly to 'sell_conditions' and "
+                "include only the sell_conditions domain payload. Do not emit markdown, "
+                "prose outside JSON, a verdict, activation decision, or position size.\n\n"
+                f"{instructions}\n"
+                "Use only the typed inputs supplied below and mark gaps explicitly."
+            )
+        else:
+            packet_json = serialize_packet(packet)
+            user = (
+                f"Agent name: {agent_name.value}\n"
+                f"Domain payload: {agent_name.value}\n\n"
+                "Frozen AgentCandidatePacket:\n"
+                f"{packet_json}\n\n"
+                "Return only the complete specialist-output-v1 JSON object for this "
+                "agent and domain."
+            )
+            system = (
                 "You are a non-authoritative shadow specialist. Return exactly one "
                 "JSON object valid against the specialist-output-v1 schema supplied "
                 "for this request. Set agent_name exactly to "
@@ -118,29 +273,27 @@ class SpecialistPromptBuilder:
                 f"{agent_name.value!r} domain payload. Do not emit markdown, prose "
                 "outside JSON, a verdict, activation decision, or position size.\n\n"
                 f"{instructions}\n"
-                "Use exact source IDs from the frozen packet and mark missing evidence "
-                "explicitly."
-            ),
-            user=(
-                f"Agent name: {agent_name.value}\n"
-                f"Domain payload: {agent_name.value}\n\n"
-                "Frozen AgentCandidatePacket:\n"
-                f"{packet_json}\n\n"
-                "Return only the complete specialist-output-v1 JSON object for this "
-                "agent and domain."
-            ),
+                "Use exact source IDs from the frozen packet and mark missing evidence explicitly."
+            )
+        return AgentPrompt(
+            system=system,
+            user=user,
             policy_name=self.POLICY_NAME,
             policy_version=self.POLICY_VERSION,
             policy_sha256=sha256(self.POLICY_VERSION.encode("utf-8")).hexdigest(),
             output_schema=schema,
             schema_name=f"specialist_{agent_name.value}",
-            packet_measurement=asdict(measure_packet(packet, pretty=False)),
-            contract_version=self.CONTRACT_VERSION,
+            packet_measurement=measurement,
+            contract_version=(
+                "specialist-shadow-prompt-v3-sell-conditions"
+                if agent_name is SpecialistAgentName.SELL_CONDITIONS
+                else self.CONTRACT_VERSION
+            ),
         )
 
 
 class ShadowSpecialistRunner:
-    """Run first-wave specialists without entering the authoritative analysis path."""
+    """Run typed specialists without entering the authoritative analysis path."""
 
     def __init__(
         self,
@@ -148,12 +301,19 @@ class ShadowSpecialistRunner:
         raw_response_repository,
         *,
         prompt_builder=None,
-        specialists=FIRST_WAVE_SPECIALISTS,
+        specialists=None,
     ):
         self.model_adapter = model_adapter
         self.raw_response_repository = raw_response_repository
         self.prompt_builder = prompt_builder or SpecialistPromptBuilder()
-        self.specialists = tuple(SpecialistAgentName(agent) for agent in specialists)
+        requested = FIRST_WAVE_SPECIALISTS if specialists is None else specialists
+        requested = tuple(SpecialistAgentName(agent) for agent in requested)
+        self.specialists = tuple(
+            agent for agent in requested if agent is not SpecialistAgentName.SELL_CONDITIONS
+        )
+        self.sell_conditions_enabled = (
+            specialists is None or SpecialistAgentName.SELL_CONDITIONS in requested
+        )
 
     def run(
         self,
@@ -161,6 +321,7 @@ class ShadowSpecialistRunner:
         *,
         run_id: str | None = None,
         packet_hash: str | None = None,
+        deterministic_scenario_data=None,
     ) -> ShadowSpecialistRun:
         packet_json = serialize_packet(packet)
         computed_hash = sha256(packet_json.encode("utf-8")).hexdigest()
@@ -171,21 +332,140 @@ class ShadowSpecialistRunner:
         company_id = (
             packet["company_id"] if isinstance(packet, dict) else packet.company_id
         )
-        results = tuple(
+        results = [
             self._run_one(packet, company_id, run_id, packet_hash, agent_name)
             for agent_name in self.specialists
-        )
+        ]
+        if self.sell_conditions_enabled:
+            scenario_data = (
+                _deterministic_scenario_data(packet)
+                if deterministic_scenario_data is None
+                else deterministic_scenario_data
+            )
+            sell_result = self._run_sell_conditions(
+                packet,
+                company_id,
+                run_id,
+                packet_hash,
+                tuple(results),
+                scenario_data,
+            )
+            results.append(sell_result)
         conflicts = evaluate_specialist_conflicts(
             result.output for result in results if result.output is not None
         )
-        return ShadowSpecialistRun(run_id, company_id, packet_hash, results, conflicts)
+        return ShadowSpecialistRun(run_id, company_id, packet_hash, tuple(results), conflicts)
 
-    def _run_one(self, packet, company_id, run_id, packet_hash, agent_name):
-        reused = self._reuse_completed(company_id, run_id, packet_hash, agent_name)
+    def _run_sell_conditions(
+        self, packet, company_id, run_id, packet_hash, upstream_results, scenario_data
+    ):
+        try:
+            _upstream_references(upstream_results, packet)
+        except ValueError:
+            return self._unassessable_sell_result(
+                packet,
+                company_id,
+                run_id,
+                packet_hash,
+                upstream_results,
+                scenario_data,
+                additional_missing_information=("upstream_claim_ids",),
+            )
+        inputs_available = _sell_inputs_available(upstream_results, scenario_data)
+        reused = self._reuse_completed(
+            company_id,
+            run_id,
+            packet_hash,
+            SpecialistAgentName.SELL_CONDITIONS,
+            upstream_outputs=upstream_results,
+            deterministic_scenario_data=scenario_data,
+        )
+        reuse_found = reused is not None
         if reused is not None:
-            return reused
+            try:
+                _validate_sell_traceability(reused.output, upstream_results, packet)
+                _validate_sell_dependency_blockers(
+                    reused.output, inputs_available, scenario_data
+                )
+            except (ValueError, TypeError):
+                reused = None
+            else:
+                if reused.status != "failed":
+                    if reused.status != "limited" or not inputs_available:
+                        return reused
+        if not inputs_available:
+            return self._unassessable_sell_result(
+                packet,
+                company_id,
+                run_id,
+                packet_hash,
+                upstream_results,
+                scenario_data,
+            )
+        result = self._run_one(
+            packet,
+            company_id,
+            run_id,
+            packet_hash,
+            SpecialistAgentName.SELL_CONDITIONS,
+            upstream_outputs=upstream_results,
+            deterministic_scenario_data=scenario_data,
+            reuse_completed=not reuse_found,
+        )
+        if result.status == "failed":
+            return result
+        if (
+            result.output is not None
+            and result.output.status is SpecialistStatus.INSUFFICIENT_EVIDENCE
+            and result.output.sell_conditions is not None
+        ):
+            return result
+        if result.output is not None and result.output.status is not SpecialistStatus.COMPLETE:
+            return self._unassessable_sell_result(
+                packet,
+                company_id,
+                run_id,
+                packet_hash,
+                upstream_results,
+                scenario_data,
+                additional_missing_information=("sell_conditions_graph",),
+            )
+        return result
 
-        prompt = self.prompt_builder.build(packet, agent_name)
+    def _run_one(
+        self,
+        packet,
+        company_id,
+        run_id,
+        packet_hash,
+        agent_name,
+        *,
+        upstream_outputs=None,
+        deterministic_scenario_data=None,
+        reuse_completed=True,
+    ):
+        if reuse_completed:
+            reused = self._reuse_completed(
+                company_id,
+                run_id,
+                packet_hash,
+                agent_name,
+                upstream_outputs=upstream_outputs,
+                deterministic_scenario_data=deterministic_scenario_data,
+            )
+            if reused is not None:
+                return reused
+
+        prompt = (
+            self.prompt_builder.build(
+                packet,
+                agent_name,
+                upstream_outputs=upstream_outputs,
+                deterministic_scenario_data=deterministic_scenario_data,
+            )
+            if agent_name is SpecialistAgentName.SELL_CONDITIONS
+            else self.prompt_builder.build(packet, agent_name)
+        )
         prompt_artifact = serialize_prompt(prompt)
         prompt_hash = sha256(prompt_artifact.encode("utf-8")).hexdigest()
         response = None
@@ -206,7 +486,11 @@ class ShadowSpecialistRunner:
 
             raw_response = response.output_text
             metadata = {
-                "analysis_stage": "specialist",
+                "analysis_stage": (
+                    "sell_conditions"
+                    if agent_name is SpecialistAgentName.SELL_CONDITIONS
+                    else "specialist"
+                ),
                 "analysis_attempt": attempt,
                 "model_response_id": getattr(response, "response_id", None),
                 "usage": getattr(response, "usage", {}),
@@ -214,6 +498,20 @@ class ShadowSpecialistRunner:
                 "prompt_contract_version": prompt.contract_version,
                 "packet_measurement": prompt.packet_measurement,
             }
+            if agent_name is SpecialistAgentName.SELL_CONDITIONS:
+                metadata.update(
+                    {
+                        "upstream_outputs_sha256": _sha256_json(
+                            [
+                                _stable_upstream_output(item)
+                                for item in (upstream_outputs or ())
+                            ]
+                        ),
+                        "deterministic_scenario_sha256": _sha256_json(
+                            deterministic_scenario_data
+                        ),
+                    }
+                )
             artifact_id = self.raw_response_repository.save_specialist_artifact(
                 company_id,
                 raw_response,
@@ -228,6 +526,17 @@ class ShadowSpecialistRunner:
             try:
                 parsed = parse_specialist_output(raw_response)
                 self._validate_identity(parsed, packet, run_id, packet_hash, agent_name)
+                if agent_name is SpecialistAgentName.SELL_CONDITIONS:
+                    _validate_sell_traceability(
+                        parsed, upstream_outputs or (), packet
+                    )
+                    _validate_sell_dependency_blockers(
+                        parsed,
+                        _sell_inputs_available(
+                            upstream_outputs or (), deterministic_scenario_data
+                        ),
+                        deterministic_scenario_data,
+                    )
             except (StockAnalysisValidationError, ValueError, TypeError) as exc:
                 validation_errors.append(str(exc))
                 if artifact_id is not None:
@@ -250,9 +559,14 @@ class ShadowSpecialistRunner:
                 self.raw_response_repository.update_raw_validation(
                     artifact_id, "accepted"
                 )
+            result_status = {
+                SpecialistStatus.COMPLETE: "accepted",
+                SpecialistStatus.INSUFFICIENT_EVIDENCE: "limited",
+                SpecialistStatus.FAILED: "failed",
+            }[parsed.status]
             return SpecialistArtifactResult(
                 agent_name.value,
-                "accepted",
+                result_status,
                 attempt,
                 tuple(artifact_ids),
                 tuple(validation_errors),
@@ -265,6 +579,150 @@ class ShadowSpecialistRunner:
             len(artifact_ids) or 1,
             tuple(artifact_ids),
             tuple(validation_errors),
+        )
+
+    def _unassessable_sell_result(
+        self,
+        packet,
+        company_id,
+        run_id,
+        packet_hash,
+        upstream_results,
+        scenario_data,
+        additional_missing_information=(),
+    ):
+        missing_agents = [
+            agent.value
+            for agent in FIRST_WAVE_SPECIALISTS
+            if not any(
+                result.agent_name == agent.value
+                and result.output is not None
+                and result.output.status is SpecialistStatus.COMPLETE
+                for result in upstream_results
+            )
+        ]
+        upstream_unavailable = not upstream_results or bool(missing_agents)
+        blocker_codes = []
+        if upstream_unavailable:
+            blocker_codes.append("upstream_specialist_unavailable")
+        if not _scenario_data_available(scenario_data):
+            blocker_codes.append("deterministic_scenario_unavailable")
+        try:
+            references = _upstream_references(upstream_results, packet)
+        except ValueError:
+            references = {}
+        tests = [
+            SellConditionAssessment(
+                break_type=break_type,
+                condition="Causal evidence is unavailable for this thesis-break test.",
+                observable_metric_or_event="Relevant causal metric or event",
+                threshold_or_direction="Unavailable until the required evidence is present",
+                current_break_status=SellConditionStatus.UNASSESSABLE,
+                response="reassess",
+                source_ids=list(
+                    dict.fromkeys(
+                        source_id
+                        for claim_id, reference in references.items()
+                        if reference[2]
+                        and reference[3] in _CAUSAL_CLAIM_DOMAINS[break_type]
+                        for source_id in reference[0]
+                    )
+                ),
+                claim_ids=[
+                    claim_id
+                    for claim_id, reference in references.items()
+                    if reference[2]
+                    and reference[3] in _CAUSAL_CLAIM_DOMAINS[break_type]
+                ],
+            )
+            for break_type in THESIS_BREAK_TYPES
+        ]
+        blockers = [
+            SellConditionActivationBlocker(blocker_code=code)
+            for code in blocker_codes
+        ]
+        missing = []
+        if upstream_unavailable:
+            missing.append(
+                SpecialistMissingInformation(
+                    item_code="upstream_specialist_outputs",
+                    limitation_class="core",
+                    impact_code="sell_conditions_unassessable",
+                )
+            )
+            missing.extend(
+                SpecialistMissingInformation(
+                    item_code=f"upstream_{agent_name}",
+                    limitation_class="core",
+                    impact_code="sell_conditions_unassessable",
+                )
+                for agent_name in missing_agents
+            )
+        if not _scenario_data_available(scenario_data):
+            missing.append(
+                SpecialistMissingInformation(
+                    item_code="deterministic_scenario_data",
+                    limitation_class="core",
+                    impact_code="sell_conditions_unassessable",
+                )
+            )
+        missing.extend(
+            SpecialistMissingInformation(
+                item_code=item_code,
+                limitation_class="core",
+                impact_code="sell_conditions_unassessable",
+            )
+            for item_code in additional_missing_information
+        )
+        output = SpecialistOutput(
+            schema_version="specialist-output-v1",
+            run_id=run_id,
+            agent_name=SpecialistAgentName.SELL_CONDITIONS,
+            company_id=company_id,
+            ticker=packet["ticker"] if isinstance(packet, dict) else packet.ticker,
+            evidence_as_of=_packet_as_of(packet),
+            status=SpecialistStatus.INSUFFICIENT_EVIDENCE,
+            confidence=SpecialistConfidence.LOW,
+            confidence_cap=SpecialistConfidence.LOW,
+            claims=[],
+            missing_information=missing,
+            packet_hash=packet_hash,
+            sell_conditions=SellConditionsSpecialistOutput(
+                tests=tests,
+                current_break_status=SellConditionStatus.UNASSESSABLE,
+                activation_blockers=blockers,
+            ),
+        )
+        raw = json.dumps(output.to_dict(), ensure_ascii=False, sort_keys=True)
+        artifact_id = self.raw_response_repository.save_specialist_artifact(
+            company_id,
+            raw,
+            "sell-conditions-limited",
+            agent_name=SpecialistAgentName.SELL_CONDITIONS.value,
+            run_id=run_id,
+            packet_hash=packet_hash,
+            metadata={
+                "analysis_stage": "sell_conditions",
+                "analysis_attempt": 0,
+                "limited": True,
+                "upstream_outputs_sha256": _sha256_json(
+                    [
+                        _stable_upstream_output(item)
+                        for item in (upstream_results or ())
+                    ]
+                ),
+                "deterministic_scenario_sha256": _sha256_json(scenario_data),
+            },
+        )
+        if artifact_id is not None:
+            self.raw_response_repository.update_raw_validation(artifact_id, "accepted")
+        return SpecialistArtifactResult(
+            SpecialistAgentName.SELL_CONDITIONS.value,
+            "limited",
+            0,
+            (artifact_id,) if artifact_id is not None else (),
+            tuple(blocker_codes),
+            output,
         )
 
     @staticmethod
@@ -282,19 +740,44 @@ class ShadowSpecialistRunner:
         if parsed.packet_hash != packet_hash:
             raise ValueError("specialist packet_hash does not match frozen packet")
 
-    def _reuse_completed(self, company_id, run_id, packet_hash, agent_name):
+    def _reuse_completed(
+        self,
+        company_id,
+        run_id,
+        packet_hash,
+        agent_name,
+        *,
+        upstream_outputs=None,
+        deterministic_scenario_data=None,
+    ):
         getter = getattr(
             self.raw_response_repository, "get_specialist_artifacts_for_run", None
         )
         if not callable(getter):
             return None
-        for artifact in getter(company_id, run_id):
+        artifacts = list(getter(company_id, run_id))
+        if agent_name is SpecialistAgentName.SELL_CONDITIONS:
+            artifacts = reversed(artifacts)
+        limited_reuse = None
+        for artifact in artifacts:
             metadata = artifact.get("metadata") or {}
             if metadata.get("agent_name") != agent_name.value:
                 continue
             if (
                 metadata.get("packet_hash") != packet_hash
                 or metadata.get("validation_status") != "accepted"
+            ):
+                continue
+            if agent_name is SpecialistAgentName.SELL_CONDITIONS and (
+                metadata.get("upstream_outputs_sha256")
+                != _sha256_json(
+                    [
+                        _stable_upstream_output(item)
+                        for item in (upstream_outputs or ())
+                    ]
+                )
+                or metadata.get("deterministic_scenario_sha256")
+                != _sha256_json(deterministic_scenario_data)
             ):
                 continue
             try:
@@ -308,12 +791,552 @@ class ShadowSpecialistRunner:
                 )
             except (KeyError, StockAnalysisValidationError, ValueError, TypeError):
                 continue
-            return SpecialistArtifactResult(
+            candidate = SpecialistArtifactResult(
                 agent_name.value,
-                "accepted",
-                int(metadata.get("analysis_attempt", 1)),
+                {
+                    SpecialistStatus.COMPLETE: "accepted",
+                    SpecialistStatus.INSUFFICIENT_EVIDENCE: "limited",
+                    SpecialistStatus.FAILED: "failed",
+                }[parsed.status],
+                int(metadata.get("analysis_attempt", 0)),
                 (artifact["id"],),
                 (),
                 parsed,
             )
+            if agent_name is SpecialistAgentName.SELL_CONDITIONS:
+                if parsed.status is SpecialistStatus.FAILED:
+                    continue
+                if parsed.status is SpecialistStatus.INSUFFICIENT_EVIDENCE:
+                    if limited_reuse is None:
+                        limited_reuse = candidate
+                    continue
+            return candidate
+        return limited_reuse
+
+
+def _json_value(value):
+    if is_dataclass(value) and not isinstance(value, type):
+        return _json_value(asdict(value))
+    if isinstance(value, dict):
+        return {key: _json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    return value
+
+
+def _sha256_json(value):
+    serialized = json.dumps(
+        _json_value(value), ensure_ascii=False, sort_keys=True, default=str
+    )
+    return sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _serialize_upstream_output(item):
+    if isinstance(item, SpecialistArtifactResult):
+        return {
+            "agent_name": item.agent_name,
+            "status": item.status,
+            "attempts": item.attempts,
+            "output": item.output.to_dict() if item.output is not None else None,
+            "validation_errors": list(item.validation_errors),
+        }
+    if isinstance(item, SpecialistOutput):
+        return {
+            "agent_name": item.agent_name.value,
+            "status": item.status.value,
+            "output": item.to_dict(),
+        }
+    if isinstance(item, dict):
+        return item
+    return _json_value(item)
+
+
+def _qualified_claim_id(agent_name, claim_id):
+    return f"{agent_name}:{claim_id}"
+
+
+def _namespace_upstream_output(item):
+    serialized = _serialize_upstream_output(item)
+    if not isinstance(serialized, dict):
+        return serialized
+    data = dict(serialized)
+    output = data.get("output", data)
+    if not isinstance(output, dict):
+        return data
+    agent_name = str(data.get("agent_name", output.get("agent_name", "")))
+    if not agent_name:
+        return data
+    output = dict(output)
+
+    def namespace_claim(claim):
+        claim = dict(claim)
+        if "claim_id" in claim:
+            claim["claim_id"] = _qualified_claim_id(agent_name, claim["claim_id"])
+        if "depends_on_claim_ids" in claim:
+            claim["depends_on_claim_ids"] = [
+                _qualified_claim_id(agent_name, claim_id)
+                for claim_id in claim["depends_on_claim_ids"]
+            ]
+        return claim
+
+    output["claims"] = [namespace_claim(claim) for claim in output.get("claims", [])]
+    for domain_name in (
+        "business_model",
+        "management_credibility",
+        "insider_ownership",
+        "growth_valuation",
+    ):
+        domain = output.get(domain_name)
+        if not isinstance(domain, dict):
+            continue
+        domain = dict(domain)
+        for field_name in ("claims", "event_claims"):
+            if field_name in domain:
+                domain[field_name] = [
+                    namespace_claim(claim) for claim in domain[field_name]
+                ]
+        if domain_name == "management_credibility":
+            domain["ledger"] = [
+                {
+                    **row,
+                    "claim_id": _qualified_claim_id(agent_name, row["claim_id"]),
+                }
+                for row in domain.get("ledger", [])
+            ]
+        output[domain_name] = domain
+    if "output" in data:
+        data["output"] = output
+    else:
+        data = output
+    return data
+
+
+def _stable_upstream_output(item):
+    if isinstance(item, SpecialistArtifactResult):
+        return {
+            "agent_name": item.agent_name,
+            "status": item.status,
+            "output": item.output.to_dict() if item.output is not None else None,
+        }
+    serialized = _serialize_upstream_output(item)
+    if isinstance(serialized, dict):
+        return {
+            key: value
+            for key, value in serialized.items()
+            if key not in {"attempts", "validation_errors"}
+        }
+    return serialized
+
+
+def _deterministic_scenario_data(packet):
+    full_results = (
+        packet.get("full_results", {})
+        if isinstance(packet, dict)
+        else packet.full_results
+    )
+    if not isinstance(full_results, dict):
         return None
+    # Keep the sell prompt bounded to deterministic inputs; it never receives
+    # the frozen packet or any first-wave narrative here.
+    keys = ("reverse_dcf", "forward_scenario")
+    data = {key: full_results[key] for key in keys if key in full_results}
+    return data if any(key in data for key in ("reverse_dcf", "forward_scenario")) else None
+
+
+def _scenario_data_available(data):
+    if not data:
+        return False
+    status = _scenario_status(data)
+    if status is not None and status != "available":
+        return False
+    if not isinstance(data, dict):
+        return status == "available"
+    scenario_values = [
+        data[key]
+        for key in ("reverse_dcf", "forward_scenario")
+        if key in data
+    ]
+    if not scenario_values:
+        return status == "available"
+    return any(
+        _scenario_status(value) == "available"
+        for value in scenario_values
+    )
+
+
+def _scenario_status(value):
+    status = (
+        value.get("status")
+        if isinstance(value, dict)
+        else getattr(value, "status", None)
+    )
+    return getattr(status, "value", status)
+
+
+def _sell_inputs_available(upstream_results, scenario_data):
+    expected_agents = {agent.value for agent in FIRST_WAVE_SPECIALISTS}
+    actual_agents = {result.agent_name for result in upstream_results}
+    return (
+        len(upstream_results) == len(expected_agents)
+        and actual_agents == expected_agents
+        and all(
+        result.output is not None
+        and result.output.status is SpecialistStatus.COMPLETE
+        for result in upstream_results
+        )
+    )
+
+
+def _domain_claims(output):
+    domain = getattr(output, output.agent_name.value, None)
+    if domain is None:
+        return []
+    return list(getattr(domain, "claims", [])) + list(getattr(domain, "event_claims", []))
+
+
+def _validate_sell_traceability(output, upstream_results, packet=None):
+    references_by_id = _upstream_references(upstream_results, packet)
+    known_claim_ids = set(references_by_id)
+    sell = output.sell_conditions
+    if sell is None:
+        return
+    references = [
+        claim_id
+        for test in sell.tests
+        for claim_id in test.claim_ids
+    ] + [
+        claim_id
+        for blocker in sell.activation_blockers
+        for claim_id in blocker.claim_ids
+    ]
+    unknown = sorted(set(references) - known_claim_ids)
+    if unknown:
+        raise ValueError(
+            "sell condition references unknown upstream claim IDs: "
+            + ", ".join(unknown)
+        )
+    source_ids = [
+        source_id
+        for test in sell.tests
+        for source_id in test.source_ids
+    ] + [
+        source_id
+        for blocker in sell.activation_blockers
+        for source_id in blocker.source_ids
+    ]
+    if packet is not None:
+        permitted_sources = _sell_source_ids_in_catalog(packet, source_ids)
+        unknown_sources = sorted(set(source_ids) - set(permitted_sources))
+        if unknown_sources:
+            raise ValueError(
+                "sell condition references unknown frozen-packet source IDs: "
+                + ", ".join(unknown_sources)
+            )
+    for blocker in sell.activation_blockers:
+        cited_sources = {
+            source_id
+            for claim_id in blocker.claim_ids
+            for source_id in references_by_id[claim_id][0]
+        }
+        if _resolved_source_ids(packet, blocker.source_ids) - _resolved_source_ids(
+            packet, cited_sources
+        ):
+            raise ValueError(
+                "sell activation blocker sources must support cited upstream claims"
+            )
+        expected_domains = _CAUSAL_CLAIM_DOMAINS.get(blocker.blocker_code)
+        if expected_domains is not None and any(
+            references_by_id[claim_id][3] not in expected_domains
+            for claim_id in blocker.claim_ids
+        ):
+            raise ValueError(
+                "sell activation blocker claims do not match blocker semantics"
+            )
+    for test in sell.tests:
+        cited_sources = {
+            source_id
+            for claim_id in test.claim_ids
+            for source_id in references_by_id[claim_id][0]
+        }
+        if _resolved_source_ids(packet, test.source_ids) - _resolved_source_ids(
+            packet, cited_sources
+        ):
+            raise ValueError(
+                "sell condition sources must support cited upstream claims"
+            )
+        if test.current_break_status is not SellConditionStatus.UNASSESSABLE and any(
+            references_by_id[claim_id][3]
+            not in _CAUSAL_CLAIM_DOMAINS[test.break_type]
+            for claim_id in test.claim_ids
+        ):
+            raise ValueError(
+                "sell condition claims do not match break semantics"
+            )
+        if test.current_break_status is not SellConditionStatus.TRIGGERED:
+            continue
+        if not any(
+            _causal_reference_matches(
+                test.break_type,
+                references_by_id[claim_id],
+                test.observable_metric_or_event,
+                test.condition,
+                test.threshold_or_direction,
+                test.source_ids,
+                packet,
+                test.causal_basis,
+            )
+            for claim_id in test.claim_ids
+        ):
+            raise ValueError(
+                "triggered sell conditions require a source-backed causal upstream claim"
+            )
+
+
+def _validate_sell_dependency_blockers(output, inputs_available, scenario_data):
+    if output is None or output.sell_conditions is None:
+        return
+    blocker_codes = {
+        blocker.blocker_code for blocker in output.sell_conditions.activation_blockers
+    }
+    if inputs_available and "upstream_specialist_unavailable" in blocker_codes:
+        raise ValueError(
+            "sell dependency blocker contradicts available upstream specialists"
+        )
+    if _scenario_data_available(scenario_data) and (
+        "deterministic_scenario_unavailable" in blocker_codes
+    ):
+        raise ValueError(
+            "sell dependency blocker contradicts available scenario data"
+        )
+    if not _scenario_data_available(scenario_data):
+        valuation_tests = [
+            test
+            for test in output.sell_conditions.tests
+            if test.break_type == "valuation_overshoot"
+        ]
+        if any(
+            test.current_break_status is not SellConditionStatus.UNASSESSABLE
+            for test in valuation_tests
+        ):
+            raise ValueError(
+                "valuation sell condition requires deterministic scenario data"
+            )
+        missing_codes = {
+            item.item_code for item in output.missing_information
+        }
+        if (
+            "deterministic_scenario_unavailable" not in blocker_codes
+            or "deterministic_scenario_data" not in missing_codes
+        ):
+            raise ValueError(
+                "missing scenario data requires blocker and missing_information"
+            )
+        if (
+            getattr(output.confidence, "value", output.confidence)
+            != SpecialistConfidence.LOW.value
+            or getattr(output.confidence_cap, "value", output.confidence_cap)
+            != SpecialistConfidence.LOW.value
+        ):
+            raise ValueError(
+                "missing scenario data requires low confidence"
+            )
+
+
+def _upstream_references(upstream_results, packet=None):
+    references = {}
+    for result in upstream_results:
+        output = result.output
+        if output is None:
+            continue
+        agent_name = output.agent_name.value
+        for claim in [*output.claims, *_domain_claims(output)]:
+            claim_id = _qualified_claim_id(agent_name, claim.claim_id)
+            if claim_id in references:
+                raise ValueError(
+                    "duplicate upstream specialist claim ID: " + claim_id
+                )
+            direction = getattr(claim.direction, "value", claim.direction)
+            source_ids = tuple(claim.source_ids)
+            source_backed = _source_ids_are_permitted(packet, source_ids)
+            references[claim_id] = (
+                source_ids,
+                "claim",
+                source_backed,
+                str(claim.domain).casefold(),
+                str(claim.predicate).casefold(),
+                claim.value,
+                direction,
+            )
+        management = output.management_credibility
+        if management is not None:
+            for row in management.ledger:
+                claim_id = _qualified_claim_id(agent_name, row.claim_id)
+                if claim_id in references:
+                    raise ValueError(
+                        "duplicate upstream specialist claim ID: " + claim_id
+                    )
+                source_ids = row.source_ids or [
+                    *row.claim_source_ids,
+                    *row.outcome_source_ids,
+                ]
+                result = getattr(row.result, "value", row.result)
+                source_backed = _source_ids_are_permitted(packet, source_ids)
+                references[claim_id] = (
+                    tuple(source_ids),
+                    "ledger",
+                    source_backed,
+                    "management_credibility",
+                    "management_ledger_result",
+                    result,
+                    "negative" if result == "missed" else "neutral",
+                )
+    return references
+
+
+def _packet_evidence_catalog(packet):
+    catalog = (
+        packet.get("evidence_catalog", {})
+        if isinstance(packet, dict)
+        else packet.evidence_catalog
+    )
+    if catalog:
+        return catalog
+    return build_evidence_catalog(
+        packet.get("full_results", {})
+        if isinstance(packet, dict)
+        else packet.full_results,
+        packet.get("research_evidence", {})
+        if isinstance(packet, dict)
+        else packet.research_evidence,
+    )
+
+
+def _sell_source_ids_in_catalog(packet, source_ids):
+    catalog = _packet_evidence_catalog(packet)
+    canonical_source_ids = set(catalog.get("canonical_source_ids", []))
+    full_results = (
+        packet.get("full_results", {})
+        if isinstance(packet, dict)
+        else packet.full_results
+    )
+    research_evidence = (
+        packet.get("research_evidence", {})
+        if isinstance(packet, dict)
+        else packet.research_evidence
+    )
+    permitted = []
+    for source_id in source_ids:
+        try:
+            resolved = resolve_source_id(
+                source_id,
+                full_results,
+                research_evidence,
+                catalog=catalog,
+            )
+        except SourcePathError:
+            continue
+        if (
+            resolved in canonical_source_ids
+            or source_id.startswith(("full_results.", "deterministic:"))
+        ):
+            permitted.append(source_id)
+    return list(dict.fromkeys(permitted))
+
+
+def _source_ids_are_permitted(packet, source_ids):
+    if packet is None:
+        return bool(source_ids)
+    if not source_ids:
+        return False
+    permitted = _sell_source_ids_in_catalog(packet, source_ids)
+    return set(source_ids) == set(permitted)
+
+
+def _resolved_source_ids(packet, source_ids):
+    if packet is None:
+        return set(source_ids)
+    catalog = _packet_evidence_catalog(packet)
+    full_results = (
+        packet.get("full_results", {})
+        if isinstance(packet, dict)
+        else packet.full_results
+    )
+    research_evidence = (
+        packet.get("research_evidence", {})
+        if isinstance(packet, dict)
+        else packet.research_evidence
+    )
+    resolved_ids = set()
+    for source_id in source_ids:
+        try:
+            resolved_ids.add(
+                resolve_source_id(
+                    source_id,
+                    full_results,
+                    research_evidence,
+                    catalog=catalog,
+                )
+            )
+        except SourcePathError:
+            continue
+    return resolved_ids
+
+
+def _causal_reference_matches(
+    break_type,
+    reference,
+    _observable_metric_or_event,
+    _condition,
+    _threshold_or_direction,
+    sell_source_ids,
+    packet=None,
+    causal_basis="unassessable",
+):
+    source_ids, _, causal, domain, predicate, value, direction = reference
+    if not _resolved_source_ids(packet, source_ids).intersection(
+        _resolved_source_ids(packet, sell_source_ids)
+    ):
+        return False
+    if not causal:
+        return False
+    expected_basis = (
+        "valuation_overshoot_with_fundamental_link"
+        if break_type == "valuation_overshoot"
+        else "fundamental_break"
+    )
+    if causal_basis != expected_basis:
+        return False
+    expected_directions = (
+        {"positive", "mixed"}
+        if break_type == "superior_evidence_or_opportunity"
+        else {"negative", "mixed"}
+    )
+    if direction not in expected_directions:
+        return False
+    if domain not in _CAUSAL_CLAIM_DOMAINS[break_type]:
+        return False
+    normalized_predicate = str(predicate).casefold()
+    if normalized_predicate not in {
+        "assessment",
+        "outcome",
+        "relation",
+        "result",
+        "state",
+        "status",
+    } or str(value).casefold() not in _STRUCTURED_CAUSAL_VALUES_BY_BREAK[break_type]:
+        return False
+    if (
+        break_type == "valuation_overshoot"
+        and normalized_predicate != "relation"
+    ):
+        return False
+    return True
+
+
+def _packet_as_of(packet):
+    research = (
+        packet.get("research_evidence", {})
+        if isinstance(packet, dict)
+        else packet.research_evidence
+    )
+    return research.get("as_of") or "1970-01-01"

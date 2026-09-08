@@ -310,7 +310,11 @@ class CompanyAnalysisPipeline:
         if self.shadow_specialist_runner is None or not self.shadow_specialists_enabled:
             return
         stage = result.setdefault("stages", {}).get("shadow_specialists", {})
-        if stage.get("status") == "accepted":
+        sell_stage = result.get("stages", {}).get("shadow_sell_conditions", {})
+        if (
+            stage.get("status") == "accepted"
+            and sell_stage.get("status") == "accepted"
+        ):
             return
         self._start_stage(result, job_id, "shadow_specialists")
         try:
@@ -329,6 +333,26 @@ class CompanyAnalysisPipeline:
                 results=[item.to_dict() for item in run.results],
                 conflicts=[item.to_dict() for item in run.conflicts],
             )
+            sell_result = next(
+                (
+                    item
+                    for item in run.results
+                    if item.agent_name == "sell_conditions"
+                ),
+                None,
+            )
+            if sell_result is not None:
+                self._complete_stage(
+                    result,
+                    job_id,
+                    "shadow_sell_conditions",
+                    execution_status=sell_result.status,
+                    attempts=sell_result.attempts,
+                    artifact_ids=list(sell_result.artifact_ids),
+                    validation_errors=list(sell_result.validation_errors),
+                    run_id=run.run_id,
+                    packet_hash=run.packet_hash,
+                )
         except Exception as exc:
             # Shadow work is deliberately non-authoritative: a runner failure
             # must never prevent the existing qualitative path from completing.
@@ -739,6 +763,7 @@ class CompanyAnalysisPipeline:
 
     def _complete_stage(self, result, job_id, stage, **details):
         stage_result = result.setdefault("stages", {}).setdefault(stage, {})
+        stage_status = details.get("execution_status", "accepted")
         if "attempts" in details:
             details["attempts"] = max(
                 stage_result.get("attempts", 0) or 0,
@@ -746,7 +771,7 @@ class CompanyAnalysisPipeline:
             )
         stage_result.update(
             {
-                "status": "accepted",
+                "status": stage_status,
                 "completed_at": self.clock().isoformat(),
                 "duration_seconds": self._stage_duration(job_id, stage),
                 **details,

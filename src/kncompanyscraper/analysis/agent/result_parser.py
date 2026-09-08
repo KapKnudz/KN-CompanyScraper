@@ -22,6 +22,9 @@ from kncompanyscraper.analysis.agent.output_schema import (
     InsiderOwnershipSpecialistOutput,
     MarginSpecialistOutput,
     SellConditionsSpecialistOutput,
+    SellConditionAssessment,
+    SellConditionActivationBlocker,
+    SellConditionStatus,
     ManagementCoverageState,
     ManagementCoverageTier,
     ManagementDataSourceType,
@@ -34,6 +37,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
     SpecialistMissingInformation,
     SpecialistOutput,
     SpecialistStatus,
+    THESIS_BREAK_TYPES,
     _SPECIALIST_DOMAIN_CONTRACTS,
     _specialist_envelope_contract,
     MarginExpansionCase,
@@ -219,6 +223,7 @@ def parse_scenario_authoring_result(raw_response: str):
 
 def parse_specialist_output(raw_response: str) -> SpecialistOutput:
     """Parse and semantically validate one non-authoritative specialist output."""
+    raw_response = _normalize_specialist_causal_basis(raw_response)
     try:
         initial = json.loads(
             raw_response, object_pairs_hook=_object_without_duplicates
@@ -305,8 +310,24 @@ def parse_specialist_output(raw_response: str) -> SpecialistOutput:
             }
         )
     if "sell_conditions" in payload:
+        sell = payload["sell_conditions"]
         domain["sell_conditions"] = SellConditionsSpecialistOutput(
-            **payload["sell_conditions"]
+            tests=[
+                SellConditionAssessment(
+                    **{
+                        **test,
+                        "current_break_status": SellConditionStatus(
+                            test["current_break_status"]
+                        ),
+                    }
+                )
+                for test in sell["tests"]
+            ],
+            current_break_status=SellConditionStatus(sell["current_break_status"]),
+            activation_blockers=[
+                SellConditionActivationBlocker(**blocker)
+                for blocker in sell["activation_blockers"]
+            ],
         )
     return SpecialistOutput(
         schema_version=payload["schema_version"],
@@ -326,6 +347,24 @@ def parse_specialist_output(raw_response: str) -> SpecialistOutput:
         packet_hash=payload["packet_hash"],
         **domain,
     )
+
+
+def _normalize_specialist_causal_basis(raw_response: str) -> str:
+    try:
+        payload = json.loads(
+            raw_response, object_pairs_hook=_object_without_duplicates
+        )
+    except (json.JSONDecodeError, StockAnalysisValidationError):
+        return raw_response
+    if not isinstance(payload, dict) or payload.get("agent_name") != "sell_conditions":
+        return raw_response
+    sell = payload.get("sell_conditions")
+    if not isinstance(sell, dict):
+        return raw_response
+    for test in sell.get("tests", []):
+        if isinstance(test, dict):
+            test.setdefault("causal_basis", "unassessable")
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def validate_specialist_output(raw_response: str) -> SpecialistOutput:
@@ -395,6 +434,8 @@ def _validate_specialist_output(payload: dict, agent_name: SpecialistAgentName) 
             raise StockAnalysisValidationError(
                 "specialist confidence cannot exceed management coverage confidence_cap"
             )
+    if agent_name == SpecialistAgentName.MARGIN:
+        _validate_specialist_margin(payload)
     if agent_name == SpecialistAgentName.SELL_CONDITIONS:
         _validate_specialist_sell_conditions(payload)
 
@@ -403,27 +444,136 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
     sell = payload.get("sell_conditions")
     if sell is None:
         return
-    required_types = {
-        "revenue_or_demand",
-        "margin_or_execution",
-        "balance_sheet_or_dilution",
-        "management_credibility",
-        "valuation_overshoot",
-        "superior_evidence_or_opportunity",
-    }
+    required_types = set(THESIS_BREAK_TYPES)
     actual_types = [test["break_type"] for test in sell["tests"]]
     if set(actual_types) != required_types or len(actual_types) != len(required_types):
         raise StockAnalysisValidationError(
             "sell conditions must contain exactly one test for each thesis break type"
         )
+    test_statuses = {test["current_break_status"] for test in sell["tests"]}
+    expected_status = (
+        "triggered"
+        if "triggered" in test_statuses
+        else "unassessable"
+        if "unassessable" in test_statuses
+        else "not_triggered"
+    )
+    if sell["current_break_status"] != expected_status:
+        raise StockAnalysisValidationError(
+            "sell conditions current_break_status must match test statuses"
+        )
     for test in sell["tests"]:
-        if (
-            test["current_break_status"] != "unassessable"
-            and not test["source_ids"]
+        for field_name in (
+            "condition",
+            "observable_metric_or_event",
+            "threshold_or_direction",
         ):
+            if not isinstance(test[field_name], str) or not test[field_name].strip():
+                raise StockAnalysisValidationError(
+                    f"sell condition {test['break_type']} requires {field_name}"
+                )
+        status = test["current_break_status"]
+        if len(test["source_ids"]) != len(set(test["source_ids"])):
+            raise StockAnalysisValidationError(
+                f"sell condition {test['break_type']} contains duplicate source IDs"
+            )
+        if len(test["claim_ids"]) != len(set(test["claim_ids"])):
+            raise StockAnalysisValidationError(
+                f"sell condition {test['break_type']} contains duplicate claim IDs"
+            )
+        for claim_id in test["claim_ids"]:
+            if not _SPECIALIST_CLAIM_ID.fullmatch(claim_id):
+                raise StockAnalysisValidationError(
+                    f"sell condition claim ID must be a code identifier: {claim_id!r}"
+                )
+        if status != "unassessable" and not test["source_ids"]:
             raise StockAnalysisValidationError(
                 "assessable sell conditions require source_ids"
             )
+        if status != "unassessable" and not test["claim_ids"]:
+            raise StockAnalysisValidationError(
+                "assessable sell conditions require claim_ids"
+            )
+        _validate_causal_sell_condition(test)
+
+    if (
+        any(test["current_break_status"] == "unassessable" for test in sell["tests"])
+        and not payload["missing_information"]
+        and not sell["activation_blockers"]
+    ):
+        raise StockAnalysisValidationError(
+            "unassessable sell conditions require missing_information or activation_blockers"
+        )
+
+    dependency_blocker_missing_information = {
+        "upstream_specialist_unavailable": "upstream_specialist_outputs",
+        "deterministic_scenario_unavailable": "deterministic_scenario_data",
+    }
+    missing_information_codes = {
+        item["item_code"] for item in payload["missing_information"]
+    }
+    for blocker in sell["activation_blockers"]:
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", blocker["blocker_code"]):
+            raise StockAnalysisValidationError(
+                f"sell activation blocker code must be stable: {blocker['blocker_code']!r}"
+            )
+        missing_information_code = dependency_blocker_missing_information.get(
+            blocker["blocker_code"]
+        )
+        if missing_information_code is not None:
+            if blocker["source_ids"] or blocker["claim_ids"]:
+                raise StockAnalysisValidationError(
+                    "dependency blockers cannot cite evidence"
+                )
+            if missing_information_code not in missing_information_codes:
+                raise StockAnalysisValidationError(
+                    "dependency blockers require matching missing_information"
+                )
+            continue
+        if not blocker["source_ids"] or not blocker["claim_ids"]:
+            raise StockAnalysisValidationError(
+                "sell activation blockers require source_ids and claim_ids"
+            )
+        for field_name in ("source_ids", "claim_ids"):
+            values = blocker[field_name]
+            if len(values) != len(set(values)):
+                raise StockAnalysisValidationError(
+                    f"sell activation blocker contains duplicate {field_name}"
+                )
+        for claim_id in blocker["claim_ids"]:
+            if not _SPECIALIST_CLAIM_ID.fullmatch(claim_id):
+                raise StockAnalysisValidationError(
+                    f"sell activation blocker claim ID must be a code identifier: {claim_id!r}"
+                )
+
+
+def _validate_causal_sell_condition(test: dict) -> None:
+    if test["current_break_status"] != "triggered":
+        return
+    expected_basis = (
+        "valuation_overshoot_with_fundamental_link"
+        if test["break_type"] == "valuation_overshoot"
+        else "fundamental_break"
+    )
+    if test["causal_basis"] != expected_basis:
+        raise StockAnalysisValidationError(
+            "triggered sell conditions require an explicit causal thesis break basis"
+        )
+
+
+def _validate_specialist_margin(payload: dict) -> None:
+    margin = payload.get("margin")
+    if margin is None or margin["margin_state"] in {"unassessable", "not_applicable"}:
+        return
+    if not any(
+        claim["domain"].casefold() == "margin"
+        and claim["direction"] != "unassessable"
+        and claim["source_ids"]
+        for claim in payload["claims"]
+    ):
+        raise StockAnalysisValidationError(
+            "assessable margin outputs require an evidence-backed typed margin claim"
+        )
 
 
 def _validate_specialist_management(payload: dict, claim_ids: list[str]) -> None:

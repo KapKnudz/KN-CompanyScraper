@@ -49,8 +49,9 @@ def evaluate_specialist_conflicts(
     """Evaluate only the named conflicts over typed specialist outputs.
 
     The function intentionally has no prose comparison, scoring, or generic
-    disagreement behavior. Sell-condition and final-direction inputs are
-    optional because those stages are not part of the first-wave shadow run.
+    disagreement behavior. Sell-condition and final-direction inputs remain
+    optional because conflicts can be evaluated over whichever typed outputs
+    are available.
     """
     by_agent = {output.agent_name: output for output in outputs}
     conflicts: list[SpecialistConflict] = []
@@ -225,25 +226,25 @@ def _margin_conflict(margin: SpecialistOutput, sell: SpecialistOutput | None) ->
     )
 
 
-def _margin_sell_test(output: SpecialistOutput | None) -> dict | None:
+def _margin_sell_test(output: SpecialistOutput | None):
     if output is None or output.sell_conditions is None:
         return None
     for test in output.sell_conditions.tests:
         if (
-            test.get("break_type") == "margin_or_execution"
-            and test.get("current_break_status") == "triggered"
+            _test_field(test, "break_type") == "margin_or_execution"
+            and _test_field(test, "current_break_status") == "triggered"
         ):
             return test
     return None
 
 
-def _margin_blockers(output: SpecialistOutput | None) -> list[dict]:
+def _margin_blockers(output: SpecialistOutput | None):
     if output is None or output.sell_conditions is None:
         return []
     return [
         blocker
         for blocker in output.sell_conditions.activation_blockers
-        if blocker.get("blocker_code") == "margin_or_execution"
+        if _test_field(blocker, "blocker_code") == "margin_or_execution"
     ]
 
 
@@ -335,27 +336,35 @@ def _envelope_claims(output: SpecialistOutput) -> list:
     return list(output.claims)
 
 
-def _test_claim_ids(test: dict | None) -> tuple[str, ...]:
-    return tuple(test.get("claim_ids", [])) if test else ()
+def _test_field(value, field):
+    if isinstance(value, dict):
+        value = value.get(field)
+    else:
+        value = getattr(value, field, None)
+    return _enum_value(value)
 
 
-def _test_source_ids(test: dict | None) -> tuple[str, ...]:
-    return tuple(test.get("source_ids", [])) if test else ()
+def _test_claim_ids(test) -> tuple[str, ...]:
+    return tuple(_test_field(test, "claim_ids") or ()) if test else ()
 
 
-def _blocker_claim_ids(blockers: list[dict]) -> tuple[str, ...]:
+def _test_source_ids(test) -> tuple[str, ...]:
+    return tuple(_test_field(test, "source_ids") or ()) if test else ()
+
+
+def _blocker_claim_ids(blockers) -> tuple[str, ...]:
     return tuple(
         claim_id
         for blocker in blockers
-        for claim_id in blocker.get("claim_ids", [])
+        for claim_id in (_test_field(blocker, "claim_ids") or ())
     )
 
 
-def _blocker_source_ids(blockers: list[dict]) -> tuple[str, ...]:
+def _blocker_source_ids(blockers) -> tuple[str, ...]:
     return tuple(
         source_id
         for blocker in blockers
-        for source_id in blocker.get("source_ids", [])
+        for source_id in (_test_field(blocker, "source_ids") or ())
     )
 
 
