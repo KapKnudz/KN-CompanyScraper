@@ -1,0 +1,33 @@
+{
+  "artifacts": [
+    {
+      "id": 1,
+      "company_id": 1,
+      "created_by": "synthetic-best-model",
+      "metadata": {
+        "analysis_mode": "specialist",
+        "agent_name": "management_credibility",
+        "run_id": "synthetic-run",
+        "packet_hash": "32ab52c4d957cd381ca33c51d847a6229b0f2fa4a68ffd1525e17a419f7dc0af",
+        "prompt_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "analysis_attempt": 1,
+        "usage": {"total_tokens": 12},
+        "model_tier": "best"
+      },
+      "content": "{\"schema_version\":\"specialist-output-v1\",\"run_id\":\"synthetic-run\",\"agent_name\":\"management_credibility\",\"company_id\":1,\"ticker\":\"SYN\",\"evidence_as_of\":\"2026-08-16\",\"status\":\"complete\",\"confidence\":\"low\",\"confidence_cap\":\"low\",\"claims\":[{\"claim_id\":\"management.pattern\",\"domain\":\"management\",\"predicate\":\"outcome\",\"value\":\"missed\",\"direction\":\"negative\",\"source_ids\":[\"report:one\"],\"limitation_codes\":[],\"depends_on_claim_ids\":[]}],\"missing_information\":[],\"packet_hash\":\"32ab52c4d957cd381ca33c51d847a6229b0f2fa4a68ffd1525e17a419f7dc0af\",\"management_credibility\":{\"coverage\":{\"coverage_tier\":\"no_ledger\",\"coverage_state\":\"insufficient_for_pattern_recognition\",\"quarters_covered\":0,\"data_source_type\":\"primary_reports\",\"eligible_claim_count\":1,\"assessed_claim_count\":1,\"pending_claim_count\":0,\"omitted_claim_count\":0,\"omission_reasons\":[],\"confidence_cap\":\"low\"},\"pattern_state\":\"weak\",\"ledger\":[{\"quarter\":\"2026-Q1\",\"claim_id\":\"management.promise\",\"claim\":\"The milestone\",\"expected_timing\":\"2026-Q1\",\"observed_outcome\":\"Missed\",\"result\":\"missed\",\"claim_source_ids\":[\"report:one\"],\"outcome_source_ids\":[\"report:one\"],\"source_ids\":[\"report:one\"],\"notes\":[]}],\"claims\":[]}}"
+    },
+    {
+      "id": 2,
+      "company_id": 1,
+      "created_by": "synthetic-best-model",
+      "metadata": {
+        "analysis_mode": "specialist",
+        "agent_name": "insider_ownership",
+        "run_id": "synthetic-run",
+        "packet_hash": "32ab52c4d957cd381ca33c51d847a6229b0f2fa4a68ffd1525e17a419f7dc0af",
+        "model_tier": "best"
+      },
+      "content": "{\"schema_version\":\"specialist-output-v1\",\"run_id\":\"synthetic-run\",\"agent_name\":\"insider_ownership\",\"company_id\":1,\"ticker\":\"SYN\",\"evidence_as_of\":\"2026-08-16\",\"status\":\"complete\",\"confidence\":\"low\",\"confidence_cap\":\"low\",\"claims\":[],\"missing_information\":[],\"packet_hash\":\"32ab52c4d957cd381ca33c51d847a6229b0f2fa4a68ffd1525e17a419f7dc0af\",\"insider_ownership\":{\"insider_signal\":\"positive\",\"signal_strength\":\"strong\",\"flow_effect\":\"supportive\",\"event_claims\":[],\"data_coverage\":{\"insider\":\"available\",\"ownership\":\"partial\",\"liquidity\":\"available\"}}}"
+    }
+  ]
+}

@@ -130,6 +130,16 @@ def register(subparsers):
     contract_coverage_parser.add_argument("--output", required=True, type=Path)
     contract_coverage_parser.set_defaults(func=_cmd_audit_thesis_contract_coverage)
 
+    evaluation_parser = subparsers.add_parser(
+        "evaluate-specialists",
+        help="Compare stored specialist artifacts with human-labeled cases",
+    )
+    evaluation_parser.add_argument("--cases", required=True, type=Path)
+    evaluation_parser.add_argument("--artifacts", required=True, type=Path)
+    evaluation_parser.add_argument("--packets", type=Path)
+    evaluation_parser.add_argument("--output", type=Path)
+    evaluation_parser.set_defaults(func=_cmd_evaluate_specialists)
+
 
 def _cmd_export_agent_prompts(args):
     from kncompanyscraper.analysis.agent.prompt_exporter import AgentPromptExporter
@@ -206,6 +216,27 @@ def _cmd_audit_thesis_contract_coverage(args):
         f"Measured thesis-contract coverage for {audit['company_count']} companies: "
         f"{audit['complete_count']} complete ({rate_text})."
     )
+
+
+def _cmd_evaluate_specialists(args):
+    import json
+
+    from kncompanyscraper.analysis.agent.specialist_evaluation import (
+        compare_specialist_evaluations,
+        format_evaluation_report,
+    )
+
+    report = compare_specialist_evaluations(
+        args.cases,
+        args.artifacts,
+        packets=args.packets,
+    )
+    if args.output:
+        args.output.write_text(
+            json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    print(format_evaluation_report(report))
 
 
 def _cmd_check_agent_readiness(args):

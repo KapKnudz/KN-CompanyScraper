@@ -1,0 +1,10 @@
+{
+  "1": {
+    "company_id": 1,
+    "ticker": "SYN",
+    "full_results": {"financial_history": {"revenue": 10}},
+    "research_evidence": {
+      "documents": [{"source_id": "report:one"}]
+    }
+  }
+}

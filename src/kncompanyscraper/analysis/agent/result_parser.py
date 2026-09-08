@@ -278,7 +278,7 @@ def parse_specialist_output(raw_response: str) -> SpecialistOutput:
             pattern_state=ManagementPatternState(management["pattern_state"]),
             ledger=[
                 ManagementLedgerRow(
-                    **row, result=ManagementLedgerResult(row["result"])
+                    **{**row, "result": ManagementLedgerResult(row["result"])}
                 )
                 for row in management["ledger"]
             ],
