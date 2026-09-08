@@ -80,11 +80,13 @@ _CAUSAL_CLAIM_DOMAINS = {
         "capital_allocation",
         "demand",
         "dilution",
+        "evidence",
         "execution",
         "insider_ownership",
         "management",
         "management_credibility",
         "margin",
+        "opportunity",
         "revenue",
         "valuation",
     },
@@ -584,13 +586,9 @@ class ShadowSpecialistRunner:
         if not _scenario_data_available(scenario_data):
             blocker_codes.append("deterministic_scenario_unavailable")
         try:
-            claim_ids = _upstream_claim_ids(upstream_results, packet)
-            source_ids = _sell_source_ids_in_catalog(
-                packet, _upstream_source_ids(upstream_results, packet)
-            )
+            references = _upstream_references(upstream_results, packet)
         except ValueError:
-            claim_ids = []
-            source_ids = []
+            references = {}
         tests = [
             SellConditionAssessment(
                 break_type=break_type,
@@ -599,8 +597,21 @@ class ShadowSpecialistRunner:
                 threshold_or_direction="Unavailable until the required evidence is present",
                 current_break_status=SellConditionStatus.UNASSESSABLE,
                 response="reassess",
-                source_ids=list(source_ids),
-                claim_ids=list(claim_ids),
+                source_ids=list(
+                    dict.fromkeys(
+                        source_id
+                        for claim_id, reference in references.items()
+                        if reference[2]
+                        and reference[3] in _CAUSAL_CLAIM_DOMAINS[break_type]
+                        for source_id in reference[0]
+                    )
+                ),
+                claim_ids=[
+                    claim_id
+                    for claim_id, reference in references.items()
+                    if reference[2]
+                    and reference[3] in _CAUSAL_CLAIM_DOMAINS[break_type]
+                ],
             )
             for break_type in THESIS_BREAK_TYPES
         ]
@@ -714,7 +725,11 @@ class ShadowSpecialistRunner:
         )
         if not callable(getter):
             return None
-        for artifact in getter(company_id, run_id):
+        artifacts = list(getter(company_id, run_id))
+        if agent_name is SpecialistAgentName.SELL_CONDITIONS:
+            artifacts = reversed(artifacts)
+        limited_reuse = None
+        for artifact in artifacts:
             metadata = artifact.get("metadata") or {}
             if metadata.get("agent_name") != agent_name.value:
                 continue
@@ -746,7 +761,7 @@ class ShadowSpecialistRunner:
                 )
             except (KeyError, StockAnalysisValidationError, ValueError, TypeError):
                 continue
-            return SpecialistArtifactResult(
+            candidate = SpecialistArtifactResult(
                 agent_name.value,
                 {
                     SpecialistStatus.COMPLETE: "accepted",
@@ -758,7 +773,15 @@ class ShadowSpecialistRunner:
                 (),
                 parsed,
             )
-        return None
+            if agent_name is SpecialistAgentName.SELL_CONDITIONS:
+                if parsed.status is SpecialistStatus.FAILED:
+                    continue
+                if parsed.status is SpecialistStatus.INSUFFICIENT_EVIDENCE:
+                    if limited_reuse is None:
+                        limited_reuse = candidate
+                    continue
+            return candidate
+        return limited_reuse
 
 
 def _json_value(value):
@@ -1025,7 +1048,7 @@ def _upstream_references(upstream_results, packet=None):
             references[claim.claim_id] = (
                 source_ids,
                 "claim",
-                source_backed and direction in {"negative", "mixed"},
+                source_backed,
                 str(claim.domain).casefold(),
                 str(claim.predicate).casefold(),
                 claim.value,
@@ -1047,7 +1070,7 @@ def _upstream_references(upstream_results, packet=None):
                 references[row.claim_id] = (
                     tuple(source_ids),
                     "ledger",
-                    source_backed and result == "missed",
+                    source_backed,
                     "management_credibility",
                     "management_ledger_result",
                     result,
@@ -1219,6 +1242,13 @@ def _causal_reference_matches(
         return False
     if not causal:
         return False
+    expected_directions = (
+        {"positive", "mixed"}
+        if break_type == "superior_evidence_or_opportunity"
+        else {"negative", "mixed"}
+    )
+    if direction not in expected_directions:
+        return False
     if domain not in _CAUSAL_CLAIM_DOMAINS[break_type]:
         return False
     predicate_tokens = _semantic_tokens(predicate)
@@ -1234,9 +1264,13 @@ def _causal_reference_matches(
         return False
     typed_claim_tokens.update(_semantic_tokens(domain))
     condition_tokens = _semantic_tokens((condition, threshold_or_direction))
-    if direction in {"negative", "mixed"} and _causal_condition_direction(
+    condition_direction = _causal_condition_direction(
         break_type, condition, threshold_or_direction
-    ) == "favorable":
+    )
+    if (
+        direction in {"negative", "mixed"}
+        and condition_direction == "favorable"
+    ) or (direction == "positive" and condition_direction == "adverse"):
         return False
     evidence_text_tokens = _semantic_tokens(
         (observable_metric_or_event, condition, threshold_or_direction)
@@ -1245,8 +1279,10 @@ def _causal_reference_matches(
     if (
         break_type != "valuation_overshoot"
         and "price" in observable_tokens
-        and not observable_tokens.difference(
-            {
+        and not {
+            token
+            for token in observable_tokens
+            if token not in {
                 "price",
                 "share",
                 "stock",
@@ -1260,8 +1296,34 @@ def _causal_reference_matches(
                 "drop",
                 "drops",
                 "dropped",
+                "rise",
+                "rises",
+                "rising",
+                "rose",
+                "increase",
+                "increases",
+                "increasing",
+                "decrease",
+                "decreases",
+                "decreasing",
+                "change",
+                "changes",
+                "changed",
+                "move",
+                "moves",
+                "moving",
+                "up",
+                "down",
+                "gain",
+                "gains",
+                "gained",
+                "loss",
+                "losses",
+                "percent",
+                "percentage",
             }
-        )
+            and not token.isdigit()
+        }
     ):
         return False
     if not observable_tokens.intersection(typed_claim_tokens):
