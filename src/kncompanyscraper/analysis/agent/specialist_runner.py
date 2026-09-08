@@ -92,7 +92,16 @@ _CAUSAL_CLAIM_DOMAINS = {
 _CAUSAL_CLAIM_MARKERS = {
     "revenue_or_demand": {"revenue", "demand", "sales", "customer", "churn", "retention"},
     "margin_or_execution": {"margin", "execution", "cost", "profitability"},
-    "balance_sheet_or_dilution": {"balance", "debt", "dilution", "shares", "financing", "capital"},
+    "balance_sheet_or_dilution": {
+        "balance",
+        "debt",
+        "dilution",
+        "shares",
+        "share",
+        "count",
+        "financing",
+        "capital",
+    },
     "management_credibility": {"management", "promise", "guidance", "milestone", "missed"},
     "valuation_overshoot": {"valuation", "multiple", "expectation", "reverse", "dcf", "unsupported", "demanding"},
     "superior_evidence_or_opportunity": {"evidence", "opportunity", "alternative"},
@@ -120,6 +129,7 @@ _CAUSAL_STATUS_VALUES_BY_BREAK = {
         "deteriorated",
         "deteriorating",
         "failed",
+        "increasing",
         "invalidated",
         "stalled",
         "weak",
@@ -389,10 +399,9 @@ class ShadowSpecialistRunner:
             deterministic_scenario_data=scenario_data,
             reuse_completed=not reuse_found,
         )
-        if result.status == "failed" or (
-            result.output is not None
-            and result.output.status is not SpecialistStatus.COMPLETE
-        ):
+        if result.status == "failed":
+            return result
+        if result.output is not None and result.output.status is not SpecialistStatus.COMPLETE:
             return self._unassessable_sell_result(
                 packet,
                 company_id,
@@ -1117,11 +1126,19 @@ def _semantic_tokens(value):
     return set(re.findall(r"[a-z0-9]+", str(value).casefold()))
 
 
-def _causal_condition_direction(condition, threshold_or_direction):
+def _causal_condition_direction(
+    break_type, condition, threshold_or_direction
+):
     text = " ".join(
         str(value).casefold()
         for value in (condition, threshold_or_direction)
     )
+    if break_type == "balance_sheet_or_dilution" and re.search(
+        r"\b(?:share\s+count|shares?|dilution|debt|leverage)\b"
+        r"(?:\s+\w+){0,3}\s+(?:increas\w*|grow\w*|ris\w*|expand\w*)\b",
+        text,
+    ):
+        return "negative"
     positive_terms = r"improv\w*|increas\w*|grow\w*|strengthen\w*|ris\w*|higher|better|expand\w*|recover\w*"
     if re.search(
         rf"\b(?:does not|doesn't|did not|didn't|not|never|fails to|failed to)\s+(?:{positive_terms})\b",
@@ -1165,7 +1182,7 @@ def _causal_reference_matches(
     typed_claim_tokens.update(_semantic_tokens(domain))
     condition_tokens = _semantic_tokens((condition, threshold_or_direction))
     if direction in {"negative", "mixed"} and _causal_condition_direction(
-        condition, threshold_or_direction
+        break_type, condition, threshold_or_direction
     ) == "positive":
         return False
     evidence_text_tokens = _semantic_tokens(
