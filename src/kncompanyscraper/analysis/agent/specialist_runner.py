@@ -64,7 +64,7 @@ _SPECIALIST_PROMPT_RESOURCES = {
 }
 
 _CAUSAL_CLAIM_DOMAINS = {
-    "revenue_or_demand": {"business_model", "revenue", "demand"},
+    "revenue_or_demand": {"revenue", "demand"},
     "margin_or_execution": {"margin", "execution"},
     "balance_sheet_or_dilution": {
         "balance_sheet",
@@ -72,8 +72,8 @@ _CAUSAL_CLAIM_DOMAINS = {
         "dilution",
         "insider_ownership",
     },
-    "management_credibility": {"management", "management_credibility"},
-    "valuation_overshoot": {"growth_valuation", "valuation"},
+    "management_credibility": {"management_credibility"},
+    "valuation_overshoot": {"growth_valuation"},
     "superior_evidence_or_opportunity": {
         "balance_sheet",
         "business_model",
@@ -1082,6 +1082,7 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
                 test.threshold_or_direction,
                 test.source_ids,
                 packet,
+                test.causal_basis,
             )
             for claim_id in test.claim_ids
         ):
@@ -1280,25 +1281,15 @@ def _resolved_source_ids(packet, source_ids):
     return resolved_ids
 
 
-def _contains_price_only_language(value):
-    tokens = set(re.findall(r"[a-z0-9]+", str(value).casefold()))
-    if tokens.intersection({"quote", "quotation"}):
-        return True
-    if "price" in tokens and not tokens.intersection(
-        {"average", "selling", "sale", "unit"}
-    ):
-        return True
-    return False
-
-
 def _causal_reference_matches(
     break_type,
     reference,
     _observable_metric_or_event,
-    condition,
-    threshold_or_direction,
+    _condition,
+    _threshold_or_direction,
     sell_source_ids,
     packet=None,
+    causal_basis="unassessable",
 ):
     source_ids, _, causal, domain, predicate, value, direction = reference
     if not _resolved_source_ids(packet, source_ids).intersection(
@@ -1306,6 +1297,13 @@ def _causal_reference_matches(
     ):
         return False
     if not causal:
+        return False
+    expected_basis = (
+        "valuation_overshoot_with_fundamental_link"
+        if break_type == "valuation_overshoot"
+        else "fundamental_break"
+    )
+    if causal_basis != expected_basis:
         return False
     expected_directions = (
         {"positive", "mixed"}
@@ -1326,10 +1324,9 @@ def _causal_reference_matches(
         "status",
     } or str(value).casefold() not in _STRUCTURED_CAUSAL_VALUES_BY_BREAK[break_type]:
         return False
-    if break_type == "valuation_overshoot" and normalized_predicate != "relation":
-        return False
-    if break_type != "valuation_overshoot" and _contains_price_only_language(
-        " ".join((_observable_metric_or_event, condition, threshold_or_direction))
+    if (
+        break_type == "valuation_overshoot"
+        and normalized_predicate != "relation"
     ):
         return False
     return True

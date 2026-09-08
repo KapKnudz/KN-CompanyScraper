@@ -4,11 +4,15 @@ Produce exactly one assessment for each of these existing thesis-break types:
 {thesis_break_types}. Each assessment must contain a falsifiable
 causal condition, an observable metric or event, a threshold or direction,
 one of `not_triggered`, `triggered`, or `unassessable`, one prescribed response
-(`reassess`, `reduce`, or `sell`), and the exact source IDs and relevant upstream
-claim IDs supporting it. Preserve the upstream claim IDs; do not rewrite or
-launder upstream claims.
+(`reassess`, `reduce`, or `sell`), a `causal_basis` of `fundamental_break`,
+`valuation_overshoot_with_fundamental_link`, `price_only`, or `unassessable`,
+and the exact source IDs and relevant upstream claim IDs supporting it.
+Preserve the upstream claim IDs; do not rewrite or launder upstream claims.
 
-For a triggered test, the cited upstream claim is the structured causal
+For a triggered test, use `fundamental_break` for an operating causal break
+and `valuation_overshoot_with_fundamental_link` for valuation overshoot. Use
+`price_only` for price-only evidence and `unassessable` for evidence gaps;
+neither may be triggered. The cited upstream claim is the structured causal
 classification: its domain must match the break type, its direction must be
 consistent with the break, and its typed predicate and value must describe the
 break. For valuation overshoot, use a typed `relation` claim with a sourced

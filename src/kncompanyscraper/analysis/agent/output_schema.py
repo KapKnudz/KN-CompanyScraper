@@ -62,6 +62,12 @@ THESIS_BREAK_TYPES = (
 )
 ThesisBreakType = Literal[*THESIS_BREAK_TYPES]
 ThesisBreakResponse = Literal["reassess", "reduce", "sell"]
+CausalBasis = Literal[
+    "fundamental_break",
+    "valuation_overshoot_with_fundamental_link",
+    "price_only",
+    "unassessable",
+]
 LatentCaseType = Literal["price", "operating"]
 ActivationTriggerEvidenceStatus = Literal[
     "confirms",
@@ -256,6 +262,7 @@ class SellConditionAssessment:
     threshold_or_direction: str
     current_break_status: SellConditionStatus
     response: ThesisBreakResponse
+    causal_basis: CausalBasis = "unassessable"
     source_ids: list[str] = field(default_factory=list)
     claim_ids: list[str] = field(default_factory=list)
 
@@ -1244,6 +1251,10 @@ _SPECIALIST_SELL_TEST_CONTRACT = {
     "threshold_or_direction": "string",
     "current_break_status": "not_triggered | triggered | unassessable",
     "response": "reassess | reduce | sell",
+    "causal_basis": (
+        "fundamental_break | valuation_overshoot_with_fundamental_link | "
+        "price_only | unassessable"
+    ),
     "source_ids": ["string"],
     "claim_ids": ["string"],
 }

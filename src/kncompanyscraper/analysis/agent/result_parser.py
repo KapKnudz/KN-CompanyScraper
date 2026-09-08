@@ -223,6 +223,7 @@ def parse_scenario_authoring_result(raw_response: str):
 
 def parse_specialist_output(raw_response: str) -> SpecialistOutput:
     """Parse and semantically validate one non-authoritative specialist output."""
+    raw_response = _normalize_specialist_causal_basis(raw_response)
     try:
         initial = json.loads(
             raw_response, object_pairs_hook=_object_without_duplicates
@@ -346,6 +347,24 @@ def parse_specialist_output(raw_response: str) -> SpecialistOutput:
         packet_hash=payload["packet_hash"],
         **domain,
     )
+
+
+def _normalize_specialist_causal_basis(raw_response: str) -> str:
+    try:
+        payload = json.loads(
+            raw_response, object_pairs_hook=_object_without_duplicates
+        )
+    except (json.JSONDecodeError, StockAnalysisValidationError):
+        return raw_response
+    if not isinstance(payload, dict) or payload.get("agent_name") != "sell_conditions":
+        return raw_response
+    sell = payload.get("sell_conditions")
+    if not isinstance(sell, dict):
+        return raw_response
+    for test in sell.get("tests", []):
+        if isinstance(test, dict):
+            test.setdefault("causal_basis", "unassessable")
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def validate_specialist_output(raw_response: str) -> SpecialistOutput:
@@ -531,13 +550,14 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
 def _validate_causal_sell_condition(test: dict) -> None:
     if test["current_break_status"] != "triggered":
         return
-    if test["break_type"] != "valuation_overshoot" and re.search(
-        r"\b(?:share|stock|market)\s+(?:price|quote|quotation)\b|"
-        r"\b(?:price|quote|quotation)\s+(?:per\s+share|of(?:\s+the)?\s+(?:share|stock|market))\b",
-        test["observable_metric_or_event"].casefold(),
-    ):
+    expected_basis = (
+        "valuation_overshoot_with_fundamental_link"
+        if test["break_type"] == "valuation_overshoot"
+        else "fundamental_break"
+    )
+    if test["causal_basis"] != expected_basis:
         raise StockAnalysisValidationError(
-            "triggered sell conditions must identify a causal thesis break, not price alone"
+            "triggered sell conditions require an explicit causal thesis break basis"
         )
 
 
