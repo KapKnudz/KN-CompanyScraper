@@ -138,6 +138,7 @@ def test_shadow_runner_uses_frozen_hash_and_persists_non_authoritative_metadata(
     result = runner.run(frozen, run_id=run_id)
 
     assert result.results[0].status == "accepted"
+    assert result.to_dict()["conflicts"] == []
     assert artifacts.saved[0]["metadata"]["analysis_mode"] == "specialist"
     assert artifacts.saved[0]["metadata"]["agent_name"] == "management_credibility"
     assert artifacts.saved[0]["metadata"]["run_id"] == run_id

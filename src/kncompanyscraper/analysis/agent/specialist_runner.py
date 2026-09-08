@@ -25,6 +25,10 @@ from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
     parse_specialist_output,
 )
+from kncompanyscraper.analysis.agent.specialist_conflicts import (
+    SpecialistConflict,
+    evaluate_specialist_conflicts,
+)
 
 
 FIRST_WAVE_SPECIALISTS = (
@@ -71,6 +75,7 @@ class ShadowSpecialistRun:
     company_id: int
     packet_hash: str
     results: tuple[SpecialistArtifactResult, ...]
+    conflicts: tuple[SpecialistConflict, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -78,6 +83,7 @@ class ShadowSpecialistRun:
             "company_id": self.company_id,
             "packet_hash": self.packet_hash,
             "results": [result.to_dict() for result in self.results],
+            "conflicts": [conflict.to_dict() for conflict in self.conflicts],
         }
 
 
@@ -169,7 +175,10 @@ class ShadowSpecialistRunner:
             self._run_one(packet, company_id, run_id, packet_hash, agent_name)
             for agent_name in self.specialists
         )
-        return ShadowSpecialistRun(run_id, company_id, packet_hash, results)
+        conflicts = evaluate_specialist_conflicts(
+            result.output for result in results if result.output is not None
+        )
+        return ShadowSpecialistRun(run_id, company_id, packet_hash, results, conflicts)
 
     def _run_one(self, packet, company_id, run_id, packet_hash, agent_name):
         reused = self._reuse_completed(company_id, run_id, packet_hash, agent_name)
