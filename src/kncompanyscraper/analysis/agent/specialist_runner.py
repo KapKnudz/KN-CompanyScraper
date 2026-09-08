@@ -91,25 +91,7 @@ _CAUSAL_CLAIM_DOMAINS = {
         "valuation",
     },
 }
-_CAUSAL_CLAIM_MARKERS = {
-    "revenue_or_demand": {"revenue", "demand", "sales", "customer", "churn", "retention"},
-    "margin_or_execution": {"margin", "execution", "cost", "profitability"},
-    "balance_sheet_or_dilution": {
-        "balance",
-        "debt",
-        "dilution",
-        "shares",
-        "share",
-        "count",
-        "financing",
-        "capital",
-    },
-    "management_credibility": {"management", "promise", "guidance", "milestone", "missed"},
-    "valuation_overshoot": {"valuation", "multiple", "expectation", "reverse", "dcf", "unsupported", "demanding"},
-    "superior_evidence_or_opportunity": {"evidence", "opportunity", "alternative"},
-}
-_CAUSAL_STATUS_PREDICATES = {"assessment", "result", "state", "status"}
-_CAUSAL_STATUS_VALUES_BY_BREAK = {
+_STRUCTURED_CAUSAL_VALUES_BY_BREAK = {
     "revenue_or_demand": {
         "declining",
         "deteriorated",
@@ -146,8 +128,18 @@ _CAUSAL_STATUS_VALUES_BY_BREAK = {
         "weak",
         "worsening",
     },
-    "valuation_overshoot": set(),
-    "superior_evidence_or_opportunity": set(),
+    "valuation_overshoot": {
+        "demanding",
+        "overpriced",
+        "overvalued",
+        "unsupported",
+    },
+    "superior_evidence_or_opportunity": {
+        "confirmed",
+        "plausible",
+        "positive",
+        "supported",
+    },
 }
 
 @dataclass(frozen=True)
@@ -1288,172 +1280,21 @@ def _resolved_source_ids(packet, source_ids):
     return resolved_ids
 
 
-def _semantic_tokens(value):
-    if isinstance(value, (list, tuple, set)):
-        tokens = set()
-        for item in value:
-            tokens.update(_semantic_tokens(item))
-        return tokens
-    return set(re.findall(r"[a-z0-9]+", str(value).casefold()))
-
-
-def _contains_share_price_signal(value, typed_claim_tokens=()):
-    text = str(value).casefold()
-    if re.search(
-        r"\b(?:share|stock|market)\s+(?:price|quote|quotation)\b|"
-        r"\b(?:price|quote|quotation)\s+(?:per\s+share|of(?:\s+the)?\s+(?:share|stock|market))\b",
-        text,
+def _contains_price_only_language(value):
+    tokens = set(re.findall(r"[a-z0-9]+", str(value).casefold()))
+    if tokens.intersection({"quote", "quotation"}):
+        return True
+    if "price" in tokens and not tokens.intersection(
+        {"average", "selling", "sale", "unit"}
     ):
         return True
-    if re.search(r"\b(?:average|selling|sale|unit)\s+price\b", text):
-        return False
-    return "price" in _semantic_tokens(text) and {
-        "share",
-        "price",
-    }.issubset(typed_claim_tokens)
-
-
-def _has_structured_valuation_relationship(reference, sell_source_ids, packet):
-    _, _, source_backed, domain, predicate, value, _ = reference
-    if not source_backed or domain not in _CAUSAL_CLAIM_DOMAINS["valuation_overshoot"]:
-        return False
-    if str(predicate).casefold() != "relation":
-        return False
-    if not _semantic_tokens(value).intersection(
-        {"unsupported", "demanding", "overvalued", "overpriced"}
-    ):
-        return False
-    relationship_source_ids = _resolved_source_ids(packet, sell_source_ids)
-    return any(
-        source_id.endswith(":price_fundamental_attribution")
-        for source_id in relationship_source_ids
-    )
-
-
-def _causal_condition_direction(
-    break_type,
-    condition,
-    threshold_or_direction,
-    typed_claim_tokens=(),
-    observed_metric_tokens=(),
-):
-    text = " ".join(
-        str(value).casefold()
-        for value in (condition, threshold_or_direction)
-    )
-    clauses = re.split(
-        r"\b(?:despite|although|though|but|while)\b", text
-    )
-    if len(clauses) > 1:
-        break_markers = (
-            set(typed_claim_tokens)
-            | set(observed_metric_tokens)
-            | _CAUSAL_CLAIM_MARKERS[break_type]
-        )
-        matching_clauses = [
-            clause
-            for clause in clauses
-            if _semantic_tokens(clause).intersection(break_markers)
-        ]
-        if matching_clauses:
-            text = max(
-                enumerate(matching_clauses),
-                key=lambda item: (
-                    len(_semantic_tokens(item[1]).intersection(observed_metric_tokens)),
-                    len(_semantic_tokens(item[1]).intersection(typed_claim_tokens)),
-                    len(_semantic_tokens(item[1]).intersection(_CAUSAL_CLAIM_MARKERS[break_type])),
-                    item[0],
-                ),
-            )
-            text = text[1]
-        else:
-            text = clauses[0]
-    adverse_terms = r"declin\w*|decreas\w*|fall\w*|drop\w*|worsen\w*|deteriorat\w*|weaken\w*|fail\w*|miss\w*|stall\w*|below|under|shortfall|unmet|insufficient|breach"
-    favorable_terms = r"improv\w*|increas\w*|grow\w*|strengthen\w*|ris\w*|higher|better|expand\w*|recover\w*"
-    if break_type == "superior_evidence_or_opportunity":
-        favorable_terms += r"|superior\w*|emerg\w*|exceed\w*|outperform\w*"
-    if break_type == "valuation_overshoot":
-        valuation_adverse_terms = (
-            r"unsupported|demanding|overvalu\w*|overpric\w*|overshoot\w*|"
-            r"expand\w*|exceed\w*|excessive\w*|stretched\w*|above"
-        )
-        negation = r"(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)"
-        if re.search(
-            rf"\b{negation}\s+(?:{valuation_adverse_terms})\b", text
-        ):
-            return "favorable"
-        if re.search(rf"\b(?:{valuation_adverse_terms})\b", text):
-            return "adverse"
-    if break_type == "balance_sheet_or_dilution":
-        negation = r"(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)"
-        balance_subjects = {
-            "debt": (
-                r"(?:debt|leverage)",
-                r"increas\w*|ris\w*|grow\w*|deteriorat\w*|worsen\w*|weaken\w*",
-                r"decreas\w*|fall\w*|drop\w*|improv\w*|strengthen\w*|reduc\w*|lower\w*",
-            ),
-            "share_count": (
-                r"(?:share\s+count|shares?|dilution)",
-                r"increas\w*|ris\w*|grow\w*|deteriorat\w*|worsen\w*|dilut\w*|expand\w*",
-                r"decreas\w*|fall\w*|drop\w*|improv\w*|strengthen\w*|reduc\w*|lower\w*",
-            ),
-        }
-        for subject_pattern, adverse_subject_terms, favorable_subject_terms in sorted(
-            balance_subjects.values(),
-            key=lambda item: len(
-                _semantic_tokens(item[0]).intersection(observed_metric_tokens)
-            ),
-            reverse=True,
-        ):
-            if not re.search(rf"\b{subject_pattern}\b", text):
-                continue
-            if re.search(
-                rf"\b{subject_pattern}\b(?:\s+\w+){{0,3}}\s+{negation}\s+(?:{adverse_subject_terms})\b",
-                text,
-            ):
-                return "favorable"
-            if re.search(
-                rf"\b{subject_pattern}\b(?:\s+\w+){{0,3}}\s+{negation}\s+(?:{favorable_subject_terms})\b",
-                text,
-            ):
-                return "adverse"
-            if re.search(
-                rf"\b{subject_pattern}\b(?:\s+\w+){{0,3}}\s+(?:{adverse_subject_terms})\b",
-                text,
-            ):
-                return "adverse"
-            if re.search(
-                rf"\b{subject_pattern}\b(?:\s+\w+){{0,3}}\s+(?:{favorable_subject_terms})\b",
-                text,
-            ):
-                return "favorable"
-    if re.search(
-        r"\b(?:fails?|failed)\s+to\s+(?:improv\w*|increas\w*|grow\w*|"
-        r"strengthen\w*|ris\w*|expand\w*|recover\w*)\b",
-        text,
-    ):
-        return "adverse"
-    if re.search(
-        rf"\b(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)\s+(?:{favorable_terms})\b",
-        text,
-    ):
-        return "adverse"
-    if re.search(
-        rf"\b(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)\s+(?:{adverse_terms})\b",
-        text,
-    ):
-        return "favorable"
-    if re.search(rf"\b(?:{favorable_terms})\b", text):
-        return "favorable"
-    if re.search(rf"\b(?:{adverse_terms})\b", text):
-        return "adverse"
-    return "neutral"
+    return False
 
 
 def _causal_reference_matches(
     break_type,
     reference,
-    observable_metric_or_event,
+    _observable_metric_or_event,
     condition,
     threshold_or_direction,
     sell_source_ids,
@@ -1475,53 +1316,22 @@ def _causal_reference_matches(
         return False
     if domain not in _CAUSAL_CLAIM_DOMAINS[break_type]:
         return False
-    predicate_tokens = _semantic_tokens(predicate)
-    value_tokens = _semantic_tokens(value)
-    typed_claim_tokens = predicate_tokens | value_tokens
-    if not (
-        typed_claim_tokens.intersection(_CAUSAL_CLAIM_MARKERS[break_type])
-        or (
-            predicate_tokens.intersection(_CAUSAL_STATUS_PREDICATES)
-            and value_tokens.intersection(_CAUSAL_STATUS_VALUES_BY_BREAK[break_type])
-        )
+    normalized_predicate = str(predicate).casefold()
+    if normalized_predicate not in {
+        "assessment",
+        "outcome",
+        "relation",
+        "result",
+        "state",
+        "status",
+    } or str(value).casefold() not in _STRUCTURED_CAUSAL_VALUES_BY_BREAK[break_type]:
+        return False
+    if break_type == "valuation_overshoot" and normalized_predicate != "relation":
+        return False
+    if break_type != "valuation_overshoot" and _contains_price_only_language(
+        " ".join((_observable_metric_or_event, condition, threshold_or_direction))
     ):
         return False
-    typed_claim_tokens.update(_semantic_tokens(domain))
-    observable_tokens = _semantic_tokens(observable_metric_or_event)
-    condition_direction = _causal_condition_direction(
-        break_type,
-        condition,
-        threshold_or_direction,
-        typed_claim_tokens,
-        observable_tokens,
-    )
-    if direction in {"negative", "mixed"} and condition_direction != "adverse":
-        return False
-    if direction == "positive" and condition_direction != "favorable":
-        return False
-    price_observable = _contains_share_price_signal(
-        observable_metric_or_event,
-        typed_claim_tokens,
-    )
-    price_evidence = _contains_share_price_signal(
-        " ".join(
-            str(value)
-            for value in (condition, threshold_or_direction)
-        ),
-        typed_claim_tokens,
-    )
-    structured_valuation_relationship = (
-        break_type == "valuation_overshoot"
-        and _has_structured_valuation_relationship(
-            reference, sell_source_ids, packet
-        )
-    )
-    if price_observable or price_evidence:
-        if not structured_valuation_relationship:
-            return False
-    if not observable_tokens.intersection(typed_claim_tokens):
-        if not structured_valuation_relationship:
-            return False
     return True
 
 

@@ -8,6 +8,14 @@ one of `not_triggered`, `triggered`, or `unassessable`, one prescribed response
 claim IDs supporting it. Preserve the upstream claim IDs; do not rewrite or
 launder upstream claims.
 
+For a triggered test, the cited upstream claim is the structured causal
+classification: its domain must match the break type, its direction must be
+consistent with the break, and its typed predicate and value must describe the
+break. For valuation overshoot, use a typed `relation` claim with a sourced
+`unsupported`, `demanding`, `overvalued`, or `overpriced` value. Do not use
+condition, observable, threshold, polarity, or price wording as a substitute
+for that typed claim.
+
 A sell condition is a causal thesis break. A decline in the share price, a loss
 from cost, or a percentage stop-loss is never sufficient to trigger a test.
 Valuation overshoot may use price only together with a materially unsupported
