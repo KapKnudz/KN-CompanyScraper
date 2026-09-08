@@ -374,6 +374,9 @@ class ShadowSpecialistRunner:
         if reused is not None:
             try:
                 _validate_sell_traceability(reused.output, upstream_results, packet)
+                _validate_sell_dependency_blockers(
+                    reused.output, inputs_available, scenario_data
+                )
             except (ValueError, TypeError):
                 reused = None
             else:
@@ -509,6 +512,13 @@ class ShadowSpecialistRunner:
                 if agent_name is SpecialistAgentName.SELL_CONDITIONS:
                     _validate_sell_traceability(
                         parsed, upstream_outputs or (), packet
+                    )
+                    _validate_sell_dependency_blockers(
+                        parsed,
+                        _sell_inputs_available(
+                            upstream_outputs or (), deterministic_scenario_data
+                        ),
+                        deterministic_scenario_data,
                     )
             except (StockAnalysisValidationError, ValueError, TypeError) as exc:
                 validation_errors.append(str(exc))
@@ -970,6 +980,24 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
             )
 
 
+def _validate_sell_dependency_blockers(output, inputs_available, scenario_data):
+    if output is None or output.sell_conditions is None:
+        return
+    blocker_codes = {
+        blocker.blocker_code for blocker in output.sell_conditions.activation_blockers
+    }
+    if inputs_available and "upstream_specialist_unavailable" in blocker_codes:
+        raise ValueError(
+            "sell dependency blocker contradicts available upstream specialists"
+        )
+    if _scenario_data_available(scenario_data) and (
+        "deterministic_scenario_unavailable" in blocker_codes
+    ):
+        raise ValueError(
+            "sell dependency blocker contradicts available scenario data"
+        )
+
+
 def _upstream_source_ids(upstream_results, packet=None):
     return list(
         dict.fromkeys(
@@ -1133,20 +1161,45 @@ def _causal_condition_direction(
         str(value).casefold()
         for value in (condition, threshold_or_direction)
     )
-    if break_type == "balance_sheet_or_dilution" and re.search(
-        r"\b(?:share\s+count|shares?|dilution|debt|leverage)\b"
-        r"(?:\s+\w+){0,3}\s+(?:increas\w*|grow\w*|ris\w*|expand\w*)\b",
-        text,
-    ):
-        return "negative"
-    positive_terms = r"improv\w*|increas\w*|grow\w*|strengthen\w*|ris\w*|higher|better|expand\w*|recover\w*"
+    adverse_terms = r"declin\w*|decreas\w*|fall\w*|drop\w*|worsen\w*|deteriorat\w*|weaken\w*|fail\w*|miss\w*|stall\w*"
+    favorable_terms = r"improv\w*|increas\w*|grow\w*|strengthen\w*|ris\w*|higher|better|expand\w*|recover\w*"
+    if break_type == "balance_sheet_or_dilution":
+        adverse_subject = r"(?:share\s+count|shares?|dilution|debt|leverage)"
+        negation = r"(?:does not|doesn't|did not|didn't|not|never|fails to|failed to)"
+        if re.search(
+            rf"\b{adverse_subject}\b(?:\s+\w+){{0,3}}\s+{negation}\s+(?:{favorable_terms})\b",
+            text,
+        ):
+            return "favorable"
+        if re.search(
+            rf"\b{adverse_subject}\b(?:\s+\w+){{0,3}}\s+{negation}\s+(?:{adverse_terms})\b",
+            text,
+        ):
+            return "adverse"
+        if re.search(
+            rf"\b{adverse_subject}\b(?:\s+\w+){{0,3}}\s+(?:{favorable_terms})\b",
+            text,
+        ):
+            return "adverse"
+        if re.search(
+            rf"\b{adverse_subject}\b(?:\s+\w+){{0,3}}\s+(?:{adverse_terms})\b",
+            text,
+        ):
+            return "favorable"
     if re.search(
-        rf"\b(?:does not|doesn't|did not|didn't|not|never|fails to|failed to)\s+(?:{positive_terms})\b",
+        rf"\b(?:does not|doesn't|did not|didn't|not|never|fails to|failed to)\s+(?:{favorable_terms})\b",
         text,
     ):
-        return "negative"
-    if re.search(rf"\b(?:{positive_terms})\b", text):
-        return "positive"
+        return "adverse"
+    if re.search(
+        rf"\b(?:does not|doesn't|did not|didn't|not|never|fails to|failed to)\s+(?:{adverse_terms})\b",
+        text,
+    ):
+        return "favorable"
+    if re.search(rf"\b(?:{favorable_terms})\b", text):
+        return "favorable"
+    if re.search(rf"\b(?:{adverse_terms})\b", text):
+        return "adverse"
     return "neutral"
 
 
@@ -1183,12 +1236,34 @@ def _causal_reference_matches(
     condition_tokens = _semantic_tokens((condition, threshold_or_direction))
     if direction in {"negative", "mixed"} and _causal_condition_direction(
         break_type, condition, threshold_or_direction
-    ) == "positive":
+    ) == "favorable":
         return False
     evidence_text_tokens = _semantic_tokens(
         (observable_metric_or_event, condition, threshold_or_direction)
     )
     observable_tokens = _semantic_tokens(observable_metric_or_event)
+    if (
+        break_type != "valuation_overshoot"
+        and "price" in observable_tokens
+        and not observable_tokens.difference(
+            {
+                "price",
+                "share",
+                "stock",
+                "market",
+                "decline",
+                "declines",
+                "declined",
+                "fall",
+                "falls",
+                "fell",
+                "drop",
+                "drops",
+                "dropped",
+            }
+        )
+    ):
+        return False
     if not observable_tokens.intersection(typed_claim_tokens):
         if not (
             break_type == "valuation_overshoot"

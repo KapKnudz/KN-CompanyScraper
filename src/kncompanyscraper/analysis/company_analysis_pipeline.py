@@ -763,6 +763,7 @@ class CompanyAnalysisPipeline:
 
     def _complete_stage(self, result, job_id, stage, **details):
         stage_result = result.setdefault("stages", {}).setdefault(stage, {})
+        stage_status = details.get("execution_status", "accepted")
         if "attempts" in details:
             details["attempts"] = max(
                 stage_result.get("attempts", 0) or 0,
@@ -770,7 +771,7 @@ class CompanyAnalysisPipeline:
             )
         stage_result.update(
             {
-                "status": "accepted",
+                "status": stage_status,
                 "completed_at": self.clock().isoformat(),
                 "duration_seconds": self._stage_duration(job_id, stage),
                 **details,
