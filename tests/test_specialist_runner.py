@@ -220,12 +220,17 @@ def test_missing_first_wave_or_scenario_produces_six_limited_sell_tests():
     assert {
         test.current_break_status.value for test in sell.output.sell_conditions.tests
     } == {"unassessable"}
+    assert sell.output.sell_conditions.activation_blockers == []
     assert {
-        blocker.blocker_code
-        for blocker in sell.output.sell_conditions.activation_blockers
-    } == {
-        "upstream_specialist_unavailable",
-        "deterministic_scenario_unavailable",
+        item.item_code for item in sell.output.missing_information
+    } >= {
+        "upstream_specialist_outputs",
+        "upstream_business_model",
+        "upstream_management_credibility",
+        "upstream_margin",
+        "upstream_insider_ownership",
+        "upstream_growth_valuation",
+        "deterministic_scenario_data",
     }
 
 

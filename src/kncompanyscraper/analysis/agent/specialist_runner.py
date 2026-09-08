@@ -490,10 +490,14 @@ class ShadowSpecialistRunner:
             blocker_codes.append("upstream_specialist_unavailable")
         if not _scenario_data_available(scenario_data):
             blocker_codes.append("deterministic_scenario_unavailable")
-        claim_ids = _upstream_claim_ids(upstream_results, packet)
-        source_ids = _sell_source_ids_in_catalog(
-            packet, _upstream_source_ids(upstream_results, packet)
-        )
+        try:
+            claim_ids = _upstream_claim_ids(upstream_results, packet)
+            source_ids = _sell_source_ids_in_catalog(
+                packet, _upstream_source_ids(upstream_results, packet)
+            )
+        except ValueError:
+            claim_ids = []
+            source_ids = []
         tests = [
             SellConditionAssessment(
                 break_type=break_type,
@@ -948,7 +952,7 @@ def _causal_reference_matches(
     threshold_or_direction,
     sell_source_ids,
 ):
-    source_ids, _, causal, domain, predicate, value = reference
+    source_ids, _, causal, _, predicate, value = reference
     if not set(source_ids).intersection(sell_source_ids):
         return False
     if not causal:
@@ -956,15 +960,20 @@ def _causal_reference_matches(
     typed_claim_tokens = _semantic_tokens((predicate, value))
     if not typed_claim_tokens.intersection(_CAUSAL_CLAIM_MARKERS[break_type]):
         return False
+    condition_tokens = _semantic_tokens((condition, threshold_or_direction))
     evidence_text_tokens = _semantic_tokens(
         (observable_metric_or_event, condition, threshold_or_direction)
     )
-    if break_type != "valuation_overshoot" and "price" in evidence_text_tokens:
-        return False
     observable_tokens = _semantic_tokens(observable_metric_or_event)
-    if break_type != "valuation_overshoot" and "price" in observable_tokens:
+    if not observable_tokens.intersection(typed_claim_tokens):
         return False
-    return bool(observable_tokens.intersection({domain, *typed_claim_tokens}))
+    if (
+        break_type != "valuation_overshoot"
+        and "price" in evidence_text_tokens
+        and not condition_tokens.intersection(typed_claim_tokens)
+    ):
+        return False
+    return True
 
 
 def _packet_as_of(packet):
