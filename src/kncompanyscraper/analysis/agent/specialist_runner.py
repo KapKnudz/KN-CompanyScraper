@@ -363,6 +363,18 @@ class ShadowSpecialistRunner:
     def _run_sell_conditions(
         self, packet, company_id, run_id, packet_hash, upstream_results, scenario_data
     ):
+        try:
+            _upstream_references(upstream_results, packet)
+        except ValueError:
+            return self._unassessable_sell_result(
+                packet,
+                company_id,
+                run_id,
+                packet_hash,
+                upstream_results,
+                scenario_data,
+                additional_missing_information=("upstream_claim_ids",),
+            )
         inputs_available = _sell_inputs_available(upstream_results, scenario_data)
         reused = self._reuse_completed(
             company_id,
@@ -573,7 +585,14 @@ class ShadowSpecialistRunner:
         )
 
     def _unassessable_sell_result(
-        self, packet, company_id, run_id, packet_hash, upstream_results, scenario_data
+        self,
+        packet,
+        company_id,
+        run_id,
+        packet_hash,
+        upstream_results,
+        scenario_data,
+        additional_missing_information=(),
     ):
         missing_agents = [
             agent.value
@@ -650,6 +669,14 @@ class ShadowSpecialistRunner:
                     impact_code="sell_conditions_unassessable",
                 )
             )
+        missing.extend(
+            SpecialistMissingInformation(
+                item_code=item_code,
+                limitation_class="core",
+                impact_code="sell_conditions_unassessable",
+            )
+            for item_code in additional_missing_information
+        )
         output = SpecialistOutput(
             schema_version="specialist-output-v1",
             run_id=run_id,
@@ -1179,11 +1206,12 @@ def _causal_condition_direction(
         str(value).casefold()
         for value in (condition, threshold_or_direction)
     )
+    text = re.split(r"\b(?:despite|although|though|but|while)\b", text, maxsplit=1)[0]
     adverse_terms = r"declin\w*|decreas\w*|fall\w*|drop\w*|worsen\w*|deteriorat\w*|weaken\w*|fail\w*|miss\w*|stall\w*"
     favorable_terms = r"improv\w*|increas\w*|grow\w*|strengthen\w*|ris\w*|higher|better|expand\w*|recover\w*"
     if break_type == "balance_sheet_or_dilution":
         adverse_subject = r"(?:share\s+count|shares?|dilution|debt|leverage)"
-        negation = r"(?:does not|doesn't|did not|didn't|not|never|fails to|failed to)"
+        negation = r"(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)"
         if re.search(
             rf"\b{adverse_subject}\b(?:\s+\w+){{0,3}}\s+{negation}\s+(?:{favorable_terms})\b",
             text,
@@ -1205,12 +1233,12 @@ def _causal_condition_direction(
         ):
             return "favorable"
     if re.search(
-        rf"\b(?:does not|doesn't|did not|didn't|not|never|fails to|failed to)\s+(?:{favorable_terms})\b",
+        rf"\b(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)\s+(?:{favorable_terms})\b",
         text,
     ):
         return "adverse"
     if re.search(
-        rf"\b(?:does not|doesn't|did not|didn't|not|never|fails to|failed to)\s+(?:{adverse_terms})\b",
+        rf"\b(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)\s+(?:{adverse_terms})\b",
         text,
     ):
         return "favorable"
