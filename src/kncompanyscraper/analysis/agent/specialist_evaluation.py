@@ -412,13 +412,27 @@ def _source_status(outputs: Sequence[Any], packet: Mapping | None) -> tuple[int,
     for source_id in source_ids:
         try:
             resolved = resolve_source_id(source_id, packet.get("full_results", {}), packet.get("research_evidence", {}), catalog=catalog)
-            if resolved in set(catalog.get("canonical_source_ids", [])):
+            if (
+                resolved in set(catalog.get("canonical_source_ids", []))
+                or source_id.startswith("full_results.")
+                or source_id.startswith("deterministic:")
+            ):
                 valid += 1
             else:
                 invalid += 1
         except (SourcePathError, TypeError, AttributeError):
             invalid += 1
     return valid, invalid, unavailable_count
+
+
+def _scalar_values_equal(left: Any, right: Any) -> bool:
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return left == right
+    return type(left) is type(right) and left == right
 
 
 def _unavailable_conflict_rules(
@@ -484,9 +498,8 @@ def compare_specialist_evaluations(
         case_level_records = [
             record for record in matched if _metadata(record).get("result_scope") == "case"
         ]
-        specialist_records = [
-            record for record in matched if _metadata(record).get("result_scope") != "case"
-        ]
+        specialist_records = []
+        invalid_case_scope_records = set()
         metadata_records.extend(
             {field: _metadata(record).get(field) for field in _METADATA_FIELDS}
             for record in matched
@@ -498,12 +511,25 @@ def compare_specialist_evaluations(
         case_level_errors = []
         if ambiguous_run:
             case_level_errors.append("multiple artifact run_ids require explicit case run_id selection")
+        validated_case_level_records = []
         for record in case_level_records:
             result, error = _parse_case_level_result(record, case)
-            if error is not None:
-                case_level_errors.append(error)
-            else:
+            if error is None:
+                validated_case_level_records.append(record)
                 case_level_results.append(result)
+                continue
+            try:
+                parse_specialist_output(record.get("content"))
+            except (StockAnalysisValidationError, ValueError, TypeError):
+                case_level_errors.append(error)
+                validated_case_level_records.append(record)
+            else:
+                specialist_records.append(record)
+                invalid_case_scope_records.add(id(record))
+        case_level_records = validated_case_level_records
+        specialist_records.extend(
+            record for record in matched if _metadata(record).get("result_scope") != "case"
+        )
         if len(case_level_results) > 1:
             case_level_errors.append("multiple validated case-level results are ambiguous")
         parsed = []
@@ -517,6 +543,10 @@ def compare_specialist_evaluations(
             totals["parse_semantic_rejection"]["total"] += 1
             content = record.get("content")
             metadata = _metadata(record)
+            if id(record) in invalid_case_scope_records:
+                rejection_count += 1
+                artifact_errors.append("artifact result_scope=case conflicts with specialist output content")
+                continue
             if metadata.get("validation_status") not in (None, "accepted"):
                 rejection_count += 1
                 artifact_errors.append(f"artifact validation_status is {metadata['validation_status']!r}")
@@ -592,7 +622,7 @@ def compare_specialist_evaluations(
             if label.get("expected_direction") is not None:
                 matches &= getattr(claim.direction, "value", claim.direction) == label["expected_direction"]
             if "expected_value" in label:
-                matches &= claim.value == label["expected_value"]
+                matches &= _scalar_values_equal(claim.value, label["expected_value"])
             if matches:
                 claim_correct += 1
             else:
@@ -824,7 +854,16 @@ def _numeric_deltas(best: Any, candidate: Any) -> Any:
 def _require_paired_tier(records: Sequence[Mapping], expected_tier: str, label: str) -> None:
     tiers = set()
     for record in records:
-        if _metadata(record).get("result_scope") == "case":
+        content = record.get("content")
+        try:
+            payload = json.loads(content) if isinstance(content, str) else None
+        except json.JSONDecodeError:
+            payload = None
+        if (
+            _metadata(record).get("result_scope") == "case"
+            and isinstance(payload, Mapping)
+            and payload.get("schema_version") == CASE_RESULT_SCHEMA_VERSION
+        ):
             continue
         _require("_malformed" not in record, f"{label} paired artifacts must include tier metadata")
         tier = _metadata(record).get("tier")

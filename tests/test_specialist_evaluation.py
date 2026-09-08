@@ -227,6 +227,31 @@ def test_invalid_source_ids_are_counted_and_source_label_disagrees():
     assert source["label_agreement_rate"] == 0
 
 
+def test_deterministic_source_paths_are_valid_when_traversable():
+    cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["content"] = artifacts["artifacts"][0]["content"].replace(
+        "report:one", "full_results.financial_history.revenue"
+    )
+
+    source = run(cases, artifacts, packets)["metrics"]["source_id_validity"]
+
+    assert source["valid"] == 4
+    assert source["invalid"] == 0
+
+
+def test_claim_values_use_type_aware_scalar_equality():
+    cases, artifacts, packets = documents()
+    cases["cases"][0]["labels"]["claims"][0]["expected_value"] = False
+    payload = json.loads(artifacts["artifacts"][0]["content"])
+    payload["claims"][0]["value"] = 0
+    artifacts["artifacts"][0]["content"] = json.dumps(payload)
+
+    claims = run(cases, artifacts, packets)["metrics"]["claim_label_agreement"]
+
+    assert claims["correct"] == 0
+    assert claims["incorrect"] == 1
+
+
 def test_missing_source_ids_are_unavailable_not_all_valid():
     cases, artifacts, packets = documents()
     payload = json.loads(artifacts["artifacts"][0]["content"])
@@ -356,6 +381,17 @@ def test_case_level_records_do_not_contaminate_specialist_metrics():
     assert report["metrics"]["confidence_calibration"]["evaluated"] == 1
     assert report["metrics"]["source_id_validity"]["unavailable"] == 1
     assert report["metadata_fields"]["run_id"]["available"] == 2
+
+
+def test_invalid_case_scope_specialist_is_rejected_as_specialist_input():
+    cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["metadata"]["result_scope"] = "case"
+
+    report = run(cases, artifacts, packets)
+
+    assert report["cases"][0]["accepted_count"] == 1
+    assert report["cases"][0]["rejected_count"] == 1
+    assert report["metrics"]["parse_semantic_rejection"]["rejected"] == 1
 
 
 def test_invalid_case_level_result_prevents_verdict_scoring():
