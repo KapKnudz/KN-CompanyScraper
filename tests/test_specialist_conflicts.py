@@ -25,6 +25,14 @@ from kncompanyscraper.analysis.agent.specialist_conflicts import (
 _SOURCE = "source:fixture"
 
 
+def _unassessable_valuation_claim():
+    return _claim(
+        "valuation.gap",
+        "valuation",
+        direction=SpecialistClaimDirection.UNASSESSABLE,
+    )
+
+
 def _claim(
     claim_id,
     domain,
@@ -168,7 +176,7 @@ def _growth(*, reverse="demanding", dependency="fundamental", claims=None):
 EVALUATION_CASES = [
     (("margin", (_margin(), _sell()), None), {"margin_vs_sell_condition"}),
     (("insider", (_management(), _insider()), None), {"insider_vs_credibility_record"}),
-    (("circle", (_business("outside"), _growth(reverse="unassessable")), None), {"circle_of_competence_vs_valuation"}),
+    (("circle", (_business("outside"), _growth(reverse="unassessable", claims=[_unassessable_valuation_claim()])), None), {"circle_of_competence_vs_valuation"}),
     (("multiple", (_growth(dependency="multiple_only"),), "latent_case"), {"multiple_expansion_vs_activation"}),
     (("margin-near-miss", (_margin(state="active"), _sell(triggered=True)), None), set()),
     (("shock-near-miss", (_management(result="external_shock"), _insider()), None), set()),
@@ -183,8 +191,8 @@ EVALUATION_CASES = [
         (( _margin(), _sell()), None, "margin_vs_sell_condition"),
         (( _margin(), _sell(triggered=False, blocker=True)), None, "margin_vs_sell_condition"),
         (( _management(), _insider()), None, "insider_vs_credibility_record"),
-        ((_business("outside"), _growth(reverse="unassessable")), None, "circle_of_competence_vs_valuation"),
-        ((_business("unassessable"), _growth(reverse="unassessable")), None, "circle_of_competence_vs_valuation"),
+        ((_business("outside"), _growth(reverse="unassessable", claims=[_unassessable_valuation_claim()])), None, "circle_of_competence_vs_valuation"),
+        ((_business("unassessable"), _growth(reverse="unassessable", claims=[_unassessable_valuation_claim()])), None, "circle_of_competence_vs_valuation"),
         ((_growth(dependency="multiple_only"),), "latent_case", "multiple_expansion_vs_activation"),
     ],
 )

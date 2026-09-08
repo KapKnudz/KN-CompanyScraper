@@ -274,13 +274,7 @@ def _circle_conflict(business: SpecialistOutput, growth: SpecialistOutput) -> bo
         and claim.source_ids
         for claim in valuation_claims
     )
-    valuation_unassessable_assumption = (
-        growth_payload.reverse_dcf_assessment == "unassessable"
-        and any(claim.source_ids for claim in valuation_claims)
-    )
-    return outside_circle and (
-        valuation_unassessable_claim or valuation_unassessable_assumption
-    )
+    return outside_circle and valuation_unassessable_claim
 
 
 def _multiple_conflict(
