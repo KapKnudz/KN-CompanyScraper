@@ -7,6 +7,7 @@ import pytest
 
 from kncompanyscraper.analysis.agent.specialist_evaluation import (
     CASES_SCHEMA_VERSION,
+    MANIFEST_SCHEMA_VERSION,
     EvaluationFormatError,
     compare_paired_specialist_evaluations,
     compare_specialist_evaluations,
@@ -44,6 +45,31 @@ def case_result_content(cases, final_verdict):
         "packet_hash": case["packet_hash"],
         "final_verdict": final_verdict,
     })
+
+
+def pair_manifest(cases, best_run="synthetic-run", candidate_run="candidate-run"):
+    case = cases["cases"][0]
+    assignments = []
+    for tier, run_id in (("best", best_run), ("candidate", candidate_run)):
+        for agent_name in ("management_credibility", "insider_ownership"):
+            assignments.append({
+                "tier": tier,
+                "case_id": case["case_id"],
+                "company_id": case["company_id"],
+                "ticker": case["ticker"],
+                "packet_hash": case["packet_hash"],
+                "run_id": run_id,
+                "agent_name": agent_name,
+            })
+    return {"schema_version": MANIFEST_SCHEMA_VERSION, "assignments": assignments}
+
+
+def set_artifact_run(artifact_set, run_id):
+    for artifact in artifact_set["artifacts"]:
+        artifact["metadata"]["run_id"] = run_id
+        payload = json.loads(artifact["content"])
+        payload["run_id"] = run_id
+        artifact["content"] = json.dumps(payload)
 
 
 def test_fixture_metrics_cover_claim_management_conflict_and_source_agreement():
@@ -483,6 +509,7 @@ def test_insufficient_evidence_contributes_source_unavailability():
 def test_paired_comparison_keeps_tiers_separate_and_reports_deltas():
     cases, best_artifacts, packets = documents()
     candidate_artifacts = copy.deepcopy(best_artifacts)
+    set_artifact_run(candidate_artifacts, "candidate-run")
     for artifact in candidate_artifacts["artifacts"]:
         artifact["metadata"]["model_tier"] = "candidate"
     candidate_payload = json.loads(candidate_artifacts["artifacts"][0]["content"])
@@ -494,7 +521,11 @@ def test_paired_comparison_keeps_tiers_separate_and_reports_deltas():
     }
 
     report = compare_paired_specialist_evaluations(
-        cases, best_artifacts, candidate_artifacts, packets=packets
+        cases,
+        best_artifacts,
+        candidate_artifacts,
+        packets=packets,
+        manifest=pair_manifest(cases),
     )
 
     assert report["schema_version"] == "specialist-evaluation-pair-v1"
@@ -511,17 +542,27 @@ def test_paired_comparison_keeps_tiers_separate_and_reports_deltas():
 def test_paired_comparison_keeps_rejected_agent_in_alignment():
     cases, best_artifacts, packets = documents()
     candidate_artifacts = copy.deepcopy(best_artifacts)
+    set_artifact_run(candidate_artifacts, "candidate-run")
     for artifact in candidate_artifacts["artifacts"]:
         artifact["metadata"]["model_tier"] = "candidate"
     candidate_artifacts["artifacts"][0]["metadata"]["validation_status"] = "rejected"
 
+    candidate_artifacts["artifacts"].pop()
     report = compare_paired_specialist_evaluations(
-        cases, best_artifacts, candidate_artifacts, packets=packets
+        cases,
+        best_artifacts,
+        candidate_artifacts,
+        packets=packets,
+        manifest=pair_manifest(cases),
     )
 
     assert report["cases"][0]["agents"]["management_credibility"] == {
         "best_tier": "complete",
         "candidate_tier": "rejected",
+    }
+    assert report["cases"][0]["agents"]["insider_ownership"] == {
+        "best_tier": "complete",
+        "candidate_tier": "unavailable",
     }
     assert report["metric_deltas"]["parse_semantic_rejection"]["rejected"] == 1
 
@@ -529,37 +570,52 @@ def test_paired_comparison_keeps_rejected_agent_in_alignment():
 def test_paired_comparison_rejects_mixed_tier_metadata():
     cases, best_artifacts, packets = documents()
     candidate_artifacts = copy.deepcopy(best_artifacts)
-    candidate_artifacts["artifacts"][0]["metadata"]["model_tier"] = "candidate"
+    set_artifact_run(candidate_artifacts, "candidate-run")
+    for artifact in candidate_artifacts["artifacts"]:
+        artifact["metadata"]["model_tier"] = "candidate"
+    candidate_artifacts["artifacts"][0]["metadata"]["model_tier"] = "best"
 
     with pytest.raises(EvaluationFormatError, match="tier"):
         compare_paired_specialist_evaluations(
-            cases, best_artifacts, candidate_artifacts, packets=packets
+            cases,
+            best_artifacts,
+            candidate_artifacts,
+            packets=packets,
+            manifest=pair_manifest(cases),
         )
 
 
 def test_paired_comparison_rejects_agent_misalignment():
     cases, best_artifacts, packets = documents()
     candidate_artifacts = copy.deepcopy(best_artifacts)
-    candidate_artifacts["artifacts"][0]["metadata"]["model_tier"] = "candidate"
-    candidate_artifacts["artifacts"][1]["metadata"]["model_tier"] = "candidate"
-    candidate_artifacts["artifacts"][1]["content"] = candidate_artifacts["artifacts"][0]["content"]
+    set_artifact_run(candidate_artifacts, "candidate-run")
+    for artifact in candidate_artifacts["artifacts"]:
+        artifact["metadata"]["model_tier"] = "candidate"
+    candidate_artifacts["artifacts"][1]["metadata"]["agent_name"] = "business_model"
 
-    with pytest.raises(EvaluationFormatError, match="identical specialist agents"):
+    with pytest.raises(EvaluationFormatError, match="missing candidate manifest assignment"):
         compare_paired_specialist_evaluations(
-            cases, best_artifacts, candidate_artifacts, packets=packets
+            cases,
+            best_artifacts,
+            candidate_artifacts,
+            packets=packets,
+            manifest=pair_manifest(cases),
         )
 
 
 def test_paired_comparison_allows_case_results_without_tier_metadata():
-    cases, best_artifacts, packets = documents()
-    candidate_artifacts = copy.deepcopy(best_artifacts)
-    for artifact_set, tier in ((best_artifacts, "best"), (candidate_artifacts, "candidate")):
-        case_artifact = artifact_set["artifacts"][0]
-        case_artifact["content"] = case_result_content(cases, "activated_case")
-        case_artifact["metadata"].pop("model_tier", None)
-        case_artifact["metadata"]["final_verdict"] = "activated_case"
-        case_artifact["metadata"]["result_scope"] = "case"
-        artifact_set["artifacts"][1]["metadata"]["model_tier"] = tier
+    cases, _, packets = documents()
+    case_record = {
+        "metadata": {
+            "run_id": "synthetic-run",
+            "packet_hash": cases["cases"][0]["packet_hash"],
+            "result_scope": "case",
+            "final_verdict": "activated_case",
+        },
+        "content": case_result_content(cases, "activated_case"),
+    }
+    best_artifacts = {"artifacts": [copy.deepcopy(case_record)]}
+    candidate_artifacts = {"artifacts": [copy.deepcopy(case_record)]}
 
     report = compare_paired_specialist_evaluations(
         cases, best_artifacts, candidate_artifacts, packets=packets
@@ -610,9 +666,13 @@ def test_selected_run_excludes_historical_artifacts_from_rejections():
 
     report = run(cases, artifacts, packets)
 
+    selected_total = sum(
+        artifact["metadata"].get("run_id") == "synthetic-run"
+        for artifact in artifacts["artifacts"]
+    )
     assert report["metrics"]["parse_semantic_rejection"] == {
         "rejected": 0,
-        "total": 2,
+        "total": selected_total,
         "rejection_rate": 0,
     }
 

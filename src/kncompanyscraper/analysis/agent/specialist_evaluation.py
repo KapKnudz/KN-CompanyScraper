@@ -34,6 +34,7 @@ CASES_SCHEMA_VERSION = "specialist-evaluation-cases-v1"
 REPORT_SCHEMA_VERSION = "specialist-evaluation-report-v1"
 CASE_RESULT_SCHEMA_VERSION = "specialist-case-result-v1"
 PAIRED_REPORT_SCHEMA_VERSION = "specialist-evaluation-pair-v1"
+MANIFEST_SCHEMA_VERSION = "specialist-evaluation-manifest-v1"
 CONFLICT_RULES = (
     "margin_vs_sell_condition",
     "insider_vs_credibility_record",
@@ -537,7 +538,6 @@ def compare_specialist_evaluations(
         rejection_count = 0
         artifact_errors = []
         if ambiguous_run:
-            totals["parse_semantic_rejection"]["total"] += len(specialist_records)
             artifact_errors.append("multiple artifact run_ids require explicit case run_id selection")
         for record in () if ambiguous_run else specialist_records:
             totals["parse_semantic_rejection"]["total"] += 1
@@ -610,9 +610,10 @@ def compare_specialist_evaluations(
                 continue
             claim = claim_index.get((label["agent_name"], label["claim_id"]))
             if claim is None:
-                if ambiguous_run or (
-                    label["agent_name"] in outputs_by_agent
-                    and outputs_by_agent[label["agent_name"]].status.value == "insufficient_evidence"
+                if (
+                    ambiguous_run
+                    or label["agent_name"] not in outputs_by_agent
+                    or outputs_by_agent[label["agent_name"]].status.value == "insufficient_evidence"
                 ):
                     claim_unavailable += 1
                 else:
@@ -639,9 +640,10 @@ def compare_specialist_evaluations(
                 row_skipped += 1
             elif label["claim_id"] in row_index and getattr(row_index[label["claim_id"]].result, "value", row_index[label["claim_id"]].result) == label["expected_result"]:
                 row_correct += 1
-            elif ambiguous_run or (
-                SpecialistAgentName.MANAGEMENT_CREDIBILITY.value in outputs_by_agent
-                and outputs_by_agent[SpecialistAgentName.MANAGEMENT_CREDIBILITY.value].status.value == "insufficient_evidence"
+            elif (
+                ambiguous_run
+                or SpecialistAgentName.MANAGEMENT_CREDIBILITY.value not in outputs_by_agent
+                or outputs_by_agent[SpecialistAgentName.MANAGEMENT_CREDIBILITY.value].status.value == "insufficient_evidence"
             ):
                 row_unavailable += 1
             else:
@@ -766,7 +768,7 @@ def compare_specialist_evaluations(
             agent_metadata.setdefault(agent_name, []).append(
                 {field: _metadata(record).get(field) for field in _METADATA_FIELDS}
             )
-            agent_statuses.setdefault(agent_name, "rejected")
+            agent_statuses.setdefault(agent_name, "unavailable" if ambiguous_run else "rejected")
         case_reports.append({
             "case_id": case["case_id"],
             "packet_hash": case["packet_hash"],
@@ -774,6 +776,7 @@ def compare_specialist_evaluations(
             "accepted_count": len(parsed),
             "unavailable_count": sum(output.status.value == "insufficient_evidence" for output in parsed),
             "rejected_count": rejection_count,
+            "rejection_status": "unavailable" if ambiguous_run else "scored",
             "artifact_errors": artifact_errors,
             "packet_status": "available" if packet is not None and not packet.get("_packet_hash_mismatch") and not packet.get("_packet_identity_mismatch") else "unavailable",
             "metadata": [{field: _metadata(record).get(field) for field in _METADATA_FIELDS} for record in specialist_records],
@@ -851,25 +854,106 @@ def _numeric_deltas(best: Any, candidate: Any) -> Any:
     return None
 
 
-def _require_paired_tier(records: Sequence[Mapping], expected_tier: str, label: str) -> None:
-    tiers = set()
-    for record in records:
-        content = record.get("content")
-        try:
-            payload = json.loads(content) if isinstance(content, str) else None
-        except json.JSONDecodeError:
-            payload = None
-        if (
-            _metadata(record).get("result_scope") == "case"
-            and isinstance(payload, Mapping)
-            and payload.get("schema_version") == CASE_RESULT_SCHEMA_VERSION
-        ):
-            continue
-        _require("_malformed" not in record, f"{label} paired artifacts must include tier metadata")
-        tier = _metadata(record).get("tier")
-        _require(isinstance(tier, str), f"{label} paired artifacts must include tier metadata")
-        tiers.add(tier)
-    _require(tiers == {expected_tier}, f"{label} paired artifacts must all have tier {expected_tier!r}")
+def _is_case_result_record(record: Mapping) -> bool:
+    if _metadata(record).get("result_scope") != "case":
+        return False
+    content = record.get("content")
+    if not isinstance(content, str):
+        return False
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(payload, Mapping) and payload.get("schema_version") == CASE_RESULT_SCHEMA_VERSION
+
+
+def _artifact_field(record: Mapping, field: str) -> Any:
+    metadata = _metadata(record)
+    value = record.get(field, metadata.get(field))
+    if value is not None:
+        return value
+    content = record.get("content")
+    if not isinstance(content, str):
+        return None
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    return payload.get(field) if isinstance(payload, Mapping) else None
+
+
+def _artifact_packet_hash(record: Mapping) -> str | None:
+    packet_hash = _artifact_field(record, "packet_hash")
+    return packet_hash if isinstance(packet_hash, str) else None
+
+
+def _validate_pair_manifest(
+    manifest: Any,
+    cases: Sequence[Mapping],
+    best_records: Sequence[Mapping],
+    candidate_records: Sequence[Mapping],
+) -> dict:
+    specialist_records = [
+        ("best", record)
+        for record in best_records
+        if not _is_case_result_record(record)
+    ] + [
+        ("candidate", record)
+        for record in candidate_records
+        if not _is_case_result_record(record)
+    ]
+    if manifest is None:
+        _require(not specialist_records, "paired specialist artifacts require an evaluation manifest")
+        return {"agents": {"best": {}, "candidate": {}}}
+    document = _load_json(manifest)
+    _require(isinstance(document, Mapping), "evaluation manifest must be an object")
+    _require(document.get("schema_version") == MANIFEST_SCHEMA_VERSION, "unsupported evaluation manifest schema version")
+    raw_assignments = document.get("assignments")
+    _require(isinstance(raw_assignments, list), "evaluation manifest must contain an assignments list")
+    cases_by_id = {case["case_id"]: case for case in cases}
+    assignments = []
+    seen = {}
+    agents = {"best": {}, "candidate": {}}
+    for index, raw in enumerate(raw_assignments):
+        _require(isinstance(raw, Mapping), f"manifest assignment {index} must be an object")
+        tier = raw.get("tier")
+        case_id = raw.get("case_id")
+        run_id = raw.get("run_id")
+        agent_name = raw.get("agent_name")
+        _require(tier in {"best", "candidate"}, f"manifest assignment {index} has an unknown tier")
+        _require(isinstance(case_id, str) and case_id in cases_by_id, f"manifest assignment {index} has an unknown case_id")
+        _require(isinstance(run_id, str) and run_id, f"manifest assignment {index} needs run_id")
+        _require(isinstance(agent_name, str) and agent_name in _SPECIALIST_AGENT_NAMES, f"manifest assignment {index} has an unknown agent_name")
+        case = cases_by_id[case_id]
+        _require(raw.get("company_id") == case["company_id"], f"manifest assignment {index} company_id does not match case")
+        _require(raw.get("ticker") == case["ticker"], f"manifest assignment {index} ticker does not match case")
+        _require(raw.get("packet_hash") == case["packet_hash"], f"manifest assignment {index} packet_hash does not match case")
+        if case.get("run_id") is not None:
+            _require(run_id == case["run_id"], f"manifest assignment {index} run_id does not match case")
+        identity = (case_id, raw["packet_hash"], run_id, agent_name)
+        _require(identity not in seen, f"manifest contains duplicate or conflicting assignment for {case_id}/{agent_name}/{run_id}")
+        seen[identity] = tier
+        assignments.append(dict(raw))
+        agents[tier].setdefault(case_id, set()).add(agent_name)
+    for tier, record in specialist_records:
+        packet_hash = _artifact_packet_hash(record)
+        run_id = _record_run_id(record)
+        agent_name = _artifact_agent_name(record)
+        matches = [
+            assignment
+            for assignment in assignments
+            if assignment["tier"] == tier
+            and assignment["packet_hash"] == packet_hash
+            and assignment["run_id"] == run_id
+            and assignment["agent_name"] == agent_name
+        ]
+        _require(
+            len(matches) == 1,
+            f"missing {tier} manifest assignment for specialist artifact {agent_name!r}/{run_id!r}/{packet_hash!r}",
+        )
+        metadata_tier = _metadata(record).get("tier")
+        _require(metadata_tier in (None, tier), f"{tier} artifact tier metadata conflicts with manifest")
+    return {"agents": agents}
 
 
 def compare_paired_specialist_evaluations(
@@ -878,13 +962,13 @@ def compare_paired_specialist_evaluations(
     candidate_artifacts: str | Path | Mapping | Sequence,
     *,
     packets: str | Path | Mapping | Sequence | None = None,
+    manifest: str | Path | Mapping | Sequence | None = None,
 ) -> dict:
     """Compare separate best-tier and candidate-tier evaluation runs."""
     case_list = load_cases(cases) if not isinstance(cases, list) else validate_cases_document({"schema_version": CASES_SCHEMA_VERSION, "cases": cases})
     best_records = _artifact_records(best_artifacts)
     candidate_records = _artifact_records(candidate_artifacts)
-    _require_paired_tier(best_records, "best", "best-tier")
-    _require_paired_tier(candidate_records, "candidate", "candidate-tier")
+    manifest_data = _validate_pair_manifest(manifest, case_list, best_records, candidate_records)
     best_report = compare_specialist_evaluations(case_list, best_artifacts, packets=packets)
     candidate_report = compare_specialist_evaluations(case_list, candidate_artifacts, packets=packets)
     best_cases = {case["case_id"]: case for case in best_report["cases"]}
@@ -896,20 +980,16 @@ def compare_paired_specialist_evaluations(
         candidate_case = candidate_cases[case_id]
         _require(best_case["packet_hash"] == case["packet_hash"], f"best-tier report packet mismatch for case {case_id}")
         _require(candidate_case["packet_hash"] == case["packet_hash"], f"candidate-tier report packet mismatch for case {case_id}")
-        best_agents = set(best_case["agent_statuses"])
-        candidate_agents = set(candidate_case["agent_statuses"])
-        _require(
-            best_agents == candidate_agents,
-            f"paired case {case_id} must contain identical specialist agents",
-        )
-        agent_names = sorted(best_agents)
+        best_agents = set(best_case["agent_statuses"]) | manifest_data["agents"]["best"].get(case_id, set())
+        candidate_agents = set(candidate_case["agent_statuses"]) | manifest_data["agents"]["candidate"].get(case_id, set())
+        agent_names = sorted(best_agents | candidate_agents)
         aligned_cases.append({
             "case_id": case_id,
             "packet_hash": case["packet_hash"],
             "agents": {
                 agent_name: {
-                    "best_tier": best_case["agent_statuses"].get(agent_name),
-                    "candidate_tier": candidate_case["agent_statuses"].get(agent_name),
+                    "best_tier": best_case["agent_statuses"].get(agent_name, "unavailable"),
+                    "candidate_tier": candidate_case["agent_statuses"].get(agent_name, "unavailable"),
                 }
                 for agent_name in agent_names
             },

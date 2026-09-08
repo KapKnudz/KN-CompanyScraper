@@ -57,9 +57,16 @@ identity, packet hash, and prompt hash.
 
 `compare_paired_specialist_evaluations` runs the best-tier and candidate-tier
 artifact sets separately, then aligns their reports by case ID, frozen packet
-hash, and specialist agent. Its `metric_deltas` are candidate minus best, while
-the nested reports preserve each run's metadata and rejection accounting.
-Do not combine the two artifact arrays before calling the paired entry point.
+hash, run ID, and specialist agent. Pass an explicit
+`specialist-evaluation-manifest-v1` document through `manifest`; each assignment
+maps a case, packet hash, run ID, and agent name to `best` or `candidate`. This
+keeps tier ownership outside the production artifact contract. Missing or
+conflicting assignments are rejected, while a declared assignment with no stored
+artifact is reported as unavailable. Packet-bound case-level verdict artifacts
+may be paired without specialist tier assignments. Its `metric_deltas` are
+candidate minus best, while the nested reports preserve each run's metadata and
+rejection accounting. Do not combine the two artifact arrays before calling the
+paired entry point.
 
 For the trusted 12–20 company cohort, freeze one reviewed packet per company,
 record its hash in a new case, and have two humans label the claims, management
