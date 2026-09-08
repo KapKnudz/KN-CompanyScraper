@@ -212,6 +212,7 @@ def test_explicit_conflict_rules_surface_typed_triggers(
         ((_management(result="kept", pattern=ManagementPatternState.SUPPORTIVE), _insider(), _business("outside")), None),
         ((_business("inside"), _growth()), None),
         ((_business("outside"), _growth(reverse="plausible")), None),
+        ((_business("outside"), _growth(reverse="unassessable", claims=[_claim("growth.engine", "revenue")])), None),
         ((_growth(dependency="multiple_only"),), None),
         ((_growth(dependency="multiple_only", claims=[_claim("revenue.engine", "revenue")]),), "activated_case"),
     ],
@@ -268,6 +269,31 @@ def test_business_model_revenue_engine_supports_multiple_expansion():
         (business, _growth(dependency="multiple_only")),
         final_direction="latent_case",
     ) == ()
+
+
+def test_multiple_expansion_audit_includes_business_model_claims():
+    business = _business(
+        "inside",
+        claims=[
+            _claim(
+                "revenue.decline",
+                "revenue",
+                direction=SpecialistClaimDirection.NEGATIVE,
+                value="confirmed",
+            )
+        ],
+    )
+
+    conflicts = evaluate_specialist_conflicts(
+        (business, _growth(dependency="multiple_only")),
+        final_direction="latent_case",
+    )
+
+    assert conflicts[0].trigger_claim_ids == (
+        "valuation.case",
+        "revenue.decline",
+    )
+    assert conflicts[0].source_ids == (_SOURCE,)
 
 
 def test_evaluation_fixture_has_precision_oriented_evidence():

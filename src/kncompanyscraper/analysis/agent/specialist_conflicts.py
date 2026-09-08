@@ -173,6 +173,9 @@ def evaluate_specialist_conflicts(
     ):
         growth_claims = growth.growth_valuation.claims
         margin_claims = margin_output.claims if margin_output is not None else []
+        business_claims = business.claims if business is not None else []
+        if business is not None and business.business_model is not None:
+            business_claims = [*business_claims, *business.business_model.claims]
         conflicts.append(
             SpecialistConflict(
                 rule_id="multiple_expansion_vs_activation",
@@ -186,6 +189,7 @@ def evaluate_specialist_conflicts(
                     [
                         *[claim.claim_id for claim in growth_claims],
                         *[claim.claim_id for claim in margin_claims],
+                        *[claim.claim_id for claim in business_claims],
                     ]
                 ),
                 explanation="multiple_expansion_is_primary_without_a_supported_fundamental_engine",
@@ -193,6 +197,7 @@ def evaluate_specialist_conflicts(
                     [
                         *[source_id for claim in growth_claims for source_id in claim.source_ids],
                         *[source_id for claim in margin_claims for source_id in claim.source_ids],
+                        *[source_id for claim in business_claims for source_id in claim.source_ids],
                     ]
                 ),
                 action="block_activation",
@@ -258,16 +263,23 @@ def _circle_conflict(business: SpecialistOutput, growth: SpecialistOutput) -> bo
     if business_payload is None or growth_payload is None:
         return False
     outside_circle = business_payload.circle_of_competence in {"outside", "unassessable"}
-    valuation_claims = [*growth.claims, *growth_payload.claims]
-    valuation_unassessable = growth_payload.reverse_dcf_assessment == "unassessable"
-    valuation_unassessable |= any(
+    valuation_claims = [
+        claim
+        for claim in [*growth.claims, *growth_payload.claims]
+        if claim.domain == "valuation"
+    ]
+    valuation_unassessable_claim = any(
         claim.domain == "valuation"
         and claim.direction is SpecialistClaimDirection.UNASSESSABLE
         and claim.source_ids
         for claim in valuation_claims
     )
-    return outside_circle and valuation_unassessable and any(
-        claim.source_ids for claim in valuation_claims
+    valuation_unassessable_assumption = (
+        growth_payload.reverse_dcf_assessment == "unassessable"
+        and any(claim.source_ids for claim in valuation_claims)
+    )
+    return outside_circle and (
+        valuation_unassessable_claim or valuation_unassessable_assumption
     )
 
 
