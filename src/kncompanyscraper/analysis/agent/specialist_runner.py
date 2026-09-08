@@ -98,24 +98,6 @@ _CAUSAL_CLAIM_MARKERS = {
     "superior_evidence_or_opportunity": {"evidence", "opportunity", "alternative"},
 }
 _CAUSAL_STATUS_PREDICATES = {"assessment", "result", "state", "status"}
-_CAUSAL_POSITIVE_DIRECTION_TOKENS = {
-    "improve",
-    "improves",
-    "improved",
-    "improving",
-    "increase",
-    "increases",
-    "increased",
-    "increasing",
-    "grow",
-    "grows",
-    "grew",
-    "growing",
-    "strengthen",
-    "strengthens",
-    "strengthened",
-    "strengthening",
-}
 _CAUSAL_STATUS_VALUES_BY_BREAK = {
     "revenue_or_demand": {
         "declining",
@@ -824,10 +806,8 @@ def _deterministic_scenario_data(packet):
         return None
     # Keep the sell prompt bounded to deterministic inputs; it never receives
     # the frozen packet or any first-wave narrative here.
-    keys = ("reverse_dcf", "financial_history", "valuation", "forward_scenario")
+    keys = ("reverse_dcf", "forward_scenario")
     data = {key: full_results[key] for key in keys if key in full_results}
-    # Financial history alone is not a deterministic scenario result. Keep it
-    # out of the second-wave input unless the packet has scenario/valuation data.
     return data if any(key in data for key in ("reverse_dcf", "forward_scenario")) else None
 
 
@@ -1137,6 +1117,22 @@ def _semantic_tokens(value):
     return set(re.findall(r"[a-z0-9]+", str(value).casefold()))
 
 
+def _causal_condition_direction(condition, threshold_or_direction):
+    text = " ".join(
+        str(value).casefold()
+        for value in (condition, threshold_or_direction)
+    )
+    positive_terms = r"improv\w*|increas\w*|grow\w*|strengthen\w*|ris\w*|higher|better|expand\w*|recover\w*"
+    if re.search(
+        rf"\b(?:does not|doesn't|did not|didn't|not|never|fails to|failed to)\s+(?:{positive_terms})\b",
+        text,
+    ):
+        return "negative"
+    if re.search(rf"\b(?:{positive_terms})\b", text):
+        return "positive"
+    return "neutral"
+
+
 def _causal_reference_matches(
     break_type,
     reference,
@@ -1168,10 +1164,9 @@ def _causal_reference_matches(
         return False
     typed_claim_tokens.update(_semantic_tokens(domain))
     condition_tokens = _semantic_tokens((condition, threshold_or_direction))
-    if (
-        direction == "negative"
-        and condition_tokens.intersection(_CAUSAL_POSITIVE_DIRECTION_TOKENS)
-    ):
+    if direction in {"negative", "mixed"} and _causal_condition_direction(
+        condition, threshold_or_direction
+    ) == "positive":
         return False
     evidence_text_tokens = _semantic_tokens(
         (observable_metric_or_event, condition, threshold_or_direction)
