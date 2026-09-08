@@ -141,7 +141,10 @@ def evaluate_specialist_conflicts(
         business, growth
     ):
         business_claims = business.business_model.claims
-        growth_claims = growth.growth_valuation.claims
+        growth_claims = [
+            *growth.claims,
+            *growth.growth_valuation.claims,
+        ]
         conflicts.append(
             SpecialistConflict(
                 rule_id="circle_of_competence_vs_valuation",
@@ -171,7 +174,10 @@ def evaluate_specialist_conflicts(
     if growth is not None and _multiple_conflict(
         growth, margin_output, business, final_direction
     ):
-        growth_claims = growth.growth_valuation.claims
+        growth_claims = [
+            *growth.claims,
+            *growth.growth_valuation.claims,
+        ]
         margin_claims = margin_output.claims if margin_output is not None else []
         business_claims = business.claims if business is not None else []
         if business is not None and business.business_model is not None:
@@ -301,6 +307,14 @@ def _has_supported_fundamental_engine(
         claims.extend(growth.growth_valuation.claims)
     if margin is not None:
         claims.extend(margin.claims)
+        if margin.margin is not None:
+            margin_payload = margin.margin
+            if (
+                margin_payload.margin_state == "active"
+                and margin_payload.mechanism
+                and margin_payload.supporting_source_ids
+            ):
+                return True
     if business is not None:
         claims.extend(business.claims)
         if business.business_model is not None:

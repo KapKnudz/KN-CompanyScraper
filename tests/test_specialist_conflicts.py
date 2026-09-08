@@ -160,9 +160,16 @@ def _business(circle="outside", claims=None):
     )
 
 
-def _growth(*, reverse="demanding", dependency="fundamental", claims=None):
+def _growth(
+    *,
+    reverse="demanding",
+    dependency="fundamental",
+    claims=None,
+    envelope_claims=None,
+):
     return _output(
         SpecialistAgentName.GROWTH_VALUATION,
+        claims=envelope_claims or [],
         growth_valuation=GrowthValuationSpecialistOutput(
             growth_state="supported",
             revenue_mechanism="organic_growth",
@@ -221,6 +228,24 @@ def test_explicit_conflict_rules_surface_typed_triggers(
         ((_business("inside"), _growth()), None),
         ((_business("outside"), _growth(reverse="plausible")), None),
         ((_business("outside"), _growth(reverse="unassessable", claims=[_claim("growth.engine", "revenue")])), None),
+        (
+            (
+                _margin(
+                    state="active",
+                    dependency="material",
+                    claims=[
+                        _claim(
+                            "margin.context",
+                            "margin",
+                            direction=SpecialistClaimDirection.NEGATIVE,
+                            value="confirmed",
+                        )
+                    ],
+                ),
+                _growth(dependency="multiple_only"),
+            ),
+            "latent_case",
+        ),
         ((_growth(dependency="multiple_only"),), None),
         ((_growth(dependency="multiple_only", claims=[_claim("revenue.engine", "revenue")]),), "activated_case"),
     ],
@@ -302,6 +327,46 @@ def test_multiple_expansion_audit_includes_business_model_claims():
         "revenue.decline",
     )
     assert conflicts[0].source_ids == (_SOURCE,)
+
+
+def test_circle_audit_includes_growth_envelope_claims():
+    growth = _growth(
+        reverse="unassessable",
+        claims=[_unassessable_valuation_claim()],
+        envelope_claims=[_claim("valuation.envelope", "valuation")],
+    )
+
+    conflicts = evaluate_specialist_conflicts((_business("outside"), growth))
+
+    assert conflicts[0].trigger_claim_ids == (
+        "business.circle",
+        "valuation.envelope",
+        "valuation.gap",
+    )
+
+
+def test_multiple_expansion_audit_includes_growth_envelope_claims():
+    growth = _growth(
+        dependency="multiple_only",
+        envelope_claims=[
+            _claim(
+                "revenue.decline",
+                "revenue",
+                direction=SpecialistClaimDirection.NEGATIVE,
+                value="confirmed",
+            )
+        ],
+    )
+
+    conflicts = evaluate_specialist_conflicts(
+        (growth,),
+        final_direction="latent_case",
+    )
+
+    assert conflicts[0].trigger_claim_ids == (
+        "revenue.decline",
+        "valuation.case",
+    )
 
 
 def test_evaluation_fixture_has_precision_oriented_evidence():
