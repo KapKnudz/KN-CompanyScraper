@@ -63,13 +63,31 @@ _SPECIALIST_PROMPT_RESOURCES = {
     SpecialistAgentName.SELL_CONDITIONS: "specialist_sell_conditions_prompt.md",
 }
 
-_CAUSAL_CLAIM_MARKERS = {
-    "revenue_or_demand": {"revenue", "demand", "sales", "customer", "churn", "retention"},
-    "margin_or_execution": {"margin", "execution", "cost", "profitability"},
-    "balance_sheet_or_dilution": {"balance", "debt", "dilution", "shares", "financing", "capital"},
-    "management_credibility": {"management", "promise", "guidance", "milestone"},
-    "valuation_overshoot": {"valuation", "multiple", "expectation"},
-    "superior_evidence_or_opportunity": {"evidence", "opportunity", "alternative"},
+_CAUSAL_CLAIM_DOMAINS = {
+    "revenue_or_demand": {"business_model", "revenue", "demand"},
+    "margin_or_execution": {"margin", "execution"},
+    "balance_sheet_or_dilution": {
+        "balance_sheet",
+        "capital_allocation",
+        "dilution",
+        "insider_ownership",
+    },
+    "management_credibility": {"management", "management_credibility"},
+    "valuation_overshoot": {"growth_valuation", "valuation"},
+    "superior_evidence_or_opportunity": {
+        "balance_sheet",
+        "business_model",
+        "capital_allocation",
+        "demand",
+        "dilution",
+        "execution",
+        "insider_ownership",
+        "management",
+        "management_credibility",
+        "margin",
+        "revenue",
+        "valuation",
+    },
 }
 
 @dataclass(frozen=True)
@@ -160,11 +178,7 @@ class SpecialistPromptBuilder:
                 ensure_ascii=False,
                 sort_keys=True,
             )
-            catalog = (
-                packet.get("evidence_catalog", {})
-                if isinstance(packet, dict)
-                else packet.evidence_catalog
-            )
+            catalog = _packet_evidence_catalog(packet)
             user = (
                 "Agent name: sell_conditions\n"
                 "Domain payload: sell_conditions\n\n"
@@ -801,6 +815,16 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
                 "sell condition references unknown frozen-packet source IDs: "
                 + ", ".join(unknown_sources)
             )
+    for blocker in sell.activation_blockers:
+        cited_sources = {
+            source_id
+            for claim_id in blocker.claim_ids
+            for source_id in references_by_id[claim_id][0]
+        }
+        if not set(blocker.source_ids).intersection(cited_sources):
+            raise ValueError(
+                "sell activation blocker sources must support cited upstream claims"
+            )
     for test in sell.tests:
         if test.current_break_status is not SellConditionStatus.TRIGGERED:
             continue
@@ -952,14 +976,14 @@ def _causal_reference_matches(
     threshold_or_direction,
     sell_source_ids,
 ):
-    source_ids, _, causal, _, predicate, value = reference
+    source_ids, _, causal, domain, predicate, value = reference
     if not set(source_ids).intersection(sell_source_ids):
         return False
     if not causal:
         return False
-    typed_claim_tokens = _semantic_tokens((predicate, value))
-    if not typed_claim_tokens.intersection(_CAUSAL_CLAIM_MARKERS[break_type]):
+    if domain not in _CAUSAL_CLAIM_DOMAINS[break_type]:
         return False
+    typed_claim_tokens = _semantic_tokens((domain, predicate, value))
     condition_tokens = _semantic_tokens((condition, threshold_or_direction))
     evidence_text_tokens = _semantic_tokens(
         (observable_metric_or_event, condition, threshold_or_direction)
