@@ -53,13 +53,18 @@ final-verdict agreement, activation outcomes and false-positive rate, per-agent
 confidence calibration, and availability of run metadata including run and agent
 identity, packet hash, and prompt hash.
 
-## Future paired cohort
+## Paired tier comparison
 
-To add the trusted 12–20 company cohort, freeze one reviewed packet per company,
-record its hash in a new case, and have two humans label the claims, management rows,
-source validity, conflict triggers, and any verdict/activation expectations. Do not
-label from model output and do not invent investment ground truth. Store best-tier and
-candidate-tier artifacts against the same packet hashes and run IDs, then run this
-harness separately for each frozen cohort before comparing the paired reports. Compare
-them on a holdout cohort before changing routing. Keep the synthetic fixture separate
-and do not treat it as benchmark evidence.
+`compare_paired_specialist_evaluations` runs the best-tier and candidate-tier
+artifact sets separately, then aligns their reports by case ID, frozen packet
+hash, and specialist agent. Its `metric_deltas` are candidate minus best, while
+the nested reports preserve each run's metadata and rejection accounting.
+Do not combine the two artifact arrays before calling the paired entry point.
+
+For the trusted 12–20 company cohort, freeze one reviewed packet per company,
+record its hash in a new case, and have two humans label the claims, management
+rows, source validity, conflict triggers, and any verdict/activation expectations.
+Do not label from model output and do not invent investment ground truth. Store
+best-tier and candidate-tier artifacts against the same packet hashes and run IDs,
+then compare the paired reports on a holdout cohort before changing routing.
+Keep the synthetic fixture separate and do not treat it as benchmark evidence.

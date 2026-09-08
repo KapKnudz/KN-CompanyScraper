@@ -33,6 +33,7 @@ from kncompanyscraper.analysis.agent.specialist_conflicts import (
 CASES_SCHEMA_VERSION = "specialist-evaluation-cases-v1"
 REPORT_SCHEMA_VERSION = "specialist-evaluation-report-v1"
 CASE_RESULT_SCHEMA_VERSION = "specialist-case-result-v1"
+PAIRED_REPORT_SCHEMA_VERSION = "specialist-evaluation-pair-v1"
 CONFLICT_RULES = (
     "margin_vs_sell_condition",
     "insider_vs_credibility_record",
@@ -300,7 +301,7 @@ def _parse_case_level_result(record: Mapping, case: Mapping) -> tuple[dict | Non
     if payload.get("packet_hash") != case["packet_hash"]:
         return None, "case-level result packet_hash must match evaluation case"
     final_verdict = payload.get("final_verdict")
-    if final_verdict not in _FINAL_VERDICTS:
+    if not isinstance(final_verdict, str) or final_verdict not in _FINAL_VERDICTS:
         return None, "case-level result final_verdict is unknown"
     if metadata.get("final_verdict") not in (None, final_verdict):
         return None, "case-level result final_verdict disagrees with metadata"
@@ -454,7 +455,7 @@ def compare_specialist_evaluations(
                 rejection_count += 1
                 artifact_errors.append(str(exc))
                 continue
-            if output.status.value != "complete":
+            if output.status.value == "failed":
                 rejection_count += 1
                 artifact_errors.append(f"artifact status is {output.status.value!r}")
                 continue
@@ -477,21 +478,28 @@ def compare_specialist_evaluations(
             valid_records.append(record)
         totals["parse_semantic_rejection"]["rejected"] += rejection_count
         labels = case["labels"]
+        outputs_by_agent = {output.agent_name.value: output for output in parsed}
+        available_outputs = [
+            output for output in parsed if output.status.value == "complete"
+        ]
         packet = _packet_for_case(case, packet_map)
-        valid_sources, invalid_sources, unavailable_sources = _source_status(parsed, packet)
+        valid_sources, invalid_sources, unavailable_sources = _source_status(available_outputs, packet)
         totals["source_id_validity"]["valid"] += valid_sources
         totals["source_id_validity"]["invalid"] += invalid_sources
         totals["source_id_validity"]["evaluated"] += valid_sources + invalid_sources
         totals["source_id_validity"]["unavailable"] += unavailable_sources
         claim_correct = claim_incorrect = claim_skipped = claim_unavailable = 0
-        claim_index = {(output.agent_name.value, claim.claim_id): claim for output in parsed for claim in _output_claims(output)}
+        claim_index = {(output.agent_name.value, claim.claim_id): claim for output in available_outputs for claim in _output_claims(output)}
         for label in labels.get("claims", []):
             if _na(label):
                 claim_skipped += 1
                 continue
             claim = claim_index.get((label["agent_name"], label["claim_id"]))
             if claim is None:
-                claim_incorrect += 1
+                if label["agent_name"] in outputs_by_agent and outputs_by_agent[label["agent_name"]].status.value == "insufficient_evidence":
+                    claim_unavailable += 1
+                else:
+                    claim_incorrect += 1
                 continue
             matches = True
             if label.get("expected_direction") is not None:
@@ -502,10 +510,10 @@ def compare_specialist_evaluations(
                 claim_correct += 1
             else:
                 claim_incorrect += 1
-        row_correct = row_incorrect = row_skipped = 0
+        row_correct = row_incorrect = row_skipped = row_unavailable = 0
         row_index = {
             row.claim_id: row
-            for output in parsed
+            for output in available_outputs
             if output.management_credibility is not None
             for row in output.management_credibility.ledger
         }
@@ -514,17 +522,22 @@ def compare_specialist_evaluations(
                 row_skipped += 1
             elif label["claim_id"] in row_index and getattr(row_index[label["claim_id"]].result, "value", row_index[label["claim_id"]].result) == label["expected_result"]:
                 row_correct += 1
+            elif (
+                SpecialistAgentName.MANAGEMENT_CREDIBILITY.value in outputs_by_agent
+                and outputs_by_agent[SpecialistAgentName.MANAGEMENT_CREDIBILITY.value].status.value == "insufficient_evidence"
+            ):
+                row_unavailable += 1
             else:
                 row_incorrect += 1
-        for metric, correct, incorrect, skipped in (
-            (totals["claim_label_agreement"], claim_correct, claim_incorrect, claim_skipped),
-            (totals["management_row_classification_agreement"], row_correct, row_incorrect, row_skipped),
+        for metric, correct, incorrect, skipped, unavailable in (
+            (totals["claim_label_agreement"], claim_correct, claim_incorrect, claim_skipped, claim_unavailable),
+            (totals["management_row_classification_agreement"], row_correct, row_incorrect, row_skipped, row_unavailable),
         ):
             metric["correct"] += correct
             metric["incorrect"] += incorrect
             metric["skipped_not_applicable"] += skipped
+            metric["unavailable"] += unavailable
             metric["evaluated"] += correct + incorrect
-        outputs_by_agent = {output.agent_name.value: output for output in parsed}
         case_final_verdict = (
             _actual_final_verdict(case_level_results)
             if not case_level_errors
@@ -535,7 +548,7 @@ def compare_specialist_evaluations(
         } if case_final_verdict is None else set()
         actual_conflicts = {
             conflict.rule_id
-            for conflict in evaluate_specialist_conflicts(parsed, final_direction=case_final_verdict)
+            for conflict in evaluate_specialist_conflicts(available_outputs, final_direction=case_final_verdict)
             if conflict.rule_id not in unavailable_conflict_rules
         }
         expected_conflicts = set(labels.get("conflicts", {}).get("expected_triggered", []))
@@ -610,7 +623,7 @@ def compare_specialist_evaluations(
                     {"correct": 0, "evaluated": 0, "unavailable": 0, "mean_absolute_error": None, "_absolute_error_sum": 0},
                 )
                 output = outputs_by_agent.get(agent_name)
-                if output is None:
+                if output is None or output.status.value != "complete":
                     confidence_metric["unavailable"] += 1
                     agent_metric["unavailable"] += 1
                     continue
@@ -624,8 +637,10 @@ def compare_specialist_evaluations(
                 agent_metric["_absolute_error_sum"] += absolute_error
         case_reports.append({
             "case_id": case["case_id"],
+            "packet_hash": case["packet_hash"],
             "artifact_count": len(matched),
             "accepted_count": len(parsed),
+            "unavailable_count": sum(output.status.value == "insufficient_evidence" for output in parsed),
             "rejected_count": rejection_count,
             "artifact_errors": artifact_errors,
             "packet_status": "available" if packet is not None and not packet.get("_packet_hash_mismatch") and not packet.get("_packet_identity_mismatch") else "unavailable",
@@ -637,6 +652,9 @@ def compare_specialist_evaluations(
                     {field: _metadata(record).get(field) for field in _METADATA_FIELDS}
                     for record in case_level_records
                 ],
+            },
+            "agent_statuses": {
+                output.agent_name.value: output.status.value for output in parsed
             },
         })
     for metric in totals.values():
@@ -681,6 +699,66 @@ def compare_specialist_evaluations(
             }
             for field in _METADATA_FIELDS
         },
+    }
+
+
+def _numeric_deltas(best: Any, candidate: Any) -> Any:
+    if isinstance(best, Mapping) and isinstance(candidate, Mapping):
+        deltas = {}
+        for key in sorted(set(best) | set(candidate)):
+            delta = _numeric_deltas(best.get(key), candidate.get(key))
+            if delta is not None:
+                deltas[key] = delta
+        return deltas or None
+    if (
+        isinstance(best, (int, float))
+        and not isinstance(best, bool)
+        and isinstance(candidate, (int, float))
+        and not isinstance(candidate, bool)
+    ):
+        return candidate - best
+    return None
+
+
+def compare_paired_specialist_evaluations(
+    cases: str | Path | Mapping | Sequence,
+    best_artifacts: str | Path | Mapping | Sequence,
+    candidate_artifacts: str | Path | Mapping | Sequence,
+    *,
+    packets: str | Path | Mapping | Sequence | None = None,
+) -> dict:
+    """Compare separate best-tier and candidate-tier evaluation runs."""
+    case_list = load_cases(cases) if not isinstance(cases, list) else validate_cases_document({"schema_version": CASES_SCHEMA_VERSION, "cases": cases})
+    best_report = compare_specialist_evaluations(case_list, best_artifacts, packets=packets)
+    candidate_report = compare_specialist_evaluations(case_list, candidate_artifacts, packets=packets)
+    best_cases = {case["case_id"]: case for case in best_report["cases"]}
+    candidate_cases = {case["case_id"]: case for case in candidate_report["cases"]}
+    aligned_cases = []
+    for case in case_list:
+        case_id = case["case_id"]
+        best_case = best_cases[case_id]
+        candidate_case = candidate_cases[case_id]
+        _require(best_case["packet_hash"] == case["packet_hash"], f"best-tier report packet mismatch for case {case_id}")
+        _require(candidate_case["packet_hash"] == case["packet_hash"], f"candidate-tier report packet mismatch for case {case_id}")
+        agent_names = sorted(set(best_case["agent_statuses"]) | set(candidate_case["agent_statuses"]))
+        aligned_cases.append({
+            "case_id": case_id,
+            "packet_hash": case["packet_hash"],
+            "agents": {
+                agent_name: {
+                    "best_tier": best_case["agent_statuses"].get(agent_name),
+                    "candidate_tier": candidate_case["agent_statuses"].get(agent_name),
+                }
+                for agent_name in agent_names
+            },
+        })
+    return {
+        "schema_version": PAIRED_REPORT_SCHEMA_VERSION,
+        "case_count": len(case_list),
+        "best_tier_report": best_report,
+        "candidate_tier_report": candidate_report,
+        "metric_deltas": _numeric_deltas(best_report["metrics"], candidate_report["metrics"]) or {},
+        "cases": aligned_cases,
     }
 
 

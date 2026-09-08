@@ -8,6 +8,7 @@ import pytest
 from kncompanyscraper.analysis.agent.specialist_evaluation import (
     CASES_SCHEMA_VERSION,
     EvaluationFormatError,
+    compare_paired_specialist_evaluations,
     compare_specialist_evaluations,
     format_evaluation_report,
     load_cases,
@@ -353,6 +354,64 @@ def test_case_level_result_requires_packet_binding_and_valid_content():
     case_result = report["cases"][0]["case_level_result"]
     assert case_result["available"] is False
     assert report["metrics"]["activation_outcomes"]["unavailable"] == 1
+
+
+def test_malformed_case_level_verdict_is_unavailable_not_an_exception():
+    cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["content"] = case_result_content(cases, "activated_case").replace(
+        '"final_verdict": "activated_case"', '"final_verdict": []'
+    )
+    artifacts["artifacts"][0]["metadata"]["final_verdict"] = "activated_case"
+    artifacts["artifacts"][0]["metadata"]["result_scope"] = "case"
+    cases["cases"][0]["labels"]["activation"] = True
+
+    report = run(cases, artifacts, packets)
+
+    assert report["cases"][0]["case_level_result"]["available"] is False
+    assert report["metrics"]["activation_outcomes"]["unavailable"] == 1
+
+
+def test_insufficient_evidence_is_accepted_but_unavailable():
+    cases, artifacts, packets = documents()
+    payload = json.loads(artifacts["artifacts"][0]["content"])
+    payload["status"] = "insufficient_evidence"
+    payload.pop("management_credibility")
+    artifacts["artifacts"][0]["content"] = json.dumps(payload)
+
+    report = run(cases, artifacts, packets)
+
+    assert report["metrics"]["parse_semantic_rejection"]["rejected"] == 0
+    assert report["cases"][0]["accepted_count"] == 2
+    assert report["cases"][0]["unavailable_count"] == 1
+    assert report["metrics"]["claim_label_agreement"]["unavailable"] == 1
+    assert report["metrics"]["confidence_calibration"]["unavailable"] == 1
+
+
+def test_paired_comparison_keeps_tiers_separate_and_reports_deltas():
+    cases, best_artifacts, packets = documents()
+    candidate_artifacts = copy.deepcopy(best_artifacts)
+    candidate_artifacts["artifacts"][0]["metadata"]["model_tier"] = "candidate"
+    candidate_payload = json.loads(candidate_artifacts["artifacts"][0]["content"])
+    candidate_payload["claims"][0]["value"] = "changed"
+    candidate_artifacts["artifacts"][0]["content"] = json.dumps(candidate_payload)
+    cases["cases"][0]["labels"]["confidence"] = {
+        "management_credibility": "low",
+        "insider_ownership": "low",
+    }
+
+    report = compare_paired_specialist_evaluations(
+        cases, best_artifacts, candidate_artifacts, packets=packets
+    )
+
+    assert report["schema_version"] == "specialist-evaluation-pair-v1"
+    assert report["best_tier_report"]["cases"][0]["accepted_count"] == 2
+    assert report["candidate_tier_report"]["cases"][0]["accepted_count"] == 2
+    assert report["cases"][0]["packet_hash"] == cases["cases"][0]["packet_hash"]
+    assert report["cases"][0]["agents"]["management_credibility"] == {
+        "best_tier": "complete",
+        "candidate_tier": "complete",
+    }
+    assert report["metric_deltas"]["claim_label_agreement"]["correct"] == -1
 
 
 def test_conflict_recall_skips_rules_requiring_unavailable_case_verdict():
