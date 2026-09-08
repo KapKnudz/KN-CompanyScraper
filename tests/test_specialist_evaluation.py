@@ -1,5 +1,6 @@
 import copy
 import json
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -109,6 +110,71 @@ def test_invalid_source_ids_are_counted_and_source_label_disagrees():
     assert source["invalid"] == 4
     assert source["label_incorrect"] == 1
     assert source["label_agreement_rate"] == 0
+
+
+def test_missing_source_ids_are_unavailable_not_all_valid():
+    cases, artifacts, packets = documents()
+    payload = json.loads(artifacts["artifacts"][0]["content"])
+    payload["claims"][0]["source_ids"] = []
+    payload["management_credibility"]["ledger"][0]["claim_source_ids"] = []
+    payload["management_credibility"]["ledger"][0]["outcome_source_ids"] = []
+    payload["management_credibility"]["ledger"][0]["source_ids"] = []
+    artifacts["artifacts"][0]["content"] = json.dumps(payload)
+
+    report = run(cases, artifacts, packets)
+    source = report["metrics"]["source_id_validity"]
+    assert source["valid"] == 0
+    assert source["evaluated"] == 0
+    assert source["unavailable"] == 1
+    assert source["label_incorrect"] == 0
+
+
+def test_rejected_and_mismatched_artifacts_are_not_scored():
+    cases, artifacts, packets = documents()
+    payload = json.loads(artifacts["artifacts"][0]["content"])
+    payload["run_id"] = "wrong-run"
+    artifacts["artifacts"][0]["content"] = json.dumps(payload)
+    report = run(cases, artifacts, packets)
+    assert report["metrics"]["parse_semantic_rejection"]["rejected"] == 1
+    assert report["cases"][0]["accepted_count"] == 1
+
+    artifacts["artifacts"][0]["content"] = documents()[1]["artifacts"][0]["content"]
+    artifacts["artifacts"][0]["metadata"]["validation_status"] = "rejected"
+    report = run(cases, artifacts, packets)
+    assert report["metrics"]["parse_semantic_rejection"]["rejected"] == 1
+    assert report["cases"][0]["accepted_count"] == 1
+
+
+def test_packet_identity_mismatch_makes_source_evidence_unavailable():
+    cases, artifacts, packets = documents()
+    wrong_packet = {
+        "company_id": 2,
+        "ticker": "OTHER",
+        "full_results": {"financial_history": {"revenue": 10}},
+        "research_evidence": {"documents": [{"source_id": "report:one"}]},
+    }
+    wrong_hash = sha256(
+        json.dumps(wrong_packet, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    cases["cases"][0]["packet_hash"] = wrong_hash
+    for artifact in artifacts["artifacts"]:
+        artifact["metadata"]["packet_hash"] = wrong_hash
+        payload = json.loads(artifact["content"])
+        payload["packet_hash"] = wrong_hash
+        artifact["content"] = json.dumps(payload)
+    packets["1"] = wrong_packet
+
+    report = run(cases, artifacts, packets)
+    assert report["cases"][0]["packet_status"] == "unavailable"
+    assert report["metrics"]["source_id_validity"]["unavailable"] >= 1
+
+
+def test_duplicate_agent_artifacts_are_rejected():
+    cases, artifacts, packets = documents()
+    artifacts["artifacts"].append(copy.deepcopy(artifacts["artifacts"][0]))
+    report = run(cases, artifacts, packets)
+    assert report["metrics"]["parse_semantic_rejection"]["rejected"] == 1
+    assert report["cases"][0]["accepted_count"] == 2
 
 
 def test_activation_false_positive_and_metadata_availability_are_reported():

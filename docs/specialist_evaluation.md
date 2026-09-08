@@ -54,7 +54,7 @@ To add the trusted 12–20 company cohort, freeze one reviewed packet per compan
 record its hash in a new case, and have two humans label the claims, management rows,
 source validity, conflict triggers, and any verdict/activation expectations. Do not
 label from model output and do not invent investment ground truth. Store best-tier and
-candidate-tier artifacts against the same packet hashes and run IDs, then invoke the
-same cases twice (or combine both artifact sets). Compare the paired reports on a
-holdout cohort before changing routing. Keep the synthetic fixture separate and do
-not treat it as benchmark evidence.
+candidate-tier artifacts against the same packet hashes and run IDs, then run this
+harness separately for each frozen cohort before comparing the paired reports. Compare
+them on a holdout cohort before changing routing. Keep the synthetic fixture separate
+and do not treat it as benchmark evidence.

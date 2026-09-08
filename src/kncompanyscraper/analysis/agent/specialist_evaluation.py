@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -184,6 +185,8 @@ def _packet_for_case(case: Mapping, packets: Mapping[str, Mapping]) -> Mapping |
         packet = case["packet"]
     if packet is None:
         return None
+    if packet.get("company_id") != case["company_id"] or packet.get("ticker") != case["ticker"]:
+        return {"_packet_identity_mismatch": True}
     serialized = json.dumps(packet, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     if sha256(serialized.encode("utf-8")).hexdigest() != case["packet_hash"]:
         return {"_packet_hash_mismatch": True}
@@ -250,25 +253,29 @@ def _metric(correct: int, incorrect: int, skipped: int = 0, unavailable: int = 0
     }
 
 
+def _collect_source_ids(value: Any) -> list[str]:
+    if isinstance(value, Mapping):
+        source_ids = []
+        for key, item in value.items():
+            if isinstance(key, str) and key.endswith("source_ids") and isinstance(item, Sequence) and not isinstance(item, (str, bytes)):
+                source_ids.extend(item)
+            source_ids.extend(_collect_source_ids(item))
+        return source_ids
+    if is_dataclass(value):
+        return _collect_source_ids(vars(value))
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        source_ids = []
+        for item in value:
+            source_ids.extend(_collect_source_ids(item))
+        return source_ids
+    return []
+
+
 def _source_status(outputs: Sequence[Any], packet: Mapping | None) -> tuple[int, int, int]:
-    source_ids = []
-    for output in outputs:
-        for claim in _output_claims(output):
-            source_ids.extend(claim.source_ids)
-        if output.management_credibility is not None:
-            for row in output.management_credibility.ledger:
-                source_ids.extend(row.source_ids)
-                source_ids.extend(row.claim_source_ids)
-                source_ids.extend(row.outcome_source_ids)
-        if output.margin is not None:
-            source_ids.extend(output.margin.supporting_source_ids)
-            source_ids.extend(output.margin.contrary_source_ids)
-        if output.sell_conditions is not None:
-            for test in output.sell_conditions.tests:
-                source_ids.extend(test.get("source_ids", []))
-            for blocker in output.sell_conditions.activation_blockers:
-                source_ids.extend(blocker.get("source_ids", []))
-    if packet is None or packet.get("_packet_hash_mismatch"):
+    source_ids = _collect_source_ids(outputs)
+    if not source_ids:
+        return 0, 0, 1
+    if packet is None or packet.get("_packet_hash_mismatch") or packet.get("_packet_identity_mismatch"):
         return 0, 0, max(1, len(source_ids))
     catalog = packet.get("evidence_catalog") or build_evidence_catalog(packet.get("full_results", {}), packet.get("research_evidence", {}))
     valid = invalid = 0
@@ -330,6 +337,10 @@ def compare_specialist_evaluations(
             content = record.get("content")
             metadata = _metadata(record)
             metadata_records.append({field: metadata.get(field) for field in _METADATA_FIELDS})
+            if metadata.get("validation_status") not in (None, "accepted"):
+                rejection_count += 1
+                artifact_errors.append(f"artifact validation_status is {metadata['validation_status']!r}")
+                continue
             if not isinstance(content, str):
                 rejection_count += 1
                 artifact_errors.append("artifact content is missing or not a string")
@@ -339,6 +350,25 @@ def compare_specialist_evaluations(
             except (StockAnalysisValidationError, ValueError, TypeError) as exc:
                 rejection_count += 1
                 artifact_errors.append(str(exc))
+                continue
+            if output.status.value != "complete":
+                rejection_count += 1
+                artifact_errors.append(f"artifact status is {output.status.value!r}")
+                continue
+            if (
+                output.company_id != case["company_id"]
+                or output.ticker != case["ticker"]
+                or output.packet_hash != case["packet_hash"]
+                or (case.get("run_id") is not None and output.run_id != case["run_id"])
+                or (metadata.get("run_id") is not None and output.run_id != metadata["run_id"])
+                or (metadata.get("agent_name") is not None and output.agent_name.value != metadata["agent_name"])
+            ):
+                rejection_count += 1
+                artifact_errors.append("artifact identity does not match evaluation case")
+                continue
+            if any(existing.agent_name is output.agent_name for existing in parsed):
+                rejection_count += 1
+                artifact_errors.append(f"duplicate artifact for agent {output.agent_name.value!r}")
                 continue
             parsed.append(output)
             valid_records.append(record)
@@ -457,7 +487,7 @@ def compare_specialist_evaluations(
             "accepted_count": len(parsed),
             "rejected_count": rejection_count,
             "artifact_errors": artifact_errors,
-            "packet_status": "available" if packet is not None and not packet.get("_packet_hash_mismatch") else "unavailable",
+            "packet_status": "available" if packet is not None and not packet.get("_packet_hash_mismatch") and not packet.get("_packet_identity_mismatch") else "unavailable",
             "metadata": [{field: _metadata(record).get(field) for field in _METADATA_FIELDS} for record in valid_records],
         })
     for metric in totals.values():
