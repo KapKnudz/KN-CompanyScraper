@@ -73,7 +73,7 @@ _CAUSAL_CLAIM_DOMAINS = {
         "insider_ownership",
     },
     "management_credibility": {"management_credibility"},
-    "valuation_overshoot": {"growth_valuation"},
+    "valuation_overshoot": {"growth_valuation", "valuation"},
     "superior_evidence_or_opportunity": {
         "balance_sheet",
         "business_model",
@@ -96,6 +96,7 @@ _STRUCTURED_CAUSAL_VALUES_BY_BREAK = {
         "declining",
         "deteriorated",
         "deteriorating",
+        "fails_to_grow",
         "weak",
         "worsening",
     },
