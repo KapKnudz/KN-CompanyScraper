@@ -466,13 +466,16 @@ class ShadowSpecialistRunner:
                 or result.output.status is not SpecialistStatus.COMPLETE
             )
         ]
+        upstream_unavailable = not upstream_results or bool(missing_agents)
         blocker_codes = []
-        if missing_agents:
+        if upstream_unavailable:
             blocker_codes.append("upstream_specialist_unavailable")
         if not _scenario_data_available(scenario_data):
             blocker_codes.append("deterministic_scenario_unavailable")
         claim_ids = _upstream_claim_ids(upstream_results)
-        source_ids = _upstream_source_ids(upstream_results)
+        source_ids = _sell_source_ids_in_catalog(
+            packet, _upstream_source_ids(upstream_results)
+        )
         tests = [
             SellConditionAssessment(
                 break_type=break_type,
@@ -495,7 +498,7 @@ class ShadowSpecialistRunner:
             for code in blocker_codes
         ]
         missing = []
-        if missing_agents:
+        if upstream_unavailable:
             missing.append(
                 SpecialistMissingInformation(
                     item_code="upstream_specialist_outputs",
@@ -613,7 +616,11 @@ class ShadowSpecialistRunner:
 
 def _json_value(value):
     if is_dataclass(value) and not isinstance(value, type):
-        return asdict(value)
+        return _json_value(asdict(value))
+    if isinstance(value, dict):
+        return {key: _json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
     return value
 
 
@@ -664,25 +671,31 @@ def _deterministic_scenario_data(packet):
 def _scenario_data_available(data):
     if not data:
         return False
-    if isinstance(data, dict) and data.get("status") in {"unavailable", "missing"}:
+    status = _scenario_status(data)
+    if status is not None and status != "available":
         return False
     if not isinstance(data, dict):
-        return True
+        return status == "available"
     scenario_values = [
         data[key]
         for key in ("reverse_dcf", "forward_scenario")
         if key in data
     ]
     if not scenario_values:
-        return data.get("status") == "available"
+        return status == "available"
     return any(
-        value is not None
-        and not (
-            isinstance(value, dict)
-            and value.get("status") in {"unavailable", "missing"}
-        )
+        _scenario_status(value) == "available"
         for value in scenario_values
     )
+
+
+def _scenario_status(value):
+    status = (
+        value.get("status")
+        if isinstance(value, dict)
+        else getattr(value, "status", None)
+    )
+    return getattr(status, "value", status)
 
 
 def _sell_inputs_available(upstream_results, scenario_data):
@@ -735,43 +748,22 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
         for source_id in blocker.source_ids
     ]
     if packet is not None:
-        catalog = _packet_evidence_catalog(packet)
-        canonical_source_ids = set(catalog.get("canonical_source_ids", []))
-        unknown_sources = []
-        full_results = (
-            packet.get("full_results", {})
-            if isinstance(packet, dict)
-            else packet.full_results
-        )
-        research_evidence = (
-            packet.get("research_evidence", {})
-            if isinstance(packet, dict)
-            else packet.research_evidence
-        )
-        for source_id in source_ids:
-            try:
-                resolved = resolve_source_id(
-                    source_id,
-                    full_results,
-                    research_evidence,
-                    catalog=catalog,
-                )
-            except SourcePathError:
-                unknown_sources.append(source_id)
-                continue
-            if resolved not in canonical_source_ids:
-                unknown_sources.append(source_id)
+        permitted_sources = _sell_source_ids_in_catalog(packet, source_ids)
+        unknown_sources = sorted(set(source_ids) - set(permitted_sources))
         if unknown_sources:
             raise ValueError(
                 "sell condition references unknown frozen-packet source IDs: "
-                + ", ".join(sorted(set(unknown_sources)))
+                + ", ".join(unknown_sources)
             )
     for test in sell.tests:
         if test.current_break_status is not SellConditionStatus.TRIGGERED:
             continue
-        if not any(references_by_id[claim_id][0] for claim_id in test.claim_ids):
+        if not any(
+            references_by_id[claim_id][0] and references_by_id[claim_id][2]
+            for claim_id in test.claim_ids
+        ):
             raise ValueError(
-                "triggered sell conditions require a source-backed upstream claim"
+                "triggered sell conditions require a source-backed causal upstream claim"
             )
 
 
@@ -779,7 +771,7 @@ def _upstream_source_ids(upstream_results):
     return list(
         dict.fromkeys(
             source_id
-            for source_ids, _ in _upstream_references(upstream_results).values()
+            for source_ids, *_ in _upstream_references(upstream_results).values()
             for source_id in source_ids
         )
     )
@@ -792,7 +784,12 @@ def _upstream_references(upstream_results):
         if output is None:
             continue
         for claim in [*output.claims, *_domain_claims(output)]:
-            references[claim.claim_id] = (tuple(claim.source_ids), "claim")
+            direction = getattr(claim.direction, "value", claim.direction)
+            references[claim.claim_id] = (
+                tuple(claim.source_ids),
+                "claim",
+                direction in {"negative", "mixed"},
+            )
         management = output.management_credibility
         if management is not None:
             for row in management.ledger:
@@ -800,7 +797,12 @@ def _upstream_references(upstream_results):
                     *row.claim_source_ids,
                     *row.outcome_source_ids,
                 ]
-                references[row.claim_id] = (tuple(source_ids), "ledger")
+                result = getattr(row.result, "value", row.result)
+                references[row.claim_id] = (
+                    tuple(source_ids),
+                    "ledger",
+                    result == "missed",
+                )
     return references
 
 
@@ -820,6 +822,35 @@ def _packet_evidence_catalog(packet):
         if isinstance(packet, dict)
         else packet.research_evidence,
     )
+
+
+def _sell_source_ids_in_catalog(packet, source_ids):
+    catalog = _packet_evidence_catalog(packet)
+    canonical_source_ids = set(catalog.get("canonical_source_ids", []))
+    full_results = (
+        packet.get("full_results", {})
+        if isinstance(packet, dict)
+        else packet.full_results
+    )
+    research_evidence = (
+        packet.get("research_evidence", {})
+        if isinstance(packet, dict)
+        else packet.research_evidence
+    )
+    permitted = []
+    for source_id in source_ids:
+        try:
+            resolved = resolve_source_id(
+                source_id,
+                full_results,
+                research_evidence,
+                catalog=catalog,
+            )
+        except SourcePathError:
+            continue
+        if resolved in canonical_source_ids:
+            permitted.append(source_id)
+    return list(dict.fromkeys(permitted))
 
 
 def _packet_as_of(packet):
