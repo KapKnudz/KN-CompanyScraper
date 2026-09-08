@@ -229,7 +229,10 @@ class SpecialistPromptBuilder:
                 ", ".join(f"`{break_type}`" for break_type in THESIS_BREAK_TYPES),
             )
             upstream_json = json.dumps(
-                [_serialize_upstream_output(item) for item in (upstream_outputs or ())],
+                [
+                    _namespace_upstream_output(item)
+                    for item in (upstream_outputs or ())
+                ],
                 ensure_ascii=False,
                 sort_keys=True,
             )
@@ -854,6 +857,66 @@ def _serialize_upstream_output(item):
     return _json_value(item)
 
 
+def _qualified_claim_id(agent_name, claim_id):
+    return f"{agent_name}:{claim_id}"
+
+
+def _namespace_upstream_output(item):
+    serialized = _serialize_upstream_output(item)
+    if not isinstance(serialized, dict):
+        return serialized
+    data = dict(serialized)
+    output = data.get("output", data)
+    if not isinstance(output, dict):
+        return data
+    agent_name = str(data.get("agent_name", output.get("agent_name", "")))
+    if not agent_name:
+        return data
+    output = dict(output)
+
+    def namespace_claim(claim):
+        claim = dict(claim)
+        if "claim_id" in claim:
+            claim["claim_id"] = _qualified_claim_id(agent_name, claim["claim_id"])
+        if "depends_on_claim_ids" in claim:
+            claim["depends_on_claim_ids"] = [
+                _qualified_claim_id(agent_name, claim_id)
+                for claim_id in claim["depends_on_claim_ids"]
+            ]
+        return claim
+
+    output["claims"] = [namespace_claim(claim) for claim in output.get("claims", [])]
+    for domain_name in (
+        "business_model",
+        "management_credibility",
+        "insider_ownership",
+        "growth_valuation",
+    ):
+        domain = output.get(domain_name)
+        if not isinstance(domain, dict):
+            continue
+        domain = dict(domain)
+        for field_name in ("claims", "event_claims"):
+            if field_name in domain:
+                domain[field_name] = [
+                    namespace_claim(claim) for claim in domain[field_name]
+                ]
+        if domain_name == "management_credibility":
+            domain["ledger"] = [
+                {
+                    **row,
+                    "claim_id": _qualified_claim_id(agent_name, row["claim_id"]),
+                }
+                for row in domain.get("ledger", [])
+            ]
+        output[domain_name] = domain
+    if "output" in data:
+        data["output"] = output
+    else:
+        data = output
+    return data
+
+
 def _stable_upstream_output(item):
     if isinstance(item, SpecialistArtifactResult):
         return {
@@ -1059,15 +1122,17 @@ def _upstream_references(upstream_results, packet=None):
         output = result.output
         if output is None:
             continue
+        agent_name = output.agent_name.value
         for claim in [*output.claims, *_domain_claims(output)]:
-            if claim.claim_id in references:
+            claim_id = _qualified_claim_id(agent_name, claim.claim_id)
+            if claim_id in references:
                 raise ValueError(
-                    "duplicate upstream specialist claim ID: " + claim.claim_id
+                    "duplicate upstream specialist claim ID: " + claim_id
                 )
             direction = getattr(claim.direction, "value", claim.direction)
             source_ids = tuple(claim.source_ids)
             source_backed = _source_ids_are_permitted(packet, source_ids)
-            references[claim.claim_id] = (
+            references[claim_id] = (
                 source_ids,
                 "claim",
                 source_backed,
@@ -1079,9 +1144,10 @@ def _upstream_references(upstream_results, packet=None):
         management = output.management_credibility
         if management is not None:
             for row in management.ledger:
-                if row.claim_id in references:
+                claim_id = _qualified_claim_id(agent_name, row.claim_id)
+                if claim_id in references:
                     raise ValueError(
-                        "duplicate upstream specialist claim ID: " + row.claim_id
+                        "duplicate upstream specialist claim ID: " + claim_id
                     )
                 source_ids = row.source_ids or [
                     *row.claim_source_ids,
@@ -1089,7 +1155,7 @@ def _upstream_references(upstream_results, packet=None):
                 ]
                 result = getattr(row.result, "value", row.result)
                 source_backed = _source_ids_are_permitted(packet, source_ids)
-                references[row.claim_id] = (
+                references[claim_id] = (
                     tuple(source_ids),
                     "ledger",
                     source_backed,

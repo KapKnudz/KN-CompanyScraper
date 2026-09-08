@@ -199,7 +199,7 @@ def test_sell_conditions_prompt_receives_typed_upstream_outputs_and_scenario_dat
     )
 
     assert "Typed first-wave specialist outputs" in prompt.user
-    assert "margin.engine" in prompt.user
+    assert "margin:margin.engine" in prompt.user
     assert '"base": {"margin": 0.12}' in prompt.user
     assert "Frozen AgentCandidatePacket" not in prompt.user
     assert prompt.schema_name == "specialist_sell_conditions"
