@@ -98,19 +98,44 @@ _CAUSAL_CLAIM_MARKERS = {
     "superior_evidence_or_opportunity": {"evidence", "opportunity", "alternative"},
 }
 _CAUSAL_STATUS_PREDICATES = {"assessment", "result", "state", "status"}
-_CAUSAL_STATUS_VALUES = {
-    "declining",
-    "deteriorated",
-    "deteriorating",
-    "demanding",
-    "failed",
-    "invalidated",
-    "missed",
-    "negative",
-    "stalled",
-    "unsupported",
-    "weak",
-    "worsening",
+_CAUSAL_STATUS_VALUES_BY_BREAK = {
+    "revenue_or_demand": {
+        "declining",
+        "deteriorated",
+        "deteriorating",
+        "weak",
+        "worsening",
+    },
+    "margin_or_execution": {
+        "declining",
+        "deteriorated",
+        "deteriorating",
+        "failed",
+        "invalidated",
+        "stalled",
+        "weak",
+        "worsening",
+    },
+    "balance_sheet_or_dilution": {
+        "deteriorated",
+        "deteriorating",
+        "failed",
+        "invalidated",
+        "stalled",
+        "weak",
+        "worsening",
+    },
+    "management_credibility": {
+        "deteriorated",
+        "deteriorating",
+        "failed",
+        "invalidated",
+        "missed",
+        "weak",
+        "worsening",
+    },
+    "valuation_overshoot": set(),
+    "superior_evidence_or_opportunity": set(),
 }
 
 @dataclass(frozen=True)
@@ -449,7 +474,7 @@ class ShadowSpecialistRunner:
                     {
                         "upstream_outputs_sha256": _sha256_json(
                             [
-                                _serialize_upstream_output(item)
+                                _stable_upstream_output(item)
                                 for item in (upstream_outputs or ())
                             ]
                         ),
@@ -630,7 +655,7 @@ class ShadowSpecialistRunner:
                 "limited": True,
                 "upstream_outputs_sha256": _sha256_json(
                     [
-                        _serialize_upstream_output(item)
+                        _stable_upstream_output(item)
                         for item in (upstream_results or ())
                     ]
                 ),
@@ -691,7 +716,7 @@ class ShadowSpecialistRunner:
                 metadata.get("upstream_outputs_sha256")
                 != _sha256_json(
                     [
-                        _serialize_upstream_output(item)
+                        _stable_upstream_output(item)
                         for item in (upstream_outputs or ())
                     ]
                 )
@@ -760,6 +785,23 @@ def _serialize_upstream_output(item):
     if isinstance(item, dict):
         return item
     return _json_value(item)
+
+
+def _stable_upstream_output(item):
+    if isinstance(item, SpecialistArtifactResult):
+        return {
+            "agent_name": item.agent_name,
+            "status": item.status,
+            "output": item.output.to_dict() if item.output is not None else None,
+        }
+    serialized = _serialize_upstream_output(item)
+    if isinstance(serialized, dict):
+        return {
+            key: value
+            for key, value in serialized.items()
+            if key not in {"attempts", "validation_errors"}
+        }
+    return serialized
 
 
 def _deterministic_scenario_data(packet):
@@ -1108,7 +1150,7 @@ def _causal_reference_matches(
         typed_claim_tokens.intersection(_CAUSAL_CLAIM_MARKERS[break_type])
         or (
             predicate_tokens.intersection(_CAUSAL_STATUS_PREDICATES)
-            and value_tokens.intersection(_CAUSAL_STATUS_VALUES)
+            and value_tokens.intersection(_CAUSAL_STATUS_VALUES_BY_BREAK[break_type])
         )
     ):
         return False
