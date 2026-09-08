@@ -98,6 +98,24 @@ _CAUSAL_CLAIM_MARKERS = {
     "superior_evidence_or_opportunity": {"evidence", "opportunity", "alternative"},
 }
 _CAUSAL_STATUS_PREDICATES = {"assessment", "result", "state", "status"}
+_CAUSAL_POSITIVE_DIRECTION_TOKENS = {
+    "improve",
+    "improves",
+    "improved",
+    "improving",
+    "increase",
+    "increases",
+    "increased",
+    "increasing",
+    "grow",
+    "grows",
+    "grew",
+    "growing",
+    "strengthen",
+    "strengthens",
+    "strengthened",
+    "strengthening",
+}
 _CAUSAL_STATUS_VALUES_BY_BREAK = {
     "revenue_or_demand": {
         "declining",
@@ -585,18 +603,10 @@ class ShadowSpecialistRunner:
             )
             for break_type in THESIS_BREAK_TYPES
         ]
-        blockers = (
-            [
-                SellConditionActivationBlocker(
-                    blocker_code=code,
-                    source_ids=list(source_ids),
-                    claim_ids=list(claim_ids),
-                )
-                for code in blocker_codes
-            ]
-            if source_ids and claim_ids
-            else []
-        )
+        blockers = [
+            SellConditionActivationBlocker(blocker_code=code)
+            for code in blocker_codes
+        ]
         missing = []
         if upstream_unavailable:
             missing.append(
@@ -1002,6 +1012,7 @@ def _upstream_references(upstream_results, packet=None):
                 str(claim.domain).casefold(),
                 str(claim.predicate).casefold(),
                 claim.value,
+                direction,
             )
         management = output.management_credibility
         if management is not None:
@@ -1023,6 +1034,7 @@ def _upstream_references(upstream_results, packet=None):
                     "management_credibility",
                     "management_ledger_result",
                     result,
+                    "negative" if result == "missed" else "neutral",
                 )
     return references
 
@@ -1134,7 +1146,7 @@ def _causal_reference_matches(
     sell_source_ids,
     packet=None,
 ):
-    source_ids, _, causal, domain, predicate, value = reference
+    source_ids, _, causal, domain, predicate, value, direction = reference
     if not _resolved_source_ids(packet, source_ids).intersection(
         _resolved_source_ids(packet, sell_source_ids)
     ):
@@ -1156,12 +1168,22 @@ def _causal_reference_matches(
         return False
     typed_claim_tokens.update(_semantic_tokens(domain))
     condition_tokens = _semantic_tokens((condition, threshold_or_direction))
+    if (
+        direction == "negative"
+        and condition_tokens.intersection(_CAUSAL_POSITIVE_DIRECTION_TOKENS)
+    ):
+        return False
     evidence_text_tokens = _semantic_tokens(
         (observable_metric_or_event, condition, threshold_or_direction)
     )
     observable_tokens = _semantic_tokens(observable_metric_or_event)
     if not observable_tokens.intersection(typed_claim_tokens):
-        return False
+        if not (
+            break_type == "valuation_overshoot"
+            and "unsupported" in typed_claim_tokens
+            and observable_tokens.intersection({"price", "share", "stock", "market"})
+        ):
+            return False
     if (
         break_type != "valuation_overshoot"
         and "price" in evidence_text_tokens

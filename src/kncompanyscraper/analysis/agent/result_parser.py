@@ -463,11 +463,31 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
             )
         _validate_causal_sell_condition(test)
 
+    dependency_blocker_missing_information = {
+        "upstream_specialist_unavailable": "upstream_specialist_outputs",
+        "deterministic_scenario_unavailable": "deterministic_scenario_data",
+    }
+    missing_information_codes = {
+        item["item_code"] for item in payload["missing_information"]
+    }
     for blocker in sell["activation_blockers"]:
         if not re.fullmatch(r"[a-z][a-z0-9_]*", blocker["blocker_code"]):
             raise StockAnalysisValidationError(
                 f"sell activation blocker code must be stable: {blocker['blocker_code']!r}"
             )
+        missing_information_code = dependency_blocker_missing_information.get(
+            blocker["blocker_code"]
+        )
+        if missing_information_code is not None:
+            if blocker["source_ids"] or blocker["claim_ids"]:
+                raise StockAnalysisValidationError(
+                    "dependency blockers cannot cite evidence"
+                )
+            if missing_information_code not in missing_information_codes:
+                raise StockAnalysisValidationError(
+                    "dependency blockers require matching missing_information"
+                )
+            continue
         if not blocker["source_ids"] or not blocker["claim_ids"]:
             raise StockAnalysisValidationError(
                 "sell activation blockers require source_ids and claim_ids"
