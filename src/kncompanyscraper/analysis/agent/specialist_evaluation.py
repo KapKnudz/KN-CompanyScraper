@@ -371,11 +371,31 @@ def compare_specialist_evaluations(
                 str(record.get("content", "")),
             ),
         )
+        case_level_records = [
+            record for record in matched if _metadata(record).get("result_scope") == "case"
+        ]
+        specialist_records = [
+            record for record in matched if _metadata(record).get("result_scope") != "case"
+        ]
+        case_level_valid_records = []
+        case_level_errors = []
+        for record in case_level_records:
+            metadata = _metadata(record)
+            if metadata.get("validation_status") not in (None, "accepted"):
+                case_level_errors.append(f"case-level artifact validation_status is {metadata['validation_status']!r}")
+                continue
+            if metadata.get("packet_hash") not in (None, case["packet_hash"]):
+                case_level_errors.append("case-level artifact metadata packet_hash does not match evaluation case")
+                continue
+            if case.get("run_id") is not None and metadata.get("run_id") not in (None, case["run_id"]):
+                case_level_errors.append("case-level artifact metadata run_id does not match evaluation case")
+                continue
+            case_level_valid_records.append(record)
         parsed = []
         valid_records = []
         rejection_count = 0
         artifact_errors = []
-        for record in matched:
+        for record in specialist_records:
             totals["parse_semantic_rejection"]["total"] += 1
             content = record.get("content")
             metadata = _metadata(record)
@@ -473,7 +493,7 @@ def compare_specialist_evaluations(
             metric["skipped_not_applicable"] += skipped
             metric["evaluated"] += correct + incorrect
         outputs_by_agent = {output.agent_name.value: output for output in parsed}
-        case_final_verdict = _actual_final_verdict(valid_records)
+        case_final_verdict = _actual_final_verdict(case_level_valid_records)
         actual_conflicts = {
             conflict.rule_id
             for conflict in evaluate_specialist_conflicts(parsed, final_direction=case_final_verdict)
@@ -513,7 +533,7 @@ def compare_specialist_evaluations(
         totals["final_verdict_agreement"]["skipped_not_applicable"] += final_skipped
         totals["final_verdict_agreement"]["unavailable"] += final_unavailable
         activation_expected = labels.get("activation", "not_applicable")
-        activation_actual = final_actual in {"activated_case", "investable"} if final_actual is not None else None
+        activation_actual = final_actual == "activated_case" if final_actual is not None else None
         activation_outcomes = totals["activation_outcomes"]
         if _na(activation_expected):
             activation_outcomes["skipped_not_applicable"] += 1
@@ -566,7 +586,15 @@ def compare_specialist_evaluations(
             "rejected_count": rejection_count,
             "artifact_errors": artifact_errors,
             "packet_status": "available" if packet is not None and not packet.get("_packet_hash_mismatch") and not packet.get("_packet_identity_mismatch") else "unavailable",
-            "metadata": [{field: _metadata(record).get(field) for field in _METADATA_FIELDS} for record in matched],
+            "metadata": [{field: _metadata(record).get(field) for field in _METADATA_FIELDS} for record in specialist_records],
+            "case_level_result": {
+                "available": bool(case_level_valid_records),
+                "errors": case_level_errors,
+                "metadata": [
+                    {field: _metadata(record).get(field) for field in _METADATA_FIELDS}
+                    for record in case_level_records
+                ],
+            },
         })
     for metric in totals.values():
         if isinstance(metric, dict) and "total" in metric:

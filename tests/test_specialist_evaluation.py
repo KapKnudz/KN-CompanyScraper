@@ -258,6 +258,33 @@ def test_activation_false_negative_is_reported():
     assert outcomes["unavailable"] == 0
 
 
+def test_case_level_records_do_not_contaminate_specialist_metrics():
+    cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["metadata"]["final_verdict"] = "activated_case"
+    artifacts["artifacts"][0]["metadata"]["result_scope"] = "case"
+
+    report = run(cases, artifacts, packets)
+    case_report = report["cases"][0]
+    assert case_report["accepted_count"] == 1
+    assert case_report["rejected_count"] == 0
+    assert case_report["case_level_result"]["available"] is True
+    assert len(case_report["metadata"]) == 1
+    assert report["metrics"]["confidence_calibration"]["evaluated"] == 1
+    assert report["metrics"]["source_id_validity"]["unavailable"] == 1
+
+
+def test_investable_is_not_an_activation_verdict_alias():
+    cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["metadata"]["final_verdict"] = "investable"
+    artifacts["artifacts"][0]["metadata"]["result_scope"] = "case"
+    cases["cases"][0]["labels"]["activation"] = False
+
+    report = run(cases, artifacts, packets)
+    outcomes = report["metrics"]["activation_outcomes"]
+    assert outcomes["true_negative"] == 1
+    assert outcomes["false_positive"] == 0
+
+
 def test_confidence_is_calibrated_per_labeled_agent_and_metadata_is_preserved():
     cases, artifacts, packets = documents()
     insider = json.loads(artifacts["artifacts"][1]["content"])
