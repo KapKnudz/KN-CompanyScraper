@@ -430,6 +430,15 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
             "sell conditions must contain exactly one test for each thesis break type"
         )
     for test in sell["tests"]:
+        for field_name in (
+            "condition",
+            "observable_metric_or_event",
+            "threshold_or_direction",
+        ):
+            if not isinstance(test[field_name], str) or not test[field_name].strip():
+                raise StockAnalysisValidationError(
+                    f"sell condition {test['break_type']} requires {field_name}"
+                )
         status = test["current_break_status"]
         if len(test["source_ids"]) != len(set(test["source_ids"])):
             raise StockAnalysisValidationError(
