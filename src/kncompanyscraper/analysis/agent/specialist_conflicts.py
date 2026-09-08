@@ -49,8 +49,9 @@ def evaluate_specialist_conflicts(
     """Evaluate only the named conflicts over typed specialist outputs.
 
     The function intentionally has no prose comparison, scoring, or generic
-    disagreement behavior. Sell-condition and final-direction inputs are
-    optional because those stages are not part of the first-wave shadow run.
+    disagreement behavior. Sell-condition and final-direction inputs remain
+    optional because conflicts can be evaluated over whichever typed outputs
+    are available.
     """
     by_agent = {output.agent_name: output for output in outputs}
     conflicts: list[SpecialistConflict] = []

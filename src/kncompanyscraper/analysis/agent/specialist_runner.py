@@ -293,7 +293,7 @@ class SpecialistPromptBuilder:
 
 
 class ShadowSpecialistRunner:
-    """Run first-wave specialists without entering the authoritative analysis path."""
+    """Run typed specialists without entering the authoritative analysis path."""
 
     def __init__(
         self,
