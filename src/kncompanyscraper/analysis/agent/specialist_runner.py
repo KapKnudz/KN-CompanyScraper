@@ -89,6 +89,14 @@ _CAUSAL_CLAIM_DOMAINS = {
         "valuation",
     },
 }
+_CAUSAL_CLAIM_MARKERS = {
+    "revenue_or_demand": {"revenue", "demand", "sales", "customer", "churn", "retention"},
+    "margin_or_execution": {"margin", "execution", "cost", "profitability"},
+    "balance_sheet_or_dilution": {"balance", "debt", "dilution", "shares", "financing", "capital"},
+    "management_credibility": {"management", "promise", "guidance", "milestone", "missed"},
+    "valuation_overshoot": {"valuation", "multiple", "expectation", "reverse", "dcf", "unsupported", "demanding"},
+    "superior_evidence_or_opportunity": {"evidence", "opportunity", "alternative"},
+}
 
 @dataclass(frozen=True)
 class SpecialistArtifactResult:
@@ -821,11 +829,28 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
             for claim_id in blocker.claim_ids
             for source_id in references_by_id[claim_id][0]
         }
-        if not set(blocker.source_ids).intersection(cited_sources):
+        if set(blocker.source_ids) - cited_sources:
             raise ValueError(
                 "sell activation blocker sources must support cited upstream claims"
             )
+        expected_domains = _CAUSAL_CLAIM_DOMAINS.get(blocker.blocker_code)
+        if expected_domains is not None and any(
+            references_by_id[claim_id][3] not in expected_domains
+            for claim_id in blocker.claim_ids
+        ):
+            raise ValueError(
+                "sell activation blocker claims do not match blocker semantics"
+            )
     for test in sell.tests:
+        cited_sources = {
+            source_id
+            for claim_id in test.claim_ids
+            for source_id in references_by_id[claim_id][0]
+        }
+        if set(test.source_ids) - cited_sources:
+            raise ValueError(
+                "sell condition sources must support cited upstream claims"
+            )
         if test.current_break_status is not SellConditionStatus.TRIGGERED:
             continue
         if not any(
@@ -983,7 +1008,10 @@ def _causal_reference_matches(
         return False
     if domain not in _CAUSAL_CLAIM_DOMAINS[break_type]:
         return False
-    typed_claim_tokens = _semantic_tokens((domain, predicate, value))
+    typed_claim_tokens = _semantic_tokens((predicate, value))
+    if not typed_claim_tokens.intersection(_CAUSAL_CLAIM_MARKERS[break_type]):
+        return False
+    typed_claim_tokens.update(_semantic_tokens(domain))
     condition_tokens = _semantic_tokens((condition, threshold_or_direction))
     evidence_text_tokens = _semantic_tokens(
         (observable_metric_or_event, condition, threshold_or_direction)
