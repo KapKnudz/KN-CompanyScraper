@@ -132,6 +132,30 @@ def test_human_label_enums_are_validated():
         load_cases(invalid)
 
 
+def test_unhashable_human_labels_raise_evaluation_format_error():
+    cases, _, _ = documents()
+    mutations = (
+        ("claims", "agent_name", []),
+        ("claims", "expected_direction", []),
+        ("management_rows", "expected_result", []),
+        ("labels", "source_validity", []),
+        ("labels", "final_verdict", []),
+    )
+    for label_group, field, value in mutations:
+        invalid = copy.deepcopy(cases)
+        if label_group == "labels":
+            invalid["cases"][0]["labels"][field] = value
+        else:
+            invalid["cases"][0]["labels"][label_group][0][field] = value
+        with pytest.raises(EvaluationFormatError):
+            load_cases(invalid)
+
+    invalid = copy.deepcopy(cases)
+    invalid["cases"][0]["labels"]["confidence"]["management_credibility"] = []
+    with pytest.raises(EvaluationFormatError):
+        load_cases(invalid)
+
+
 def test_conflict_false_positive_and_false_negative_counts_are_explicit():
     cases, artifacts, packets = documents()
     labels = cases["cases"][0]["labels"]["conflicts"]
@@ -285,6 +309,23 @@ def test_case_level_records_do_not_contaminate_specialist_metrics():
     assert len(case_report["metadata"]) == 1
     assert report["metrics"]["confidence_calibration"]["evaluated"] == 1
     assert report["metrics"]["source_id_validity"]["unavailable"] == 1
+    assert report["metadata_fields"]["run_id"]["available"] == 2
+
+
+def test_invalid_case_level_result_prevents_verdict_scoring():
+    cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["content"] = case_result_content(cases, "activated_case")
+    artifacts["artifacts"][0]["metadata"]["final_verdict"] = "activated_case"
+    artifacts["artifacts"][0]["metadata"]["result_scope"] = "case"
+    artifacts["artifacts"][1]["content"] = "not-json"
+    artifacts["artifacts"][1]["metadata"]["result_scope"] = "case"
+    cases["cases"][0]["labels"]["activation"] = True
+    cases["cases"][0]["labels"]["final_verdict"] = "activated_case"
+
+    report = run(cases, artifacts, packets)
+    assert report["cases"][0]["case_level_result"]["available"] is False
+    assert report["metrics"]["final_verdict_agreement"]["unavailable"] == 1
+    assert report["metrics"]["activation_outcomes"]["unavailable"] == 1
 
 
 def test_investable_is_not_an_activation_verdict_alias():

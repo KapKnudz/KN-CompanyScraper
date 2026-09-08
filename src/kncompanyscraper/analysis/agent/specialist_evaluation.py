@@ -93,7 +93,8 @@ def _validate_labels(labels: Any, case_id: str) -> None:
         _require(isinstance(label, Mapping), f"case {case_id}: claim label {index} must be an object")
         if not _na(label):
             _require(
-                label.get("agent_name") in _SPECIALIST_AGENT_NAMES,
+                isinstance(label.get("agent_name"), str)
+                and label["agent_name"] in _SPECIALIST_AGENT_NAMES,
                 f"case {case_id}: claim label has an unknown agent_name",
             )
             _require(isinstance(label.get("claim_id"), str), f"case {case_id}: claim label needs claim_id")
@@ -103,7 +104,8 @@ def _validate_labels(labels: Any, case_id: str) -> None:
             )
             if label.get("expected_direction") is not None:
                 _require(
-                    label["expected_direction"] in _SPECIALIST_CLAIM_DIRECTIONS,
+                    isinstance(label["expected_direction"], str)
+                    and label["expected_direction"] in _SPECIALIST_CLAIM_DIRECTIONS,
                     f"case {case_id}: claim label has an unknown expected_direction",
                 )
     rows = labels.get("management_rows", [])
@@ -113,7 +115,8 @@ def _validate_labels(labels: Any, case_id: str) -> None:
         if not _na(label):
             _require(isinstance(label.get("claim_id"), str), f"case {case_id}: management row needs claim_id")
             _require(
-                label.get("expected_result") in _MANAGEMENT_LEDGER_RESULTS,
+                isinstance(label.get("expected_result"), str)
+                and label["expected_result"] in _MANAGEMENT_LEDGER_RESULTS,
                 f"case {case_id}: management row has an unknown expected_result",
             )
     conflicts = labels.get("conflicts", {})
@@ -133,7 +136,8 @@ def _validate_labels(labels: Any, case_id: str) -> None:
     )
     source = labels.get("source_validity", "not_applicable")
     _require(
-        _na(source) or source in {"all_valid", "invalid_present", "unavailable"},
+        _na(source)
+        or (isinstance(source, str) and source in {"all_valid", "invalid_present", "unavailable"}),
         f"case {case_id}: source_validity must be all_valid, invalid_present, or not_applicable",
     )
     activation = labels.get("activation", "not_applicable")
@@ -143,7 +147,8 @@ def _validate_labels(labels: Any, case_id: str) -> None:
     )
     final_verdict = labels.get("final_verdict", "not_applicable")
     _require(
-        _na(final_verdict) or final_verdict in _FINAL_VERDICTS,
+        _na(final_verdict)
+        or (isinstance(final_verdict, str) and final_verdict in _FINAL_VERDICTS),
         f"case {case_id}: final_verdict is unknown",
     )
     confidence = labels.get("confidence", "not_applicable")
@@ -151,11 +156,12 @@ def _validate_labels(labels: Any, case_id: str) -> None:
         _require(isinstance(confidence, Mapping), f"case {case_id}: confidence must map agent names to labels")
         for agent_name, expected in confidence.items():
             _require(
-                agent_name in _SPECIALIST_AGENT_NAMES,
+                isinstance(agent_name, str) and agent_name in _SPECIALIST_AGENT_NAMES,
                 f"case {case_id}: confidence contains an unknown agent",
             )
             _require(
-                _na(expected) or expected in _CONFIDENCE_RANK,
+                _na(expected)
+                or (isinstance(expected, str) and expected in _CONFIDENCE_RANK),
                 f"case {case_id}: confidence label must be low, medium, high, or not_applicable",
             )
 
@@ -404,6 +410,10 @@ def compare_specialist_evaluations(
         specialist_records = [
             record for record in matched if _metadata(record).get("result_scope") != "case"
         ]
+        metadata_records.extend(
+            {field: _metadata(record).get(field) for field in _METADATA_FIELDS}
+            for record in matched
+        )
         case_level_results = []
         case_level_errors = []
         for record in case_level_records:
@@ -422,7 +432,6 @@ def compare_specialist_evaluations(
             totals["parse_semantic_rejection"]["total"] += 1
             content = record.get("content")
             metadata = _metadata(record)
-            metadata_records.append({field: metadata.get(field) for field in _METADATA_FIELDS})
             if metadata.get("validation_status") not in (None, "accepted"):
                 rejection_count += 1
                 artifact_errors.append(f"artifact validation_status is {metadata['validation_status']!r}")
@@ -516,7 +525,11 @@ def compare_specialist_evaluations(
             metric["skipped_not_applicable"] += skipped
             metric["evaluated"] += correct + incorrect
         outputs_by_agent = {output.agent_name.value: output for output in parsed}
-        case_final_verdict = _actual_final_verdict(case_level_results)
+        case_final_verdict = (
+            _actual_final_verdict(case_level_results)
+            if not case_level_errors
+            else None
+        )
         unavailable_conflict_rules = {
             "multiple_expansion_vs_activation"
         } if case_final_verdict is None else set()
