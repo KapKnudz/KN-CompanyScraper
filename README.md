@@ -353,8 +353,12 @@ after the company packet is frozen. The first wave covers `business_model`,
 `management_credibility`, `margin`, `insider_ownership`, and `growth_valuation`.
 Their raw outputs are persisted as
 non-authoritative shadow artifacts; the existing qualitative and scenario
-analysis remains the source of the accepted verdict. The setting defaults to
-`false`.
+analysis remains the source of the accepted verdict. The run also records
+deterministic, non-authoritative annotations for four explicit conflicts:
+`margin_vs_sell_condition`, `insider_vs_credibility_record`,
+`circle_of_competence_vs_valuation`, and `multiple_expansion_vs_activation`.
+These annotations do not change the accepted verdict or activation decision.
+The setting defaults to `false`.
 
 Selectors must identify distinct active companies. The command refreshes every
 mandatory upstream domain before model invocation (reports, the mutable price
