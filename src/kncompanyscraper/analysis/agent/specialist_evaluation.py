@@ -45,6 +45,12 @@ _SPECIALIST_AGENT_NAMES = {agent.value for agent in SpecialistAgentName}
 _SPECIALIST_CLAIM_DIRECTIONS = {direction.value for direction in SpecialistClaimDirection}
 _MANAGEMENT_LEDGER_RESULTS = {result.value for result in ManagementLedgerResult}
 _FINAL_VERDICTS = {"reject", "watch", "latent_case", "activated_case"}
+_CONFLICT_REQUIRED_AGENTS = {
+    "margin_vs_sell_condition": {"margin", "sell_conditions"},
+    "insider_vs_credibility_record": {"management_credibility", "insider_ownership"},
+    "circle_of_competence_vs_valuation": {"business_model", "growth_valuation"},
+    "multiple_expansion_vs_activation": {"growth_valuation"},
+}
 _METADATA_FIELDS = (
     "run_id",
     "agent_name",
@@ -100,14 +106,23 @@ def _validate_labels(labels: Any, case_id: str) -> None:
             )
             _require(isinstance(label.get("claim_id"), str), f"case {case_id}: claim label needs claim_id")
             _require(
-                label.get("expected_direction") is not None or label.get("expected_value") is not None,
+                "expected_direction" in label or "expected_value" in label,
                 f"case {case_id}: claim label needs expected_direction or expected_value",
             )
-            if label.get("expected_direction") is not None:
+            if "expected_direction" in label and label["expected_direction"] is not None:
                 _require(
                     isinstance(label["expected_direction"], str)
                     and label["expected_direction"] in _SPECIALIST_CLAIM_DIRECTIONS,
                     f"case {case_id}: claim label has an unknown expected_direction",
+                )
+            if "expected_value" in label:
+                _require(
+                    label["expected_value"] is None
+                    or (
+                        isinstance(label["expected_value"], (str, int, float, bool))
+                        and not isinstance(label["expected_value"], (list, dict))
+                    ),
+                    f"case {case_id}: claim label expected_value must be a scalar or null",
                 )
     rows = labels.get("management_rows", [])
     _require(isinstance(rows, list), f"case {case_id}: labels.management_rows must be a list")
@@ -256,6 +271,20 @@ def _metadata(record: Mapping) -> dict:
     return metadata
 
 
+def _record_run_id(record: Mapping) -> Any:
+    metadata_run_id = _metadata(record).get("run_id")
+    if metadata_run_id is not None:
+        return metadata_run_id
+    content = record.get("content")
+    if not isinstance(content, str):
+        return None
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    return payload.get("run_id") if isinstance(payload, Mapping) else None
+
+
 def _record_matches(case: Mapping, record: Mapping) -> bool:
     if "_malformed" in record:
         return False
@@ -345,11 +374,13 @@ def _collect_source_ids(value: Any) -> list[str]:
 
 
 def _source_status(outputs: Sequence[Any], packet: Mapping | None) -> tuple[int, int, int]:
-    source_ids = _collect_source_ids(outputs)
+    complete_outputs = [output for output in outputs if output.status.value == "complete"]
+    unavailable_count = sum(output.status.value == "insufficient_evidence" for output in outputs)
+    source_ids = _collect_source_ids(complete_outputs)
     if not source_ids:
-        return 0, 0, 1
+        return 0, 0, unavailable_count + 1
     if packet is None or packet.get("_packet_hash_mismatch") or packet.get("_packet_identity_mismatch"):
-        return 0, 0, max(1, len(source_ids))
+        return 0, 0, unavailable_count + max(1, len(source_ids))
     catalog = packet.get("evidence_catalog") or build_evidence_catalog(packet.get("full_results", {}), packet.get("research_evidence", {}))
     valid = invalid = 0
     for source_id in source_ids:
@@ -361,7 +392,26 @@ def _source_status(outputs: Sequence[Any], packet: Mapping | None) -> tuple[int,
                 invalid += 1
         except (SourcePathError, TypeError, AttributeError):
             invalid += 1
-    return valid, invalid, 0
+    return valid, invalid, unavailable_count
+
+
+def _unavailable_conflict_rules(
+    outputs_by_agent: Mapping[str, Any],
+    *,
+    final_direction: str | None,
+) -> set[str]:
+    unavailable = {
+        rule_id
+        for rule_id, required_agents in _CONFLICT_REQUIRED_AGENTS.items()
+        if any(
+            outputs_by_agent.get(agent_name) is None
+            or outputs_by_agent[agent_name].status.value != "complete"
+            for agent_name in required_agents
+        )
+    }
+    if final_direction is None:
+        unavailable.add("multiple_expansion_vs_activation")
+    return unavailable
 
 
 def compare_specialist_evaluations(
@@ -415,8 +465,13 @@ def compare_specialist_evaluations(
             {field: _metadata(record).get(field) for field in _METADATA_FIELDS}
             for record in matched
         )
+        run_ids = {_record_run_id(record) for record in matched}
+        run_ids.discard(None)
+        ambiguous_run = case.get("run_id") is None and len(run_ids) > 1
         case_level_results = []
         case_level_errors = []
+        if ambiguous_run:
+            case_level_errors.append("multiple artifact run_ids require explicit case run_id selection")
         for record in case_level_records:
             result, error = _parse_case_level_result(record, case)
             if error is not None:
@@ -429,7 +484,10 @@ def compare_specialist_evaluations(
         valid_records = []
         rejection_count = 0
         artifact_errors = []
-        for record in specialist_records:
+        if ambiguous_run:
+            totals["parse_semantic_rejection"]["total"] += len(specialist_records)
+            artifact_errors.append("multiple artifact run_ids require explicit case run_id selection")
+        for record in () if ambiguous_run else specialist_records:
             totals["parse_semantic_rejection"]["total"] += 1
             content = record.get("content")
             metadata = _metadata(record)
@@ -483,7 +541,7 @@ def compare_specialist_evaluations(
             output for output in parsed if output.status.value == "complete"
         ]
         packet = _packet_for_case(case, packet_map)
-        valid_sources, invalid_sources, unavailable_sources = _source_status(available_outputs, packet)
+        valid_sources, invalid_sources, unavailable_sources = _source_status(parsed, packet)
         totals["source_id_validity"]["valid"] += valid_sources
         totals["source_id_validity"]["invalid"] += invalid_sources
         totals["source_id_validity"]["evaluated"] += valid_sources + invalid_sources
@@ -496,7 +554,10 @@ def compare_specialist_evaluations(
                 continue
             claim = claim_index.get((label["agent_name"], label["claim_id"]))
             if claim is None:
-                if label["agent_name"] in outputs_by_agent and outputs_by_agent[label["agent_name"]].status.value == "insufficient_evidence":
+                if ambiguous_run or (
+                    label["agent_name"] in outputs_by_agent
+                    and outputs_by_agent[label["agent_name"]].status.value == "insufficient_evidence"
+                ):
                     claim_unavailable += 1
                 else:
                     claim_incorrect += 1
@@ -504,7 +565,7 @@ def compare_specialist_evaluations(
             matches = True
             if label.get("expected_direction") is not None:
                 matches &= getattr(claim.direction, "value", claim.direction) == label["expected_direction"]
-            if label.get("expected_value") is not None:
+            if "expected_value" in label:
                 matches &= claim.value == label["expected_value"]
             if matches:
                 claim_correct += 1
@@ -522,7 +583,7 @@ def compare_specialist_evaluations(
                 row_skipped += 1
             elif label["claim_id"] in row_index and getattr(row_index[label["claim_id"]].result, "value", row_index[label["claim_id"]].result) == label["expected_result"]:
                 row_correct += 1
-            elif (
+            elif ambiguous_run or (
                 SpecialistAgentName.MANAGEMENT_CREDIBILITY.value in outputs_by_agent
                 and outputs_by_agent[SpecialistAgentName.MANAGEMENT_CREDIBILITY.value].status.value == "insufficient_evidence"
             ):
@@ -543,9 +604,12 @@ def compare_specialist_evaluations(
             if not case_level_errors
             else None
         )
-        unavailable_conflict_rules = {
-            "multiple_expansion_vs_activation"
-        } if case_final_verdict is None else set()
+        unavailable_conflict_rules = _unavailable_conflict_rules(
+            outputs_by_agent,
+            final_direction=case_final_verdict,
+        )
+        if ambiguous_run:
+            unavailable_conflict_rules = set(CONFLICT_RULES)
         actual_conflicts = {
             conflict.rule_id
             for conflict in evaluate_specialist_conflicts(available_outputs, final_direction=case_final_verdict)
@@ -754,7 +818,13 @@ def compare_paired_specialist_evaluations(
         candidate_case = candidate_cases[case_id]
         _require(best_case["packet_hash"] == case["packet_hash"], f"best-tier report packet mismatch for case {case_id}")
         _require(candidate_case["packet_hash"] == case["packet_hash"], f"candidate-tier report packet mismatch for case {case_id}")
-        agent_names = sorted(set(best_case["agent_statuses"]) | set(candidate_case["agent_statuses"]))
+        best_agents = set(best_case["agent_statuses"])
+        candidate_agents = set(candidate_case["agent_statuses"])
+        _require(
+            best_agents == candidate_agents,
+            f"paired case {case_id} must contain identical specialist agents",
+        )
+        agent_names = sorted(best_agents)
         aligned_cases.append({
             "case_id": case_id,
             "packet_hash": case["packet_hash"],

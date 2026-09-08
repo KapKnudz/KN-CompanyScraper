@@ -156,6 +156,11 @@ def test_unhashable_human_labels_raise_evaluation_format_error():
     with pytest.raises(EvaluationFormatError):
         load_cases(invalid)
 
+    invalid = copy.deepcopy(cases)
+    invalid["cases"][0]["labels"]["claims"][0]["expected_value"] = []
+    with pytest.raises(EvaluationFormatError, match="expected_value"):
+        load_cases(invalid)
+
 
 def test_conflict_false_positive_and_false_negative_counts_are_explicit():
     cases, artifacts, packets = documents()
@@ -404,6 +409,18 @@ def test_insufficient_evidence_is_accepted_but_unavailable():
     assert report["metrics"]["confidence_calibration"]["unavailable"] == 1
 
 
+def test_insufficient_evidence_contributes_source_unavailability():
+    cases, artifacts, packets = documents()
+    payload = json.loads(artifacts["artifacts"][1]["content"])
+    payload["status"] = "insufficient_evidence"
+    artifacts["artifacts"][1]["content"] = json.dumps(payload)
+
+    source = run(cases, artifacts, packets)["metrics"]["source_id_validity"]
+
+    assert source["valid"] == 4
+    assert source["unavailable"] == 1
+
+
 def test_paired_comparison_keeps_tiers_separate_and_reports_deltas():
     cases, best_artifacts, packets = documents()
     candidate_artifacts = copy.deepcopy(best_artifacts)
@@ -443,6 +460,36 @@ def test_paired_comparison_rejects_mixed_tier_metadata():
         )
 
 
+def test_paired_comparison_rejects_agent_misalignment():
+    cases, best_artifacts, packets = documents()
+    candidate_artifacts = copy.deepcopy(best_artifacts)
+    candidate_artifacts["artifacts"][0]["metadata"]["model_tier"] = "candidate"
+    candidate_artifacts["artifacts"][1]["metadata"]["model_tier"] = "candidate"
+    candidate_artifacts["artifacts"][1]["content"] = candidate_artifacts["artifacts"][0]["content"]
+
+    with pytest.raises(EvaluationFormatError, match="identical specialist agents"):
+        compare_paired_specialist_evaluations(
+            cases, best_artifacts, candidate_artifacts, packets=packets
+        )
+
+
+def test_multiple_runs_without_case_selection_are_unavailable():
+    cases, artifacts, packets = documents()
+    second_run = copy.deepcopy(artifacts["artifacts"][0])
+    second_run["metadata"]["run_id"] = "another-run"
+    second_payload = json.loads(second_run["content"])
+    second_payload["run_id"] = "another-run"
+    second_run["content"] = json.dumps(second_payload)
+    artifacts["artifacts"].append(second_run)
+    cases["cases"][0]["labels"]["claims"][0]["expected_value"] = "not-a-score"
+
+    report = run(cases, artifacts, packets)
+
+    assert report["cases"][0]["accepted_count"] == 0
+    assert "explicit case run_id selection" in report["cases"][0]["artifact_errors"][0]
+    assert report["metrics"]["claim_label_agreement"]["unavailable"] == 1
+
+
 def test_conflict_recall_skips_rules_requiring_unavailable_case_verdict():
     cases, artifacts, packets = documents()
     conflicts = cases["cases"][0]["labels"]["conflicts"]
@@ -451,6 +498,18 @@ def test_conflict_recall_skips_rules_requiring_unavailable_case_verdict():
 
     report = run(cases, artifacts, packets)
     metrics = report["metrics"]["conflict_precision_recall"]
+    assert metrics["false_negative"] == 0
+    assert metrics["skipped_not_applicable"] >= 1
+
+
+def test_conflict_recall_skips_rules_with_missing_required_agents():
+    cases, artifacts, packets = documents()
+    conflicts = cases["cases"][0]["labels"]["conflicts"]
+    conflicts["expected_triggered"] = ["margin_vs_sell_condition"]
+    conflicts["expected_not_triggered"] = []
+
+    metrics = run(cases, artifacts, packets)["metrics"]["conflict_precision_recall"]
+
     assert metrics["false_negative"] == 0
     assert metrics["skipped_not_applicable"] >= 1
 
