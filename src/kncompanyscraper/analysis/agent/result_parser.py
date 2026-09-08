@@ -477,6 +477,15 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
             )
         _validate_causal_sell_condition(test)
 
+    if (
+        any(test["current_break_status"] == "unassessable" for test in sell["tests"])
+        and not payload["missing_information"]
+        and not sell["activation_blockers"]
+    ):
+        raise StockAnalysisValidationError(
+            "unassessable sell conditions require missing_information or activation_blockers"
+        )
+
     dependency_blocker_missing_information = {
         "upstream_specialist_unavailable": "upstream_specialist_outputs",
         "deterministic_scenario_unavailable": "deterministic_scenario_data",

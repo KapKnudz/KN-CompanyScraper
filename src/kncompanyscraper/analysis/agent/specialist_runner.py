@@ -435,6 +435,7 @@ class ShadowSpecialistRunner:
                 packet_hash,
                 upstream_results,
                 scenario_data,
+                additional_missing_information=("sell_conditions_graph",),
             )
         return result
 
@@ -1266,14 +1267,31 @@ def _semantic_tokens(value):
 
 
 def _causal_condition_direction(
-    break_type, condition, threshold_or_direction
+    break_type, condition, threshold_or_direction, typed_claim_tokens=()
 ):
     text = " ".join(
         str(value).casefold()
         for value in (condition, threshold_or_direction)
     )
-    text = re.split(r"\b(?:despite|although|though|but|while)\b", text, maxsplit=1)[0]
-    adverse_terms = r"declin\w*|decreas\w*|fall\w*|drop\w*|worsen\w*|deteriorat\w*|weaken\w*|fail\w*|miss\w*|stall\w*"
+    clauses = re.split(
+        r"\b(?:despite|although|though|but|while)\b", text
+    )
+    if len(clauses) > 1:
+        break_markers = set(typed_claim_tokens) | _CAUSAL_CLAIM_MARKERS[break_type]
+        matching_clauses = [
+            clause
+            for clause in clauses
+            if _semantic_tokens(clause).intersection(break_markers)
+        ]
+        if matching_clauses:
+            text = (
+                matching_clauses[0]
+                if re.search(r"\b(?:despite|although|though)\b", text)
+                else matching_clauses[-1]
+            )
+        else:
+            text = clauses[0]
+    adverse_terms = r"declin\w*|decreas\w*|fall\w*|drop\w*|worsen\w*|deteriorat\w*|weaken\w*|fail\w*|miss\w*|stall\w*|below|under|shortfall|unmet|insufficient|breach"
     favorable_terms = r"improv\w*|increas\w*|grow\w*|strengthen\w*|ris\w*|higher|better|expand\w*|recover\w*"
     if break_type == "balance_sheet_or_dilution":
         adverse_subject = r"(?:share\s+count|shares?|dilution|debt|leverage)"
@@ -1352,9 +1370,11 @@ def _causal_reference_matches(
     ):
         return False
     typed_claim_tokens.update(_semantic_tokens(domain))
-    condition_tokens = _semantic_tokens((condition, threshold_or_direction))
     condition_direction = _causal_condition_direction(
-        break_type, condition, threshold_or_direction
+        break_type,
+        condition,
+        threshold_or_direction,
+        typed_claim_tokens,
     )
     if (
         direction in {"negative", "mixed"}
@@ -1376,12 +1396,17 @@ def _causal_reference_matches(
             and observable_tokens.intersection({"price", "share", "stock", "market"})
         ):
             return False
-    if (
-        break_type != "valuation_overshoot"
-        and "price" in evidence_text_tokens
-        and not condition_tokens.intersection(typed_claim_tokens)
+    if break_type != "valuation_overshoot" and evidence_text_tokens.intersection(
+        {"price", "quote", "quotation"}
     ):
-        return False
+        expected_condition_direction = (
+            "favorable" if direction == "positive" else "adverse"
+        )
+        observed_condition_direction = _causal_condition_direction(
+            break_type, condition, "", typed_claim_tokens
+        )
+        if observed_condition_direction != expected_condition_direction:
+            return False
     return True
 
 
