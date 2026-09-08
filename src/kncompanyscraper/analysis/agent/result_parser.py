@@ -459,6 +459,10 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
             raise StockAnalysisValidationError(
                 f"sell activation blocker code must be stable: {blocker['blocker_code']!r}"
             )
+        if not blocker["source_ids"] or not blocker["claim_ids"]:
+            raise StockAnalysisValidationError(
+                "sell activation blockers require source_ids and claim_ids"
+            )
         for field_name in ("source_ids", "claim_ids"):
             values = blocker[field_name]
             if len(values) != len(set(values)):

@@ -63,13 +63,12 @@ _SPECIALIST_PROMPT_RESOURCES = {
 }
 
 _CAUSAL_CLAIM_DOMAINS = {
-    "revenue_or_demand": {"business_model", "growth_valuation", "revenue", "demand"},
-    "margin_or_execution": {"business_model", "margin", "execution"},
+    "revenue_or_demand": {"business_model", "revenue", "demand"},
+    "margin_or_execution": {"margin", "execution"},
     "balance_sheet_or_dilution": {
         "balance_sheet",
         "capital_allocation",
         "dilution",
-        "growth_valuation",
         "insider_ownership",
     },
     "management_credibility": {"management", "management_credibility"},
@@ -81,7 +80,6 @@ _CAUSAL_CLAIM_DOMAINS = {
         "demand",
         "dilution",
         "execution",
-        "growth_valuation",
         "insider_ownership",
         "management",
         "management_credibility",
@@ -89,6 +87,14 @@ _CAUSAL_CLAIM_DOMAINS = {
         "revenue",
         "valuation",
     },
+}
+_CAUSAL_CLAIM_MARKERS = {
+    "revenue_or_demand": {"revenue", "demand", "sales", "customer", "churn", "retention"},
+    "margin_or_execution": {"margin", "execution", "cost", "profitability"},
+    "balance_sheet_or_dilution": {"balance", "debt", "dilution", "shares", "financing", "capital"},
+    "management_credibility": {"management", "promise", "guidance", "milestone"},
+    "valuation_overshoot": {"valuation", "multiple", "expectation"},
+    "superior_evidence_or_opportunity": {"evidence", "opportunity", "alternative"},
 }
 
 @dataclass(frozen=True)
@@ -494,11 +500,13 @@ class ShadowSpecialistRunner:
         self, packet, company_id, run_id, packet_hash, upstream_results, scenario_data
     ):
         missing_agents = [
-            result.agent_name
-            for result in upstream_results
-            if (
-                result.output is None
-                or result.output.status is not SpecialistStatus.COMPLETE
+            agent.value
+            for agent in FIRST_WAVE_SPECIALISTS
+            if not any(
+                result.agent_name == agent.value
+                and result.output is not None
+                and result.output.status is SpecialistStatus.COMPLETE
+                for result in upstream_results
             )
         ]
         upstream_unavailable = not upstream_results or bool(missing_agents)
@@ -734,11 +742,18 @@ def _scenario_status(value):
 
 
 def _sell_inputs_available(upstream_results, scenario_data):
-    return bool(upstream_results) and all(
+    expected_agents = {agent.value for agent in FIRST_WAVE_SPECIALISTS}
+    actual_agents = {result.agent_name for result in upstream_results}
+    return (
+        len(upstream_results) == len(expected_agents)
+        and actual_agents == expected_agents
+        and all(
         result.output is not None
         and result.output.status is SpecialistStatus.COMPLETE
         for result in upstream_results
-    ) and _scenario_data_available(scenario_data)
+        )
+        and _scenario_data_available(scenario_data)
+    )
 
 
 def _domain_claims(output):
@@ -795,7 +810,7 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
             continue
         if not any(
             _causal_reference_matches(
-                test.break_type, references_by_id[claim_id]
+                test.break_type, references_by_id[claim_id], test.source_ids
             )
             for claim_id in test.claim_ids
         ):
@@ -829,6 +844,8 @@ def _upstream_references(upstream_results, packet=None):
                 "claim",
                 source_backed and direction in {"negative", "mixed"},
                 str(claim.domain).casefold(),
+                str(claim.predicate).casefold(),
+                claim.value,
             )
         management = output.management_credibility
         if management is not None:
@@ -844,6 +861,8 @@ def _upstream_references(upstream_results, packet=None):
                     "ledger",
                     source_backed and result == "missed",
                     "management_credibility",
+                    "management_ledger_result",
+                    result,
                 )
     return references
 
@@ -907,9 +926,21 @@ def _source_ids_are_permitted(packet, source_ids):
     return set(source_ids) == set(permitted)
 
 
-def _causal_reference_matches(break_type, reference):
-    source_ids, _, causal, domain = reference
-    return bool(source_ids) and causal and domain in _CAUSAL_CLAIM_DOMAINS[break_type]
+def _causal_reference_matches(break_type, reference, sell_source_ids):
+    source_ids, _, causal, domain, predicate, value = reference
+    if not set(source_ids).intersection(sell_source_ids):
+        return False
+    if not causal:
+        return False
+    if domain not in _CAUSAL_CLAIM_DOMAINS[break_type]:
+        semantic_tokens = set()
+        for field in (predicate, value):
+            semantic_tokens.update(
+                str(field).casefold().replace("-", "_").split("_")
+            )
+        if not semantic_tokens.intersection(_CAUSAL_CLAIM_MARKERS[break_type]):
+            return False
+    return bool(source_ids)
 
 
 def _packet_as_of(packet):
