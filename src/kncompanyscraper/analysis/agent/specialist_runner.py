@@ -507,14 +507,18 @@ class ShadowSpecialistRunner:
             )
             for break_type in THESIS_BREAK_TYPES
         ]
-        blockers = [
-            SellConditionActivationBlocker(
-                blocker_code=code,
-                source_ids=list(source_ids),
-                claim_ids=list(claim_ids),
-            )
-            for code in blocker_codes
-        ]
+        blockers = (
+            [
+                SellConditionActivationBlocker(
+                    blocker_code=code,
+                    source_ids=list(source_ids),
+                    claim_ids=list(claim_ids),
+                )
+                for code in blocker_codes
+            ]
+            if source_ids and claim_ids
+            else []
+        )
         missing = []
         if upstream_unavailable:
             missing.append(
@@ -801,6 +805,8 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
                 test.break_type,
                 references_by_id[claim_id],
                 test.observable_metric_or_event,
+                test.condition,
+                test.threshold_or_direction,
                 test.source_ids,
             )
             for claim_id in test.claim_ids
@@ -827,6 +833,10 @@ def _upstream_references(upstream_results, packet=None):
         if output is None:
             continue
         for claim in [*output.claims, *_domain_claims(output)]:
+            if claim.claim_id in references:
+                raise ValueError(
+                    "duplicate upstream specialist claim ID: " + claim.claim_id
+                )
             direction = getattr(claim.direction, "value", claim.direction)
             source_ids = tuple(claim.source_ids)
             source_backed = _source_ids_are_permitted(packet, source_ids)
@@ -841,6 +851,10 @@ def _upstream_references(upstream_results, packet=None):
         management = output.management_credibility
         if management is not None:
             for row in management.ledger:
+                if row.claim_id in references:
+                    raise ValueError(
+                        "duplicate upstream specialist claim ID: " + row.claim_id
+                    )
                 source_ids = row.source_ids or [
                     *row.claim_source_ids,
                     *row.outcome_source_ids,
@@ -927,7 +941,12 @@ def _semantic_tokens(value):
 
 
 def _causal_reference_matches(
-    break_type, reference, observable_metric_or_event, sell_source_ids
+    break_type,
+    reference,
+    observable_metric_or_event,
+    condition,
+    threshold_or_direction,
+    sell_source_ids,
 ):
     source_ids, _, causal, domain, predicate, value = reference
     if not set(source_ids).intersection(sell_source_ids):
@@ -937,8 +956,13 @@ def _causal_reference_matches(
     typed_claim_tokens = _semantic_tokens((predicate, value))
     if not typed_claim_tokens.intersection(_CAUSAL_CLAIM_MARKERS[break_type]):
         return False
+    evidence_text_tokens = _semantic_tokens(
+        (observable_metric_or_event, condition, threshold_or_direction)
+    )
+    if break_type != "valuation_overshoot" and "price" in evidence_text_tokens:
+        return False
     observable_tokens = _semantic_tokens(observable_metric_or_event)
-    if "price" in observable_tokens and break_type != "valuation_overshoot":
+    if break_type != "valuation_overshoot" and "price" in observable_tokens:
         return False
     return bool(observable_tokens.intersection({domain, *typed_claim_tokens}))
 

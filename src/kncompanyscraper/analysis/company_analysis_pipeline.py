@@ -310,7 +310,11 @@ class CompanyAnalysisPipeline:
         if self.shadow_specialist_runner is None or not self.shadow_specialists_enabled:
             return
         stage = result.setdefault("stages", {}).get("shadow_specialists", {})
-        if stage.get("status") == "accepted":
+        sell_stage = result.get("stages", {}).get("shadow_sell_conditions", {})
+        if (
+            stage.get("status") == "accepted"
+            and sell_stage.get("status") == "accepted"
+        ):
             return
         self._start_stage(result, job_id, "shadow_specialists")
         try:
