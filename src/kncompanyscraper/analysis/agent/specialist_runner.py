@@ -991,7 +991,6 @@ def _sell_inputs_available(upstream_results, scenario_data):
         and result.output.status is SpecialistStatus.COMPLETE
         for result in upstream_results
         )
-        and _scenario_data_available(scenario_data)
     )
 
 
@@ -1115,6 +1114,19 @@ def _validate_sell_dependency_blockers(output, inputs_available, scenario_data):
         raise ValueError(
             "sell dependency blocker contradicts available scenario data"
         )
+    if not _scenario_data_available(scenario_data):
+        valuation_tests = [
+            test
+            for test in output.sell_conditions.tests
+            if test.break_type == "valuation_overshoot"
+        ]
+        if any(
+            test.current_break_status is not SellConditionStatus.UNASSESSABLE
+            for test in valuation_tests
+        ):
+            raise ValueError(
+                "valuation sell condition requires deterministic scenario data"
+            )
 
 
 def _upstream_references(upstream_results, packet=None):
@@ -1346,7 +1358,7 @@ def _causal_condition_direction(
             ),
             "share_count": (
                 r"(?:share\s+count|shares?|dilution)",
-                r"increas\w*|ris\w*|grow\w*|deteriorat\w*|worsen\w*|dilut\w*",
+                r"increas\w*|ris\w*|grow\w*|deteriorat\w*|worsen\w*|dilut\w*|expand\w*",
                 r"decreas\w*|fall\w*|drop\w*|improv\w*|strengthen\w*|reduc\w*|lower\w*",
             ),
         }
@@ -1445,10 +1457,33 @@ def _causal_reference_matches(
         return False
     if direction == "positive" and condition_direction != "favorable":
         return False
-    if break_type != "valuation_overshoot" and _contains_share_price_signal(
+    price_observable = _contains_share_price_signal(
         observable_metric_or_event,
         typed_claim_tokens,
-    ):
+    )
+    if break_type == "valuation_overshoot" and price_observable:
+        valuation_context_tokens = _semantic_tokens(
+            (condition, threshold_or_direction)
+        )
+        if not valuation_context_tokens.intersection(
+            {
+                "valuation",
+                "multiple",
+                "unsupported",
+                "demanding",
+                "fair",
+                "value",
+                "fundamental",
+                "expectation",
+                "dcf",
+                "growth",
+                "margin",
+                "earnings",
+                "case",
+            }
+        ):
+            return False
+    if break_type != "valuation_overshoot" and price_observable:
         return False
     if not observable_tokens.intersection(typed_claim_tokens):
         if not (
