@@ -150,6 +150,20 @@ _CAUSAL_STATUS_VALUES_BY_BREAK = {
     "superior_evidence_or_opportunity": set(),
 }
 
+_VALUATION_RELATIONSHIP_MARKERS = {
+    "valuation",
+    "multiple",
+    "unsupported",
+    "demanding",
+    "fair",
+    "value",
+    "fundamental",
+    "expectation",
+    "dcf",
+    "margin",
+    "earnings",
+}
+
 @dataclass(frozen=True)
 class SpecialistArtifactResult:
     agent_name: str
@@ -1127,6 +1141,25 @@ def _validate_sell_dependency_blockers(output, inputs_available, scenario_data):
             raise ValueError(
                 "valuation sell condition requires deterministic scenario data"
             )
+        missing_codes = {
+            item.item_code for item in output.missing_information
+        }
+        if (
+            "deterministic_scenario_unavailable" not in blocker_codes
+            or "deterministic_scenario_data" not in missing_codes
+        ):
+            raise ValueError(
+                "missing scenario data requires blocker and missing_information"
+            )
+        if (
+            getattr(output.confidence, "value", output.confidence)
+            != SpecialistConfidence.LOW.value
+            or getattr(output.confidence_cap, "value", output.confidence_cap)
+            != SpecialistConfidence.LOW.value
+        ):
+            raise ValueError(
+                "missing scenario data requires low confidence"
+            )
 
 
 def _upstream_references(upstream_results, packet=None):
@@ -1294,6 +1327,34 @@ def _contains_share_price_signal(value, typed_claim_tokens=()):
     }.issubset(typed_claim_tokens)
 
 
+def _price_trigger_has_causal_relationship(
+    break_type,
+    condition,
+    threshold_or_direction,
+    observable_tokens,
+    typed_claim_tokens,
+):
+    evidence_text = " ".join(
+        str(value)
+        for value in (condition, threshold_or_direction)
+    )
+    if not _contains_share_price_signal(evidence_text, typed_claim_tokens):
+        return False
+    if break_type == "valuation_overshoot":
+        return bool(
+            _semantic_tokens(evidence_text).intersection(
+                _VALUATION_RELATIONSHIP_MARKERS
+            )
+        )
+    condition_tokens = _semantic_tokens(condition)
+    return bool(
+        condition_tokens.intersection(observable_tokens)
+        and condition_tokens.intersection(
+            _CAUSAL_CLAIM_MARKERS[break_type] | set(typed_claim_tokens)
+        )
+    )
+
+
 def _causal_condition_direction(
     break_type,
     condition,
@@ -1392,6 +1453,12 @@ def _causal_condition_direction(
             ):
                 return "favorable"
     if re.search(
+        r"\b(?:fails?|failed)\s+to\s+(?:improv\w*|increas\w*|grow\w*|"
+        r"strengthen\w*|ris\w*|expand\w*|recover\w*)\b",
+        text,
+    ):
+        return "adverse"
+    if re.search(
         rf"\b(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)\s+(?:{favorable_terms})\b",
         text,
     ):
@@ -1461,29 +1528,20 @@ def _causal_reference_matches(
         observable_metric_or_event,
         typed_claim_tokens,
     )
-    if break_type == "valuation_overshoot" and price_observable:
-        valuation_context_tokens = _semantic_tokens(
-            (condition, threshold_or_direction)
-        )
-        if not valuation_context_tokens.intersection(
-            {
-                "valuation",
-                "multiple",
-                "unsupported",
-                "demanding",
-                "fair",
-                "value",
-                "fundamental",
-                "expectation",
-                "dcf",
-                "growth",
-                "margin",
-                "earnings",
-                "case",
-            }
-        ):
-            return False
-    if break_type != "valuation_overshoot" and price_observable:
+    price_evidence = _contains_share_price_signal(
+        " ".join(
+            str(value)
+            for value in (condition, threshold_or_direction)
+        ),
+        typed_claim_tokens,
+    )
+    if (price_observable or price_evidence) and not _price_trigger_has_causal_relationship(
+        break_type,
+        condition,
+        threshold_or_direction,
+        observable_tokens,
+        typed_claim_tokens,
+    ):
         return False
     if not observable_tokens.intersection(typed_claim_tokens):
         if not (
@@ -1491,25 +1549,6 @@ def _causal_reference_matches(
             and "unsupported" in typed_claim_tokens
             and observable_tokens.intersection({"price", "share", "stock", "market"})
         ):
-            return False
-    if break_type != "valuation_overshoot" and _contains_share_price_signal(
-        " ".join(
-            str(value)
-            for value in (observable_metric_or_event, condition, threshold_or_direction)
-        ),
-        typed_claim_tokens,
-    ):
-        expected_condition_direction = (
-            "favorable" if direction == "positive" else "adverse"
-        )
-        observed_condition_direction = _causal_condition_direction(
-            break_type,
-            condition,
-            "",
-            typed_claim_tokens,
-            observable_tokens,
-        )
-        if observed_condition_direction != expected_condition_direction:
             return False
     return True
 
