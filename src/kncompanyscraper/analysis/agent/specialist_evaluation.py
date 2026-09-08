@@ -294,6 +294,21 @@ def _record_run_id(record: Mapping) -> Any:
     return run_id if isinstance(run_id, str) else None
 
 
+def _artifact_agent_name(record: Mapping) -> str | None:
+    metadata_agent_name = _metadata(record).get("agent_name")
+    if isinstance(metadata_agent_name, str) and metadata_agent_name in _SPECIALIST_AGENT_NAMES:
+        return metadata_agent_name
+    content = record.get("content")
+    if not isinstance(content, str):
+        return None
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    agent_name = payload.get("agent_name") if isinstance(payload, Mapping) else None
+    return agent_name if isinstance(agent_name, str) and agent_name in _SPECIALIST_AGENT_NAMES else None
+
+
 def _record_matches(case: Mapping, record: Mapping) -> bool:
     if "_malformed" in record:
         return False
@@ -302,6 +317,8 @@ def _record_matches(case: Mapping, record: Mapping) -> bool:
     if company_id is not None and company_id != case["company_id"]:
         return False
     if metadata.get("case_id", record.get("case_id")) not in (None, case["case_id"]):
+        return False
+    if case.get("run_id") is not None and _record_run_id(record) not in (None, case["run_id"]):
         return False
     return True
 
@@ -708,6 +725,18 @@ def compare_specialist_evaluations(
                 agent_metric["evaluated"] += 1
                 agent_metric["correct"] += int(confidence_actual == expected)
                 agent_metric["_absolute_error_sum"] += absolute_error
+        agent_statuses = {
+            output.agent_name.value: output.status.value for output in parsed
+        }
+        agent_metadata = {}
+        for record in specialist_records:
+            agent_name = _artifact_agent_name(record)
+            if agent_name is None:
+                continue
+            agent_metadata.setdefault(agent_name, []).append(
+                {field: _metadata(record).get(field) for field in _METADATA_FIELDS}
+            )
+            agent_statuses.setdefault(agent_name, "rejected")
         case_reports.append({
             "case_id": case["case_id"],
             "packet_hash": case["packet_hash"],
@@ -726,9 +755,8 @@ def compare_specialist_evaluations(
                     for record in case_level_records
                 ],
             },
-            "agent_statuses": {
-                output.agent_name.value: output.status.value for output in parsed
-            },
+            "agent_statuses": agent_statuses,
+            "agent_metadata": agent_metadata,
         })
     for metric in totals.values():
         if isinstance(metric, dict) and "total" in metric:

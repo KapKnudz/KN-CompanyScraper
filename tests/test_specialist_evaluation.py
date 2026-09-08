@@ -472,6 +472,24 @@ def test_paired_comparison_keeps_tiers_separate_and_reports_deltas():
     assert report["metric_deltas"]["claim_label_agreement"]["correct"] == -1
 
 
+def test_paired_comparison_keeps_rejected_agent_in_alignment():
+    cases, best_artifacts, packets = documents()
+    candidate_artifacts = copy.deepcopy(best_artifacts)
+    for artifact in candidate_artifacts["artifacts"]:
+        artifact["metadata"]["model_tier"] = "candidate"
+    candidate_artifacts["artifacts"][0]["metadata"]["validation_status"] = "rejected"
+
+    report = compare_paired_specialist_evaluations(
+        cases, best_artifacts, candidate_artifacts, packets=packets
+    )
+
+    assert report["cases"][0]["agents"]["management_credibility"] == {
+        "best_tier": "complete",
+        "candidate_tier": "rejected",
+    }
+    assert report["metric_deltas"]["parse_semantic_rejection"]["rejected"] == 1
+
+
 def test_paired_comparison_rejects_mixed_tier_metadata():
     cases, best_artifacts, packets = documents()
     candidate_artifacts = copy.deepcopy(best_artifacts)
@@ -542,6 +560,25 @@ def test_multiple_runs_without_case_selection_are_unavailable():
     assert report["cases"][0]["accepted_count"] == 0
     assert "explicit case run_id selection" in report["cases"][0]["artifact_errors"][0]
     assert report["metrics"]["claim_label_agreement"]["unavailable"] == 1
+
+
+def test_selected_run_excludes_historical_artifacts_from_rejections():
+    cases, artifacts, packets = documents()
+    cases["cases"][0]["run_id"] = "synthetic-run"
+    historical = copy.deepcopy(artifacts["artifacts"][0])
+    historical["metadata"]["run_id"] = "historical-run"
+    historical_payload = json.loads(historical["content"])
+    historical_payload["run_id"] = "historical-run"
+    historical["content"] = json.dumps(historical_payload)
+    artifacts["artifacts"].append(historical)
+
+    report = run(cases, artifacts, packets)
+
+    assert report["metrics"]["parse_semantic_rejection"] == {
+        "rejected": 0,
+        "total": 2,
+        "rejection_rate": 0,
+    }
 
 
 def test_conflict_recall_skips_rules_requiring_unavailable_case_verdict():
