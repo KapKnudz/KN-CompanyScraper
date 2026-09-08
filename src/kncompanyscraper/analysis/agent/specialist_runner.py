@@ -62,6 +62,35 @@ _SPECIALIST_PROMPT_RESOURCES = {
     SpecialistAgentName.SELL_CONDITIONS: "specialist_sell_conditions_prompt.md",
 }
 
+_CAUSAL_CLAIM_DOMAINS = {
+    "revenue_or_demand": {"business_model", "growth_valuation", "revenue", "demand"},
+    "margin_or_execution": {"business_model", "margin", "execution"},
+    "balance_sheet_or_dilution": {
+        "balance_sheet",
+        "capital_allocation",
+        "dilution",
+        "growth_valuation",
+        "insider_ownership",
+    },
+    "management_credibility": {"management", "management_credibility"},
+    "valuation_overshoot": {"growth_valuation", "valuation"},
+    "superior_evidence_or_opportunity": {
+        "balance_sheet",
+        "business_model",
+        "capital_allocation",
+        "demand",
+        "dilution",
+        "execution",
+        "growth_valuation",
+        "insider_ownership",
+        "management",
+        "management_credibility",
+        "margin",
+        "revenue",
+        "valuation",
+    },
+}
+
 @dataclass(frozen=True)
 class SpecialistArtifactResult:
     agent_name: str
@@ -279,9 +308,11 @@ class ShadowSpecialistRunner:
     def _run_sell_conditions(
         self, packet, company_id, run_id, packet_hash, upstream_results, scenario_data
     ):
+        inputs_available = _sell_inputs_available(upstream_results, scenario_data)
         reused = self._reuse_completed(
             company_id, run_id, packet_hash, SpecialistAgentName.SELL_CONDITIONS
         )
+        reuse_found = reused is not None
         if reused is not None:
             try:
                 _validate_sell_traceability(reused.output, upstream_results, packet)
@@ -289,8 +320,9 @@ class ShadowSpecialistRunner:
                 reused = None
             else:
                 if reused.status != "failed":
-                    return reused
-        if not _sell_inputs_available(upstream_results, scenario_data):
+                    if reused.status != "limited" or not inputs_available:
+                        return reused
+        if not inputs_available:
             return self._unassessable_sell_result(
                 packet,
                 company_id,
@@ -307,6 +339,7 @@ class ShadowSpecialistRunner:
             SpecialistAgentName.SELL_CONDITIONS,
             upstream_outputs=upstream_results,
             deterministic_scenario_data=scenario_data,
+            reuse_completed=not reuse_found,
         )
         if result.status == "failed" or (
             result.output is not None
@@ -332,10 +365,12 @@ class ShadowSpecialistRunner:
         *,
         upstream_outputs=None,
         deterministic_scenario_data=None,
+        reuse_completed=True,
     ):
-        reused = self._reuse_completed(company_id, run_id, packet_hash, agent_name)
-        if reused is not None:
-            return reused
+        if reuse_completed:
+            reused = self._reuse_completed(company_id, run_id, packet_hash, agent_name)
+            if reused is not None:
+                return reused
 
         prompt = (
             self.prompt_builder.build(
@@ -474,7 +509,7 @@ class ShadowSpecialistRunner:
             blocker_codes.append("deterministic_scenario_unavailable")
         claim_ids = _upstream_claim_ids(upstream_results)
         source_ids = _sell_source_ids_in_catalog(
-            packet, _upstream_source_ids(upstream_results)
+            packet, _upstream_source_ids(upstream_results, packet)
         )
         tests = [
             SellConditionAssessment(
@@ -718,7 +753,7 @@ def _upstream_claim_ids(upstream_results):
 
 
 def _validate_sell_traceability(output, upstream_results, packet=None):
-    references_by_id = _upstream_references(upstream_results)
+    references_by_id = _upstream_references(upstream_results, packet)
     known_claim_ids = set(references_by_id)
     sell = output.sell_conditions
     if sell is None:
@@ -759,7 +794,9 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
         if test.current_break_status is not SellConditionStatus.TRIGGERED:
             continue
         if not any(
-            references_by_id[claim_id][0] and references_by_id[claim_id][2]
+            _causal_reference_matches(
+                test.break_type, references_by_id[claim_id]
+            )
             for claim_id in test.claim_ids
         ):
             raise ValueError(
@@ -767,17 +804,17 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
             )
 
 
-def _upstream_source_ids(upstream_results):
+def _upstream_source_ids(upstream_results, packet=None):
     return list(
         dict.fromkeys(
             source_id
-            for source_ids, *_ in _upstream_references(upstream_results).values()
+            for source_ids, *_ in _upstream_references(upstream_results, packet).values()
             for source_id in source_ids
         )
     )
 
 
-def _upstream_references(upstream_results):
+def _upstream_references(upstream_results, packet=None):
     references = {}
     for result in upstream_results:
         output = result.output
@@ -785,10 +822,13 @@ def _upstream_references(upstream_results):
             continue
         for claim in [*output.claims, *_domain_claims(output)]:
             direction = getattr(claim.direction, "value", claim.direction)
+            source_ids = tuple(claim.source_ids)
+            source_backed = _source_ids_are_permitted(packet, source_ids)
             references[claim.claim_id] = (
-                tuple(claim.source_ids),
+                source_ids,
                 "claim",
-                direction in {"negative", "mixed"},
+                source_backed and direction in {"negative", "mixed"},
+                str(claim.domain).casefold(),
             )
         management = output.management_credibility
         if management is not None:
@@ -798,10 +838,12 @@ def _upstream_references(upstream_results):
                     *row.outcome_source_ids,
                 ]
                 result = getattr(row.result, "value", row.result)
+                source_backed = _source_ids_are_permitted(packet, source_ids)
                 references[row.claim_id] = (
                     tuple(source_ids),
                     "ledger",
-                    result == "missed",
+                    source_backed and result == "missed",
+                    "management_credibility",
                 )
     return references
 
@@ -848,9 +890,26 @@ def _sell_source_ids_in_catalog(packet, source_ids):
             )
         except SourcePathError:
             continue
-        if resolved in canonical_source_ids:
+        if (
+            resolved in canonical_source_ids
+            or source_id.startswith(("full_results.", "deterministic:"))
+        ):
             permitted.append(source_id)
     return list(dict.fromkeys(permitted))
+
+
+def _source_ids_are_permitted(packet, source_ids):
+    if packet is None:
+        return bool(source_ids)
+    if not source_ids:
+        return False
+    permitted = _sell_source_ids_in_catalog(packet, source_ids)
+    return set(source_ids) == set(permitted)
+
+
+def _causal_reference_matches(break_type, reference):
+    source_ids, _, causal, domain = reference
+    return bool(source_ids) and causal and domain in _CAUSAL_CLAIM_DOMAINS[break_type]
 
 
 def _packet_as_of(packet):
