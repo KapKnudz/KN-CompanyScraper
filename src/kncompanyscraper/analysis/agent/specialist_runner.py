@@ -1266,6 +1266,16 @@ def _semantic_tokens(value):
     return set(re.findall(r"[a-z0-9]+", str(value).casefold()))
 
 
+def _contains_share_price_signal(value):
+    return bool(
+        re.search(
+            r"\b(?:share|stock|market)\s+(?:price|quote|quotation)\b|"
+            r"\b(?:price|quote|quotation)\s+(?:per\s+share|of(?:\s+the)?\s+(?:share|stock|market))\b",
+            str(value).casefold(),
+        )
+    )
+
+
 def _causal_condition_direction(
     break_type,
     condition,
@@ -1320,7 +1330,13 @@ def _causal_condition_direction(
                 r"decreas\w*|fall\w*|drop\w*|improv\w*|strengthen\w*|reduc\w*|lower\w*",
             ),
         }
-        for subject_pattern, adverse_subject_terms, favorable_subject_terms in balance_subjects.values():
+        for subject_pattern, adverse_subject_terms, favorable_subject_terms in sorted(
+            balance_subjects.values(),
+            key=lambda item: len(
+                _semantic_tokens(item[0]).intersection(observed_metric_tokens)
+            ),
+            reverse=True,
+        ):
             if not re.search(rf"\b{subject_pattern}\b", text):
                 continue
             if re.search(
@@ -1405,16 +1421,12 @@ def _causal_reference_matches(
         typed_claim_tokens,
         observable_tokens,
     )
-    if (
-        direction in {"negative", "mixed"}
-        and condition_direction == "favorable"
-    ) or (direction == "positive" and condition_direction == "adverse"):
+    if direction in {"negative", "mixed"} and condition_direction != "adverse":
         return False
-    evidence_text_tokens = _semantic_tokens(
-        (observable_metric_or_event, condition, threshold_or_direction)
-    )
-    if break_type != "valuation_overshoot" and observable_tokens.intersection(
-        {"price", "quote", "quotation"}
+    if direction == "positive" and condition_direction != "favorable":
+        return False
+    if break_type != "valuation_overshoot" and _contains_share_price_signal(
+        observable_metric_or_event
     ):
         return False
     if not observable_tokens.intersection(typed_claim_tokens):
@@ -1424,8 +1436,11 @@ def _causal_reference_matches(
             and observable_tokens.intersection({"price", "share", "stock", "market"})
         ):
             return False
-    if break_type != "valuation_overshoot" and evidence_text_tokens.intersection(
-        {"price", "quote", "quotation"}
+    if break_type != "valuation_overshoot" and _contains_share_price_signal(
+        " ".join(
+            str(value)
+            for value in (observable_metric_or_event, condition, threshold_or_direction)
+        )
     ):
         expected_condition_direction = (
             "favorable" if direction == "positive" else "adverse"

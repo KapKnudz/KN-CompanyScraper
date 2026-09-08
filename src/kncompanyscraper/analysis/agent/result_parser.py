@@ -531,14 +531,10 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
 def _validate_causal_sell_condition(test: dict) -> None:
     if test["current_break_status"] != "triggered":
         return
-    observable_tokens = set(
-        re.findall(
-            r"[a-z0-9]+",
-            test["observable_metric_or_event"].casefold(),
-        )
-    )
-    if test["break_type"] != "valuation_overshoot" and observable_tokens.intersection(
-        {"price", "quote", "quotation"}
+    if test["break_type"] != "valuation_overshoot" and re.search(
+        r"\b(?:share|stock|market)\s+(?:price|quote|quotation)\b|"
+        r"\b(?:price|quote|quotation)\s+(?:per\s+share|of(?:\s+the)?\s+(?:share|stock|market))\b",
+        test["observable_metric_or_event"].casefold(),
     ):
         raise StockAnalysisValidationError(
             "triggered sell conditions must identify a causal thesis break, not price alone"
@@ -547,7 +543,7 @@ def _validate_causal_sell_condition(test: dict) -> None:
 
 def _validate_specialist_margin(payload: dict) -> None:
     margin = payload.get("margin")
-    if margin is None or margin["margin_state"] == "unassessable":
+    if margin is None or margin["margin_state"] in {"unassessable", "not_applicable"}:
         return
     if not any(
         claim["domain"].casefold() == "margin"
