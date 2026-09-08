@@ -1266,14 +1266,20 @@ def _semantic_tokens(value):
     return set(re.findall(r"[a-z0-9]+", str(value).casefold()))
 
 
-def _contains_share_price_signal(value):
-    return bool(
-        re.search(
-            r"\b(?:share|stock|market)\s+(?:price|quote|quotation)\b|"
-            r"\b(?:price|quote|quotation)\s+(?:per\s+share|of(?:\s+the)?\s+(?:share|stock|market))\b",
-            str(value).casefold(),
-        )
-    )
+def _contains_share_price_signal(value, typed_claim_tokens=()):
+    text = str(value).casefold()
+    if re.search(
+        r"\b(?:share|stock|market)\s+(?:price|quote|quotation)\b|"
+        r"\b(?:price|quote|quotation)\s+(?:per\s+share|of(?:\s+the)?\s+(?:share|stock|market))\b",
+        text,
+    ):
+        return True
+    if re.search(r"\b(?:average|selling|sale|unit)\s+price\b", text):
+        return False
+    return "price" in _semantic_tokens(text) and {
+        "share",
+        "price",
+    }.issubset(typed_claim_tokens)
 
 
 def _causal_condition_direction(
@@ -1316,6 +1322,8 @@ def _causal_condition_direction(
             text = clauses[0]
     adverse_terms = r"declin\w*|decreas\w*|fall\w*|drop\w*|worsen\w*|deteriorat\w*|weaken\w*|fail\w*|miss\w*|stall\w*|below|under|shortfall|unmet|insufficient|breach"
     favorable_terms = r"improv\w*|increas\w*|grow\w*|strengthen\w*|ris\w*|higher|better|expand\w*|recover\w*"
+    if break_type == "superior_evidence_or_opportunity":
+        favorable_terms += r"|superior\w*|emerg\w*|exceed\w*|outperform\w*"
     if break_type == "balance_sheet_or_dilution":
         negation = r"(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)"
         balance_subjects = {
@@ -1426,7 +1434,8 @@ def _causal_reference_matches(
     if direction == "positive" and condition_direction != "favorable":
         return False
     if break_type != "valuation_overshoot" and _contains_share_price_signal(
-        observable_metric_or_event
+        observable_metric_or_event,
+        typed_claim_tokens,
     ):
         return False
     if not observable_tokens.intersection(typed_claim_tokens):
@@ -1440,7 +1449,8 @@ def _causal_reference_matches(
         " ".join(
             str(value)
             for value in (observable_metric_or_event, condition, threshold_or_direction)
-        )
+        ),
+        typed_claim_tokens,
     ):
         expected_condition_direction = (
             "favorable" if direction == "positive" else "adverse"
