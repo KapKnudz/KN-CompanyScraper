@@ -21,7 +21,11 @@ from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
     parse_specialist_output,
 )
-from kncompanyscraper.analysis.agent.output_schema import SpecialistAgentName
+from kncompanyscraper.analysis.agent.output_schema import (
+    ManagementLedgerResult,
+    SpecialistAgentName,
+    SpecialistClaimDirection,
+)
 from kncompanyscraper.analysis.agent.specialist_conflicts import (
     evaluate_specialist_conflicts,
 )
@@ -36,6 +40,9 @@ CONFLICT_RULES = (
 )
 _CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
 _SPECIALIST_AGENT_NAMES = {agent.value for agent in SpecialistAgentName}
+_SPECIALIST_CLAIM_DIRECTIONS = {direction.value for direction in SpecialistClaimDirection}
+_MANAGEMENT_LEDGER_RESULTS = {result.value for result in ManagementLedgerResult}
+_FINAL_VERDICTS = {"reject", "watch", "latent_case", "activated_case"}
 _METADATA_FIELDS = (
     "run_id",
     "agent_name",
@@ -84,19 +91,30 @@ def _validate_labels(labels: Any, case_id: str) -> None:
     for index, label in enumerate(claims):
         _require(isinstance(label, Mapping), f"case {case_id}: claim label {index} must be an object")
         if not _na(label):
-            _require(isinstance(label.get("agent_name"), str), f"case {case_id}: claim label needs agent_name")
+            _require(
+                label.get("agent_name") in _SPECIALIST_AGENT_NAMES,
+                f"case {case_id}: claim label has an unknown agent_name",
+            )
             _require(isinstance(label.get("claim_id"), str), f"case {case_id}: claim label needs claim_id")
             _require(
                 label.get("expected_direction") is not None or label.get("expected_value") is not None,
                 f"case {case_id}: claim label needs expected_direction or expected_value",
             )
+            if label.get("expected_direction") is not None:
+                _require(
+                    label["expected_direction"] in _SPECIALIST_CLAIM_DIRECTIONS,
+                    f"case {case_id}: claim label has an unknown expected_direction",
+                )
     rows = labels.get("management_rows", [])
     _require(isinstance(rows, list), f"case {case_id}: labels.management_rows must be a list")
     for index, label in enumerate(rows):
         _require(isinstance(label, Mapping), f"case {case_id}: management row label {index} must be an object")
         if not _na(label):
             _require(isinstance(label.get("claim_id"), str), f"case {case_id}: management row needs claim_id")
-            _require(isinstance(label.get("expected_result"), str), f"case {case_id}: management row needs expected_result")
+            _require(
+                label.get("expected_result") in _MANAGEMENT_LEDGER_RESULTS,
+                f"case {case_id}: management row has an unknown expected_result",
+            )
     conflicts = labels.get("conflicts", {})
     _require(isinstance(conflicts, Mapping), f"case {case_id}: labels.conflicts must be an object")
     for key in ("expected_triggered", "expected_not_triggered"):
@@ -121,6 +139,11 @@ def _validate_labels(labels: Any, case_id: str) -> None:
     _require(
         _na(activation) or isinstance(activation, bool),
         f"case {case_id}: activation must be boolean or not_applicable",
+    )
+    final_verdict = labels.get("final_verdict", "not_applicable")
+    _require(
+        _na(final_verdict) or final_verdict in _FINAL_VERDICTS,
+        f"case {case_id}: final_verdict is unknown",
     )
     confidence = labels.get("confidence", "not_applicable")
     if not _na(confidence):
@@ -233,10 +256,6 @@ def _record_matches(case: Mapping, record: Mapping) -> bool:
     if company_id is not None and company_id != case["company_id"]:
         return False
     if metadata.get("case_id", record.get("case_id")) not in (None, case["case_id"]):
-        return False
-    if metadata.get("packet_hash") not in (None, case["packet_hash"]):
-        return False
-    if case.get("run_id") is not None and metadata.get("run_id") != case["run_id"]:
         return False
     return True
 
@@ -364,6 +383,14 @@ def compare_specialist_evaluations(
             if metadata.get("validation_status") not in (None, "accepted"):
                 rejection_count += 1
                 artifact_errors.append(f"artifact validation_status is {metadata['validation_status']!r}")
+                continue
+            if metadata.get("packet_hash") not in (None, case["packet_hash"]):
+                rejection_count += 1
+                artifact_errors.append("artifact metadata packet_hash does not match evaluation case")
+                continue
+            if case.get("run_id") is not None and metadata.get("run_id") not in (None, case["run_id"]):
+                rejection_count += 1
+                artifact_errors.append("artifact metadata run_id does not match evaluation case")
                 continue
             if not isinstance(content, str):
                 rejection_count += 1
@@ -605,16 +632,3 @@ def format_evaluation_report(report: Mapping) -> str:
             "Metadata unavailable fields are reported in metadata_fields; no missing values are inferred.",
         ]
     )
-
-
-def specialist_evaluation_json_schema() -> dict:
-    """Machine-readable top-level schema summary for fixture authors."""
-    return {
-        "type": "object",
-        "required": ["schema_version", "cases"],
-        "properties": {
-            "schema_version": {"const": CASES_SCHEMA_VERSION},
-            "cases": {"type": "array"},
-        },
-        "additionalProperties": False,
-    }

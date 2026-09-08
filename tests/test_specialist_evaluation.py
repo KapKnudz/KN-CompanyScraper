@@ -91,6 +91,36 @@ def test_malformed_artifact_records_are_counted_as_rejections():
     assert report["malformed_artifact_count"] == 1
 
 
+def test_metadata_packet_mismatch_is_counted_as_rejection():
+    cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["metadata"]["packet_hash"] = "f" * 64
+
+    report = run(cases, artifacts, packets)
+    rejection = report["metrics"]["parse_semantic_rejection"]
+    assert rejection["rejected"] == 1
+    assert rejection["total"] == 2
+    assert report["cases"][0]["accepted_count"] == 1
+
+
+def test_human_label_enums_are_validated():
+    cases, _, _ = documents()
+    mutations = (
+        ("claims", "agent_name", "unknown_agent"),
+        ("claims", "expected_direction", "unknown_direction"),
+        ("management_rows", "expected_result", "unknown_result"),
+    )
+    for label_group, field, value in mutations:
+        invalid = copy.deepcopy(cases)
+        invalid["cases"][0]["labels"][label_group][0][field] = value
+        with pytest.raises(EvaluationFormatError, match="unknown"):
+            load_cases(invalid)
+
+    invalid = copy.deepcopy(cases)
+    invalid["cases"][0]["labels"]["final_verdict"] = "unknown_verdict"
+    with pytest.raises(EvaluationFormatError, match="final_verdict is unknown"):
+        load_cases(invalid)
+
+
 def test_conflict_false_positive_and_false_negative_counts_are_explicit():
     cases, artifacts, packets = documents()
     labels = cases["cases"][0]["labels"]["conflicts"]
