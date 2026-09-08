@@ -1324,6 +1324,18 @@ def _causal_condition_direction(
     favorable_terms = r"improv\w*|increas\w*|grow\w*|strengthen\w*|ris\w*|higher|better|expand\w*|recover\w*"
     if break_type == "superior_evidence_or_opportunity":
         favorable_terms += r"|superior\w*|emerg\w*|exceed\w*|outperform\w*"
+    if break_type == "valuation_overshoot":
+        valuation_adverse_terms = (
+            r"unsupported|demanding|overvalu\w*|overpric\w*|overshoot\w*|"
+            r"expand\w*|exceed\w*|excessive\w*|stretched\w*|above"
+        )
+        negation = r"(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)"
+        if re.search(
+            rf"\b{negation}\s+(?:{valuation_adverse_terms})\b", text
+        ):
+            return "favorable"
+        if re.search(rf"\b(?:{valuation_adverse_terms})\b", text):
+            return "adverse"
     if break_type == "balance_sheet_or_dilution":
         negation = r"(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)"
         balance_subjects = {
