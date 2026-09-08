@@ -1267,7 +1267,11 @@ def _semantic_tokens(value):
 
 
 def _causal_condition_direction(
-    break_type, condition, threshold_or_direction, typed_claim_tokens=()
+    break_type,
+    condition,
+    threshold_or_direction,
+    typed_claim_tokens=(),
+    observed_metric_tokens=(),
 ):
     text = " ".join(
         str(value).casefold()
@@ -1277,45 +1281,68 @@ def _causal_condition_direction(
         r"\b(?:despite|although|though|but|while)\b", text
     )
     if len(clauses) > 1:
-        break_markers = set(typed_claim_tokens) | _CAUSAL_CLAIM_MARKERS[break_type]
+        break_markers = (
+            set(typed_claim_tokens)
+            | set(observed_metric_tokens)
+            | _CAUSAL_CLAIM_MARKERS[break_type]
+        )
         matching_clauses = [
             clause
             for clause in clauses
             if _semantic_tokens(clause).intersection(break_markers)
         ]
         if matching_clauses:
-            text = (
-                matching_clauses[0]
-                if re.search(r"\b(?:despite|although|though)\b", text)
-                else matching_clauses[-1]
+            text = max(
+                enumerate(matching_clauses),
+                key=lambda item: (
+                    len(_semantic_tokens(item[1]).intersection(observed_metric_tokens)),
+                    len(_semantic_tokens(item[1]).intersection(typed_claim_tokens)),
+                    len(_semantic_tokens(item[1]).intersection(_CAUSAL_CLAIM_MARKERS[break_type])),
+                    item[0],
+                ),
             )
+            text = text[1]
         else:
             text = clauses[0]
     adverse_terms = r"declin\w*|decreas\w*|fall\w*|drop\w*|worsen\w*|deteriorat\w*|weaken\w*|fail\w*|miss\w*|stall\w*|below|under|shortfall|unmet|insufficient|breach"
     favorable_terms = r"improv\w*|increas\w*|grow\w*|strengthen\w*|ris\w*|higher|better|expand\w*|recover\w*"
     if break_type == "balance_sheet_or_dilution":
-        adverse_subject = r"(?:share\s+count|shares?|dilution|debt|leverage)"
         negation = r"(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)"
-        if re.search(
-            rf"\b{adverse_subject}\b(?:\s+\w+){{0,3}}\s+{negation}\s+(?:{favorable_terms})\b",
-            text,
-        ):
-            return "favorable"
-        if re.search(
-            rf"\b{adverse_subject}\b(?:\s+\w+){{0,3}}\s+{negation}\s+(?:{adverse_terms})\b",
-            text,
-        ):
-            return "adverse"
-        if re.search(
-            rf"\b{adverse_subject}\b(?:\s+\w+){{0,3}}\s+(?:{favorable_terms})\b",
-            text,
-        ):
-            return "adverse"
-        if re.search(
-            rf"\b{adverse_subject}\b(?:\s+\w+){{0,3}}\s+(?:{adverse_terms})\b",
-            text,
-        ):
-            return "favorable"
+        balance_subjects = {
+            "debt": (
+                r"(?:debt|leverage)",
+                r"increas\w*|ris\w*|grow\w*|deteriorat\w*|worsen\w*|weaken\w*",
+                r"decreas\w*|fall\w*|drop\w*|improv\w*|strengthen\w*|reduc\w*|lower\w*",
+            ),
+            "share_count": (
+                r"(?:share\s+count|shares?|dilution)",
+                r"increas\w*|ris\w*|grow\w*|deteriorat\w*|worsen\w*|dilut\w*",
+                r"decreas\w*|fall\w*|drop\w*|improv\w*|strengthen\w*|reduc\w*|lower\w*",
+            ),
+        }
+        for subject_pattern, adverse_subject_terms, favorable_subject_terms in balance_subjects.values():
+            if not re.search(rf"\b{subject_pattern}\b", text):
+                continue
+            if re.search(
+                rf"\b{subject_pattern}\b(?:\s+\w+){{0,3}}\s+{negation}\s+(?:{adverse_subject_terms})\b",
+                text,
+            ):
+                return "favorable"
+            if re.search(
+                rf"\b{subject_pattern}\b(?:\s+\w+){{0,3}}\s+{negation}\s+(?:{favorable_subject_terms})\b",
+                text,
+            ):
+                return "adverse"
+            if re.search(
+                rf"\b{subject_pattern}\b(?:\s+\w+){{0,3}}\s+(?:{adverse_subject_terms})\b",
+                text,
+            ):
+                return "adverse"
+            if re.search(
+                rf"\b{subject_pattern}\b(?:\s+\w+){{0,3}}\s+(?:{favorable_subject_terms})\b",
+                text,
+            ):
+                return "favorable"
     if re.search(
         rf"\b(?:does not|doesn't|did not|didn't|no|not|never|fails to|failed to)\s+(?:{favorable_terms})\b",
         text,
@@ -1370,11 +1397,13 @@ def _causal_reference_matches(
     ):
         return False
     typed_claim_tokens.update(_semantic_tokens(domain))
+    observable_tokens = _semantic_tokens(observable_metric_or_event)
     condition_direction = _causal_condition_direction(
         break_type,
         condition,
         threshold_or_direction,
         typed_claim_tokens,
+        observable_tokens,
     )
     if (
         direction in {"negative", "mixed"}
@@ -1384,7 +1413,6 @@ def _causal_reference_matches(
     evidence_text_tokens = _semantic_tokens(
         (observable_metric_or_event, condition, threshold_or_direction)
     )
-    observable_tokens = _semantic_tokens(observable_metric_or_event)
     if break_type != "valuation_overshoot" and observable_tokens.intersection(
         {"price", "quote", "quotation"}
     ):
@@ -1403,7 +1431,11 @@ def _causal_reference_matches(
             "favorable" if direction == "positive" else "adverse"
         )
         observed_condition_direction = _causal_condition_direction(
-            break_type, condition, "", typed_claim_tokens
+            break_type,
+            condition,
+            "",
+            typed_claim_tokens,
+            observable_tokens,
         )
         if observed_condition_direction != expected_condition_direction:
             return False
