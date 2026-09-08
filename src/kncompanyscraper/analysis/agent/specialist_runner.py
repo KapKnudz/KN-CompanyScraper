@@ -409,6 +409,7 @@ class ShadowSpecialistRunner:
         if (
             result.output is not None
             and result.output.status is SpecialistStatus.INSUFFICIENT_EVIDENCE
+            and result.output.sell_conditions is not None
         ):
             return result
         if result.output is not None and result.output.status is not SpecialistStatus.COMPLETE:
@@ -1270,7 +1271,9 @@ def _causal_reference_matches(
         (observable_metric_or_event, condition, threshold_or_direction)
     )
     observable_tokens = _semantic_tokens(observable_metric_or_event)
-    if break_type != "valuation_overshoot" and "price" in observable_tokens:
+    if break_type != "valuation_overshoot" and observable_tokens.intersection(
+        {"price", "quote", "quotation"}
+    ):
         return False
     if not observable_tokens.intersection(typed_claim_tokens):
         if not (

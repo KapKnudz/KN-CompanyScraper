@@ -528,7 +528,9 @@ def _validate_causal_sell_condition(test: dict) -> None:
             test["observable_metric_or_event"].casefold(),
         )
     )
-    if test["break_type"] != "valuation_overshoot" and "price" in observable_tokens:
+    if test["break_type"] != "valuation_overshoot" and observable_tokens.intersection(
+        {"price", "quote", "quotation"}
+    ):
         raise StockAnalysisValidationError(
             "triggered sell conditions must identify a causal thesis break, not price alone"
         )
