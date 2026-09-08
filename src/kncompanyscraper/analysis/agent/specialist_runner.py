@@ -97,6 +97,21 @@ _CAUSAL_CLAIM_MARKERS = {
     "valuation_overshoot": {"valuation", "multiple", "expectation", "reverse", "dcf", "unsupported", "demanding"},
     "superior_evidence_or_opportunity": {"evidence", "opportunity", "alternative"},
 }
+_CAUSAL_STATUS_PREDICATES = {"assessment", "result", "state", "status"}
+_CAUSAL_STATUS_VALUES = {
+    "declining",
+    "deteriorated",
+    "deteriorating",
+    "demanding",
+    "failed",
+    "invalidated",
+    "missed",
+    "negative",
+    "stalled",
+    "unsupported",
+    "weak",
+    "worsening",
+}
 
 @dataclass(frozen=True)
 class SpecialistArtifactResult:
@@ -313,7 +328,12 @@ class ShadowSpecialistRunner:
     ):
         inputs_available = _sell_inputs_available(upstream_results, scenario_data)
         reused = self._reuse_completed(
-            company_id, run_id, packet_hash, SpecialistAgentName.SELL_CONDITIONS
+            company_id,
+            run_id,
+            packet_hash,
+            SpecialistAgentName.SELL_CONDITIONS,
+            upstream_outputs=upstream_results,
+            deterministic_scenario_data=scenario_data,
         )
         reuse_found = reused is not None
         if reused is not None:
@@ -371,7 +391,14 @@ class ShadowSpecialistRunner:
         reuse_completed=True,
     ):
         if reuse_completed:
-            reused = self._reuse_completed(company_id, run_id, packet_hash, agent_name)
+            reused = self._reuse_completed(
+                company_id,
+                run_id,
+                packet_hash,
+                agent_name,
+                upstream_outputs=upstream_outputs,
+                deterministic_scenario_data=deterministic_scenario_data,
+            )
             if reused is not None:
                 return reused
 
@@ -601,6 +628,13 @@ class ShadowSpecialistRunner:
                 "analysis_stage": "sell_conditions",
                 "analysis_attempt": 0,
                 "limited": True,
+                "upstream_outputs_sha256": _sha256_json(
+                    [
+                        _serialize_upstream_output(item)
+                        for item in (upstream_results or ())
+                    ]
+                ),
+                "deterministic_scenario_sha256": _sha256_json(scenario_data),
             },
         )
         if artifact_id is not None:
@@ -629,7 +663,16 @@ class ShadowSpecialistRunner:
         if parsed.packet_hash != packet_hash:
             raise ValueError("specialist packet_hash does not match frozen packet")
 
-    def _reuse_completed(self, company_id, run_id, packet_hash, agent_name):
+    def _reuse_completed(
+        self,
+        company_id,
+        run_id,
+        packet_hash,
+        agent_name,
+        *,
+        upstream_outputs=None,
+        deterministic_scenario_data=None,
+    ):
         getter = getattr(
             self.raw_response_repository, "get_specialist_artifacts_for_run", None
         )
@@ -642,6 +685,18 @@ class ShadowSpecialistRunner:
             if (
                 metadata.get("packet_hash") != packet_hash
                 or metadata.get("validation_status") != "accepted"
+            ):
+                continue
+            if agent_name is SpecialistAgentName.SELL_CONDITIONS and (
+                metadata.get("upstream_outputs_sha256")
+                != _sha256_json(
+                    [
+                        _serialize_upstream_output(item)
+                        for item in (upstream_outputs or ())
+                    ]
+                )
+                or metadata.get("deterministic_scenario_sha256")
+                != _sha256_json(deterministic_scenario_data)
             ):
                 continue
             try:
@@ -829,7 +884,9 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
             for claim_id in blocker.claim_ids
             for source_id in references_by_id[claim_id][0]
         }
-        if set(blocker.source_ids) - cited_sources:
+        if _resolved_source_ids(packet, blocker.source_ids) - _resolved_source_ids(
+            packet, cited_sources
+        ):
             raise ValueError(
                 "sell activation blocker sources must support cited upstream claims"
             )
@@ -847,7 +904,9 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
             for claim_id in test.claim_ids
             for source_id in references_by_id[claim_id][0]
         }
-        if set(test.source_ids) - cited_sources:
+        if _resolved_source_ids(packet, test.source_ids) - _resolved_source_ids(
+            packet, cited_sources
+        ):
             raise ValueError(
                 "sell condition sources must support cited upstream claims"
             )
@@ -861,6 +920,7 @@ def _validate_sell_traceability(output, upstream_results, packet=None):
                 test.condition,
                 test.threshold_or_direction,
                 test.source_ids,
+                packet,
             )
             for claim_id in test.claim_ids
         ):
@@ -984,6 +1044,36 @@ def _source_ids_are_permitted(packet, source_ids):
     return set(source_ids) == set(permitted)
 
 
+def _resolved_source_ids(packet, source_ids):
+    if packet is None:
+        return set(source_ids)
+    catalog = _packet_evidence_catalog(packet)
+    full_results = (
+        packet.get("full_results", {})
+        if isinstance(packet, dict)
+        else packet.full_results
+    )
+    research_evidence = (
+        packet.get("research_evidence", {})
+        if isinstance(packet, dict)
+        else packet.research_evidence
+    )
+    resolved_ids = set()
+    for source_id in source_ids:
+        try:
+            resolved_ids.add(
+                resolve_source_id(
+                    source_id,
+                    full_results,
+                    research_evidence,
+                    catalog=catalog,
+                )
+            )
+        except SourcePathError:
+            continue
+    return resolved_ids
+
+
 def _semantic_tokens(value):
     if isinstance(value, (list, tuple, set)):
         tokens = set()
@@ -1000,16 +1090,27 @@ def _causal_reference_matches(
     condition,
     threshold_or_direction,
     sell_source_ids,
+    packet=None,
 ):
     source_ids, _, causal, domain, predicate, value = reference
-    if not set(source_ids).intersection(sell_source_ids):
+    if not _resolved_source_ids(packet, source_ids).intersection(
+        _resolved_source_ids(packet, sell_source_ids)
+    ):
         return False
     if not causal:
         return False
     if domain not in _CAUSAL_CLAIM_DOMAINS[break_type]:
         return False
-    typed_claim_tokens = _semantic_tokens((predicate, value))
-    if not typed_claim_tokens.intersection(_CAUSAL_CLAIM_MARKERS[break_type]):
+    predicate_tokens = _semantic_tokens(predicate)
+    value_tokens = _semantic_tokens(value)
+    typed_claim_tokens = predicate_tokens | value_tokens
+    if not (
+        typed_claim_tokens.intersection(_CAUSAL_CLAIM_MARKERS[break_type])
+        or (
+            predicate_tokens.intersection(_CAUSAL_STATUS_PREDICATES)
+            and value_tokens.intersection(_CAUSAL_STATUS_VALUES)
+        )
+    ):
         return False
     typed_claim_tokens.update(_semantic_tokens(domain))
     condition_tokens = _semantic_tokens((condition, threshold_or_direction))
