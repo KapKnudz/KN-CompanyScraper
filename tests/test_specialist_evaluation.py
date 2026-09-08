@@ -34,6 +34,17 @@ def run(cases=None, artifacts=None, packets=None):
     )
 
 
+def case_result_content(cases, final_verdict):
+    case = cases["cases"][0]
+    return json.dumps({
+        "schema_version": "specialist-case-result-v1",
+        "company_id": case["company_id"],
+        "ticker": case["ticker"],
+        "packet_hash": case["packet_hash"],
+        "final_verdict": final_verdict,
+    })
+
+
 def test_fixture_metrics_cover_claim_management_conflict_and_source_agreement():
     report = run()
 
@@ -230,6 +241,7 @@ def test_duplicate_agent_artifacts_are_rejected():
 
 def test_activation_false_positive_and_metadata_availability_are_reported():
     cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["content"] = case_result_content(cases, "activated_case")
     artifacts["artifacts"][0]["metadata"]["final_verdict"] = "activated_case"
     artifacts["artifacts"][0]["metadata"]["result_scope"] = "case"
     cases["cases"][0]["labels"]["activation"] = False
@@ -247,6 +259,7 @@ def test_activation_false_positive_and_metadata_availability_are_reported():
 
 def test_activation_false_negative_is_reported():
     cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["content"] = case_result_content(cases, "latent_case")
     artifacts["artifacts"][0]["metadata"]["final_verdict"] = "latent_case"
     artifacts["artifacts"][0]["metadata"]["result_scope"] = "case"
     cases["cases"][0]["labels"]["activation"] = True
@@ -260,6 +273,7 @@ def test_activation_false_negative_is_reported():
 
 def test_case_level_records_do_not_contaminate_specialist_metrics():
     cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["content"] = case_result_content(cases, "activated_case")
     artifacts["artifacts"][0]["metadata"]["final_verdict"] = "activated_case"
     artifacts["artifacts"][0]["metadata"]["result_scope"] = "case"
 
@@ -275,14 +289,41 @@ def test_case_level_records_do_not_contaminate_specialist_metrics():
 
 def test_investable_is_not_an_activation_verdict_alias():
     cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["content"] = case_result_content(cases, "investable")
     artifacts["artifacts"][0]["metadata"]["final_verdict"] = "investable"
     artifacts["artifacts"][0]["metadata"]["result_scope"] = "case"
     cases["cases"][0]["labels"]["activation"] = False
 
     report = run(cases, artifacts, packets)
     outcomes = report["metrics"]["activation_outcomes"]
-    assert outcomes["true_negative"] == 1
+    assert outcomes["unavailable"] == 1
     assert outcomes["false_positive"] == 0
+
+
+def test_case_level_result_requires_packet_binding_and_valid_content():
+    cases, artifacts, packets = documents()
+    artifacts["artifacts"][0]["content"] = "not-json"
+    artifacts["artifacts"][0]["metadata"].pop("packet_hash")
+    artifacts["artifacts"][0]["metadata"]["final_verdict"] = "activated_case"
+    artifacts["artifacts"][0]["metadata"]["result_scope"] = "case"
+    cases["cases"][0]["labels"]["activation"] = True
+
+    report = run(cases, artifacts, packets)
+    case_result = report["cases"][0]["case_level_result"]
+    assert case_result["available"] is False
+    assert report["metrics"]["activation_outcomes"]["unavailable"] == 1
+
+
+def test_conflict_recall_skips_rules_requiring_unavailable_case_verdict():
+    cases, artifacts, packets = documents()
+    conflicts = cases["cases"][0]["labels"]["conflicts"]
+    conflicts["expected_triggered"] = ["multiple_expansion_vs_activation"]
+    conflicts["expected_not_triggered"] = []
+
+    report = run(cases, artifacts, packets)
+    metrics = report["metrics"]["conflict_precision_recall"]
+    assert metrics["false_negative"] == 0
+    assert metrics["skipped_not_applicable"] >= 1
 
 
 def test_confidence_is_calibrated_per_labeled_agent_and_metadata_is_preserved():

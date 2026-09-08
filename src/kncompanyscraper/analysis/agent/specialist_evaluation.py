@@ -32,6 +32,7 @@ from kncompanyscraper.analysis.agent.specialist_conflicts import (
 
 CASES_SCHEMA_VERSION = "specialist-evaluation-cases-v1"
 REPORT_SCHEMA_VERSION = "specialist-evaluation-report-v1"
+CASE_RESULT_SCHEMA_VERSION = "specialist-case-result-v1"
 CONFLICT_RULES = (
     "margin_vs_sell_condition",
     "insider_vs_credibility_record",
@@ -269,15 +270,41 @@ def _output_claims(output) -> list:
     return claims
 
 
-def _actual_final_verdict(records: Sequence[Mapping]) -> str | None:
-    case_level_records = [
-        record for record in records if _metadata(record).get("result_scope") == "case"
-    ]
-    if len(case_level_records) != 1:
-        return None
-    record = case_level_records[0]
+def _parse_case_level_result(record: Mapping, case: Mapping) -> tuple[dict | None, str | None]:
     metadata = _metadata(record)
-    return record.get("final_verdict", metadata.get("final_verdict"))
+    if metadata.get("validation_status") not in (None, "accepted"):
+        return None, f"case-level artifact validation_status is {metadata['validation_status']!r}"
+    if metadata.get("packet_hash") != case["packet_hash"]:
+        return None, "case-level artifact metadata packet_hash must match evaluation case"
+    if case.get("run_id") is not None and metadata.get("run_id") not in (None, case["run_id"]):
+        return None, "case-level artifact metadata run_id does not match evaluation case"
+    content = record.get("content")
+    if not isinstance(content, str):
+        return None, "case-level artifact content is missing or not a string"
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return None, "case-level artifact content is not valid JSON"
+    if not isinstance(payload, Mapping):
+        return None, "case-level artifact content must be an object"
+    if payload.get("schema_version") != CASE_RESULT_SCHEMA_VERSION:
+        return None, "unsupported case-level result schema version"
+    if payload.get("company_id") != case["company_id"] or payload.get("ticker") != case["ticker"]:
+        return None, "case-level result identity does not match evaluation case"
+    if payload.get("packet_hash") != case["packet_hash"]:
+        return None, "case-level result packet_hash must match evaluation case"
+    final_verdict = payload.get("final_verdict")
+    if final_verdict not in _FINAL_VERDICTS:
+        return None, "case-level result final_verdict is unknown"
+    if metadata.get("final_verdict") not in (None, final_verdict):
+        return None, "case-level result final_verdict disagrees with metadata"
+    return dict(payload), None
+
+
+def _actual_final_verdict(results: Sequence[Mapping]) -> str | None:
+    if len(results) != 1:
+        return None
+    return results[0]["final_verdict"]
 
 
 def _metric(correct: int, incorrect: int, skipped: int = 0, unavailable: int = 0) -> dict:
@@ -377,20 +404,16 @@ def compare_specialist_evaluations(
         specialist_records = [
             record for record in matched if _metadata(record).get("result_scope") != "case"
         ]
-        case_level_valid_records = []
+        case_level_results = []
         case_level_errors = []
         for record in case_level_records:
-            metadata = _metadata(record)
-            if metadata.get("validation_status") not in (None, "accepted"):
-                case_level_errors.append(f"case-level artifact validation_status is {metadata['validation_status']!r}")
-                continue
-            if metadata.get("packet_hash") not in (None, case["packet_hash"]):
-                case_level_errors.append("case-level artifact metadata packet_hash does not match evaluation case")
-                continue
-            if case.get("run_id") is not None and metadata.get("run_id") not in (None, case["run_id"]):
-                case_level_errors.append("case-level artifact metadata run_id does not match evaluation case")
-                continue
-            case_level_valid_records.append(record)
+            result, error = _parse_case_level_result(record, case)
+            if error is not None:
+                case_level_errors.append(error)
+            else:
+                case_level_results.append(result)
+        if len(case_level_results) > 1:
+            case_level_errors.append("multiple validated case-level results are ambiguous")
         parsed = []
         valid_records = []
         rejection_count = 0
@@ -493,10 +516,14 @@ def compare_specialist_evaluations(
             metric["skipped_not_applicable"] += skipped
             metric["evaluated"] += correct + incorrect
         outputs_by_agent = {output.agent_name.value: output for output in parsed}
-        case_final_verdict = _actual_final_verdict(case_level_valid_records)
+        case_final_verdict = _actual_final_verdict(case_level_results)
+        unavailable_conflict_rules = {
+            "multiple_expansion_vs_activation"
+        } if case_final_verdict is None else set()
         actual_conflicts = {
             conflict.rule_id
             for conflict in evaluate_specialist_conflicts(parsed, final_direction=case_final_verdict)
+            if conflict.rule_id not in unavailable_conflict_rules
         }
         expected_conflicts = set(labels.get("conflicts", {}).get("expected_triggered", []))
         explicitly_not = set(labels.get("conflicts", {}).get("expected_not_triggered", []))
@@ -504,10 +531,13 @@ def compare_specialist_evaluations(
         if "conflicts" not in labels or _na(labels.get("conflicts")):
             conflict_metric["skipped_not_applicable"] += len(CONFLICT_RULES)
         else:
-            conflict_metric["true_positive"] += len(actual_conflicts & expected_conflicts)
-            conflict_metric["false_positive"] += len((actual_conflicts - expected_conflicts) & (expected_conflicts | explicitly_not))
-            conflict_metric["false_negative"] += len(expected_conflicts - actual_conflicts)
-            conflict_metric["skipped_not_applicable"] += max(0, len(CONFLICT_RULES) - len(expected_conflicts) - len(explicitly_not))
+            scored_expected = expected_conflicts - unavailable_conflict_rules
+            scored_not = explicitly_not - unavailable_conflict_rules
+            conflict_metric["true_positive"] += len(actual_conflicts & scored_expected)
+            conflict_metric["false_positive"] += len((actual_conflicts - scored_expected) & (scored_expected | scored_not))
+            conflict_metric["false_negative"] += len(scored_expected - actual_conflicts)
+            conflict_metric["skipped_not_applicable"] += len(unavailable_conflict_rules)
+            conflict_metric["skipped_not_applicable"] += max(0, len(CONFLICT_RULES) - len(scored_expected) - len(scored_not) - len(unavailable_conflict_rules))
         source_label = labels.get("source_validity", "not_applicable")
         source_actual = "unavailable" if unavailable_sources else ("invalid_present" if invalid_sources else "all_valid")
         if _na(source_label):
@@ -588,7 +618,7 @@ def compare_specialist_evaluations(
             "packet_status": "available" if packet is not None and not packet.get("_packet_hash_mismatch") and not packet.get("_packet_identity_mismatch") else "unavailable",
             "metadata": [{field: _metadata(record).get(field) for field in _METADATA_FIELDS} for record in specialist_records],
             "case_level_result": {
-                "available": bool(case_level_valid_records),
+                "available": len(case_level_results) == 1 and not case_level_errors,
                 "errors": case_level_errors,
                 "metadata": [
                     {field: _metadata(record).get(field) for field in _METADATA_FIELDS}

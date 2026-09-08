@@ -17,7 +17,9 @@ are human-authored and are never inferred from an artifact:
 - `conflicts.expected_triggered` and `expected_not_triggered`: the four named
   deterministic conflict rules.
 - `final_verdict`: optional case-level verdict from an artifact whose metadata has
-  `result_scope: "case"`; otherwise use `"not_applicable"`.
+  `result_scope: "case"` and whose content is a validated
+  `specialist-case-result-v1` object bound to the case packet hash; otherwise use
+  `"not_applicable"`.
 - `source_validity`: `all_valid`, `invalid_present`, or `not_applicable`.
 - `activation`: human-labeled boolean or `not_applicable`; reports include full
   true/false positive and negative outcomes.
