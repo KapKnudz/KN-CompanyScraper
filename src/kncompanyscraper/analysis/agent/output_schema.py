@@ -52,14 +52,15 @@ ReverseDcfExpectationAssessment = Literal[
     "unassessable",
 ]
 LimitationClass = Literal["core", "supplemental"]
-ThesisBreakType = Literal[
+THESIS_BREAK_TYPES = (
     "revenue_or_demand",
     "margin_or_execution",
     "balance_sheet_or_dilution",
     "management_credibility",
     "valuation_overshoot",
     "superior_evidence_or_opportunity",
-]
+)
+ThesisBreakType = Literal[*THESIS_BREAK_TYPES]
 ThesisBreakResponse = Literal["reassess", "reduce", "sell"]
 LatentCaseType = Literal["price", "operating"]
 ActivationTriggerEvidenceStatus = Literal[
@@ -871,11 +872,7 @@ STOCK_ANALYSIS_OUTPUT_CONTRACT = {
     ),
     "thesis_break_tests": [
         {
-            "break_type": (
-                "revenue_or_demand | margin_or_execution | "
-                "balance_sheet_or_dilution | management_credibility | "
-                "valuation_overshoot | superior_evidence_or_opportunity"
-            ),
+            "break_type": " | ".join(THESIS_BREAK_TYPES),
             "condition": "string",
             "observable_metric_or_event": "string",
             "threshold_or_direction": "string",
@@ -990,10 +987,7 @@ _STRUCTURED_DECISIVE_EVIDENCE = {
     ),
 }
 _STRUCTURED_BREAK_TEST = {
-    "break_type": (
-        "revenue_or_demand | margin_or_execution | balance_sheet_or_dilution | "
-        "management_credibility | valuation_overshoot | superior_evidence_or_opportunity"
-    ),
+    "break_type": " | ".join(THESIS_BREAK_TYPES),
     "condition_code": (
         "revenue_decline | demand_loss | margin_decline | execution_failure | "
         "debt_increase | dilution | management_miss | valuation_expansion | "
@@ -1244,11 +1238,7 @@ _SPECIALIST_LEDGER_CONTRACT = {
     "notes": ["string"],
 }
 _SPECIALIST_SELL_TEST_CONTRACT = {
-    "break_type": (
-        "revenue_or_demand | margin_or_execution | balance_sheet_or_dilution | "
-        "management_credibility | valuation_overshoot | "
-        "superior_evidence_or_opportunity"
-    ),
+    "break_type": " | ".join(THESIS_BREAK_TYPES),
     "condition": "string",
     "observable_metric_or_event": "string",
     "threshold_or_direction": "string",

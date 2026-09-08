@@ -1,17 +1,10 @@
 """Read-only coverage measurement for persisted thesis-card contracts."""
 
 from kncompanyscraper.models.stored_analysis import as_stored_analysis
+from kncompanyscraper.analysis.agent.output_schema import THESIS_BREAK_TYPES
 
 
 MEASUREMENT_VERSION = "thesis-contract-coverage-v2"
-THESIS_BREAK_TYPES = (
-    "revenue_or_demand",
-    "margin_or_execution",
-    "balance_sheet_or_dilution",
-    "management_credibility",
-    "valuation_overshoot",
-    "superior_evidence_or_opportunity",
-)
 CHECKS = (
     "statement",
     "falsification_test",

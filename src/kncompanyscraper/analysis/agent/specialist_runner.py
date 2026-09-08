@@ -9,6 +9,9 @@ from uuid import uuid4
 
 from kncompanyscraper.analysis.agent.agent_packet import (
     AgentCandidatePacket,
+    SourcePathError,
+    build_evidence_catalog,
+    resolve_source_id,
     serialize_packet,
 )
 from kncompanyscraper.analysis.agent.output_schema import (
@@ -21,6 +24,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
     SpecialistMissingInformation,
     SpecialistOutput,
     SpecialistStatus,
+    THESIS_BREAK_TYPES,
     specialist_output_json_schema,
 )
 from kncompanyscraper.analysis.agent.packet_measurement import measure_packet
@@ -57,16 +61,6 @@ _SPECIALIST_PROMPT_RESOURCES = {
     SpecialistAgentName.GROWTH_VALUATION: "specialist_growth_valuation_prompt.md",
     SpecialistAgentName.SELL_CONDITIONS: "specialist_sell_conditions_prompt.md",
 }
-
-_THESIS_BREAK_TYPES = (
-    "revenue_or_demand",
-    "margin_or_execution",
-    "balance_sheet_or_dilution",
-    "management_credibility",
-    "valuation_overshoot",
-    "superior_evidence_or_opportunity",
-)
-
 
 @dataclass(frozen=True)
 class SpecialistArtifactResult:
@@ -142,6 +136,10 @@ class SpecialistPromptBuilder:
         schema = specialist_output_json_schema(agent_name.value)
         measurement = asdict(measure_packet(packet, pretty=False))
         if agent_name is SpecialistAgentName.SELL_CONDITIONS:
+            instructions = instructions.replace(
+                "{thesis_break_types}",
+                ", ".join(f"`{break_type}`" for break_type in THESIS_BREAK_TYPES),
+            )
             upstream_json = json.dumps(
                 [_serialize_upstream_output(item) for item in (upstream_outputs or ())],
                 ensure_ascii=False,
@@ -285,7 +283,13 @@ class ShadowSpecialistRunner:
             company_id, run_id, packet_hash, SpecialistAgentName.SELL_CONDITIONS
         )
         if reused is not None:
-            return reused
+            try:
+                _validate_sell_traceability(reused.output, upstream_results, packet)
+            except (ValueError, TypeError):
+                reused = None
+            else:
+                if reused.status != "failed":
+                    return reused
         if not _sell_inputs_available(upstream_results, scenario_data):
             return self._unassessable_sell_result(
                 packet,
@@ -304,7 +308,10 @@ class ShadowSpecialistRunner:
             upstream_outputs=upstream_results,
             deterministic_scenario_data=scenario_data,
         )
-        if result.status == "failed":
+        if result.status == "failed" or (
+            result.output is not None
+            and result.output.status is not SpecialistStatus.COMPLETE
+        ):
             return self._unassessable_sell_result(
                 packet,
                 company_id,
@@ -401,7 +408,9 @@ class ShadowSpecialistRunner:
                 parsed = parse_specialist_output(raw_response)
                 self._validate_identity(parsed, packet, run_id, packet_hash, agent_name)
                 if agent_name is SpecialistAgentName.SELL_CONDITIONS:
-                    _validate_sell_traceability(parsed, upstream_outputs or ())
+                    _validate_sell_traceability(
+                        parsed, upstream_outputs or (), packet
+                    )
             except (StockAnalysisValidationError, ValueError, TypeError) as exc:
                 validation_errors.append(str(exc))
                 if artifact_id is not None:
@@ -424,9 +433,14 @@ class ShadowSpecialistRunner:
                 self.raw_response_repository.update_raw_validation(
                     artifact_id, "accepted"
                 )
+            result_status = {
+                SpecialistStatus.COMPLETE: "accepted",
+                SpecialistStatus.INSUFFICIENT_EVIDENCE: "limited",
+                SpecialistStatus.FAILED: "failed",
+            }[parsed.status]
             return SpecialistArtifactResult(
                 agent_name.value,
-                "accepted",
+                result_status,
                 attempt,
                 tuple(artifact_ids),
                 tuple(validation_errors),
@@ -447,7 +461,10 @@ class ShadowSpecialistRunner:
         missing_agents = [
             result.agent_name
             for result in upstream_results
-            if result.status != "accepted" or result.output is None
+            if (
+                result.output is None
+                or result.output.status is not SpecialistStatus.COMPLETE
+            )
         ]
         blocker_codes = []
         if missing_agents:
@@ -467,7 +484,7 @@ class ShadowSpecialistRunner:
                 source_ids=list(source_ids),
                 claim_ids=list(claim_ids),
             )
-            for break_type in _THESIS_BREAK_TYPES
+            for break_type in THESIS_BREAK_TYPES
         ]
         blockers = [
             SellConditionActivationBlocker(
@@ -581,9 +598,11 @@ class ShadowSpecialistRunner:
                 continue
             return SpecialistArtifactResult(
                 agent_name.value,
-                "limited"
-                if parsed.status is SpecialistStatus.INSUFFICIENT_EVIDENCE
-                else "accepted",
+                {
+                    SpecialistStatus.COMPLETE: "accepted",
+                    SpecialistStatus.INSUFFICIENT_EVIDENCE: "limited",
+                    SpecialistStatus.FAILED: "failed",
+                }[parsed.status],
                 int(metadata.get("analysis_attempt", 0)),
                 (artifact["id"],),
                 (),
@@ -647,23 +666,31 @@ def _scenario_data_available(data):
         return False
     if isinstance(data, dict) and data.get("status") in {"unavailable", "missing"}:
         return False
-    return True
+    if not isinstance(data, dict):
+        return True
+    scenario_values = [
+        data[key]
+        for key in ("reverse_dcf", "forward_scenario")
+        if key in data
+    ]
+    if not scenario_values:
+        return data.get("status") == "available"
+    return any(
+        value is not None
+        and not (
+            isinstance(value, dict)
+            and value.get("status") in {"unavailable", "missing"}
+        )
+        for value in scenario_values
+    )
 
 
 def _sell_inputs_available(upstream_results, scenario_data):
     return bool(upstream_results) and all(
-        result.status == "accepted" and result.output is not None
+        result.output is not None
+        and result.output.status is SpecialistStatus.COMPLETE
         for result in upstream_results
     ) and _scenario_data_available(scenario_data)
-
-
-def _upstream_claims(upstream_results):
-    return [
-        claim
-        for result in upstream_results
-        if result.output is not None
-        for claim in ([*result.output.claims] + _domain_claims(result.output))
-    ]
 
 
 def _domain_claims(output):
@@ -674,11 +701,12 @@ def _domain_claims(output):
 
 
 def _upstream_claim_ids(upstream_results):
-    return list(dict.fromkeys(claim.claim_id for claim in _upstream_claims(upstream_results)))
+    return list(_upstream_references(upstream_results))
 
 
-def _validate_sell_traceability(output, upstream_results):
-    known_claim_ids = set(_upstream_claim_ids(upstream_results))
+def _validate_sell_traceability(output, upstream_results, packet=None):
+    references_by_id = _upstream_references(upstream_results)
+    known_claim_ids = set(references_by_id)
     sell = output.sell_conditions
     if sell is None:
         return
@@ -697,15 +725,100 @@ def _validate_sell_traceability(output, upstream_results):
             "sell condition references unknown upstream claim IDs: "
             + ", ".join(unknown)
         )
+    source_ids = [
+        source_id
+        for test in sell.tests
+        for source_id in test.source_ids
+    ] + [
+        source_id
+        for blocker in sell.activation_blockers
+        for source_id in blocker.source_ids
+    ]
+    if packet is not None:
+        catalog = _packet_evidence_catalog(packet)
+        canonical_source_ids = set(catalog.get("canonical_source_ids", []))
+        unknown_sources = []
+        full_results = (
+            packet.get("full_results", {})
+            if isinstance(packet, dict)
+            else packet.full_results
+        )
+        research_evidence = (
+            packet.get("research_evidence", {})
+            if isinstance(packet, dict)
+            else packet.research_evidence
+        )
+        for source_id in source_ids:
+            try:
+                resolved = resolve_source_id(
+                    source_id,
+                    full_results,
+                    research_evidence,
+                    catalog=catalog,
+                )
+            except SourcePathError:
+                unknown_sources.append(source_id)
+                continue
+            if resolved not in canonical_source_ids:
+                unknown_sources.append(source_id)
+        if unknown_sources:
+            raise ValueError(
+                "sell condition references unknown frozen-packet source IDs: "
+                + ", ".join(sorted(set(unknown_sources)))
+            )
+    for test in sell.tests:
+        if test.current_break_status is not SellConditionStatus.TRIGGERED:
+            continue
+        if not any(references_by_id[claim_id][0] for claim_id in test.claim_ids):
+            raise ValueError(
+                "triggered sell conditions require a source-backed upstream claim"
+            )
 
 
 def _upstream_source_ids(upstream_results):
     return list(
         dict.fromkeys(
             source_id
-            for claim in _upstream_claims(upstream_results)
-            for source_id in claim.source_ids
+            for source_ids, _ in _upstream_references(upstream_results).values()
+            for source_id in source_ids
         )
+    )
+
+
+def _upstream_references(upstream_results):
+    references = {}
+    for result in upstream_results:
+        output = result.output
+        if output is None:
+            continue
+        for claim in [*output.claims, *_domain_claims(output)]:
+            references[claim.claim_id] = (tuple(claim.source_ids), "claim")
+        management = output.management_credibility
+        if management is not None:
+            for row in management.ledger:
+                source_ids = row.source_ids or [
+                    *row.claim_source_ids,
+                    *row.outcome_source_ids,
+                ]
+                references[row.claim_id] = (tuple(source_ids), "ledger")
+    return references
+
+
+def _packet_evidence_catalog(packet):
+    catalog = (
+        packet.get("evidence_catalog", {})
+        if isinstance(packet, dict)
+        else packet.evidence_catalog
+    )
+    if catalog:
+        return catalog
+    return build_evidence_catalog(
+        packet.get("full_results", {})
+        if isinstance(packet, dict)
+        else packet.full_results,
+        packet.get("research_evidence", {})
+        if isinstance(packet, dict)
+        else packet.research_evidence,
     )
 
 

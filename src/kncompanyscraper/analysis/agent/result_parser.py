@@ -37,6 +37,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
     SpecialistMissingInformation,
     SpecialistOutput,
     SpecialistStatus,
+    THESIS_BREAK_TYPES,
     _SPECIALIST_DOMAIN_CONTRACTS,
     _specialist_envelope_contract,
     MarginExpansionCase,
@@ -422,14 +423,7 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
     sell = payload.get("sell_conditions")
     if sell is None:
         return
-    required_types = {
-        "revenue_or_demand",
-        "margin_or_execution",
-        "balance_sheet_or_dilution",
-        "management_credibility",
-        "valuation_overshoot",
-        "superior_evidence_or_opportunity",
-    }
+    required_types = set(THESIS_BREAK_TYPES)
     actual_types = [test["break_type"] for test in sell["tests"]]
     if set(actual_types) != required_types or len(actual_types) != len(required_types):
         raise StockAnalysisValidationError(
@@ -479,22 +473,11 @@ def _validate_specialist_sell_conditions(payload: dict) -> None:
 
 
 def _validate_causal_sell_condition(test: dict) -> None:
-    """Reject a triggered test whose only stated cause is a price move."""
     if test["current_break_status"] != "triggered":
         return
-    text = " ".join(
-        test[field].lower()
-        for field in ("condition", "observable_metric_or_event", "threshold_or_direction")
-    )
-    causal_terms = (
-        "revenue", "demand", "margin", "execution", "balance", "dilution",
-        "management", "valuation", "evidence", "opportunity", "customer",
-        "retention", "cash flow", "financing", "shares",
-    )
-    price_terms = ("price", "share price", "stock price", "decline", "drop", "loss")
-    if any(term in text for term in price_terms) and not any(
-        term in text for term in causal_terms
-    ):
+    price_observables = {"price", "share price", "stock price", "market price"}
+    observable = test["observable_metric_or_event"].strip().casefold()
+    if test["break_type"] != "valuation_overshoot" and observable in price_observables:
         raise StockAnalysisValidationError(
             "triggered sell conditions must identify a causal thesis break, not price alone"
         )

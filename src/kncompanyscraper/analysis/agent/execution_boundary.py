@@ -17,6 +17,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
     MissingInformationItem,
     OwnershipClaim,
     StockAnalysisResult,
+    THESIS_BREAK_TYPES,
 )
 from kncompanyscraper.analysis.agent.conclusion_contract import (
     ownership_field,
@@ -1033,14 +1034,7 @@ class AgentExecutionBoundary:
 
         break_types = set()
         break_source_ids = set()
-        allowed_break_types = {
-            "revenue_or_demand",
-            "margin_or_execution",
-            "balance_sheet_or_dilution",
-            "management_credibility",
-            "valuation_overshoot",
-            "superior_evidence_or_opportunity",
-        }
+        allowed_break_types = set(THESIS_BREAK_TYPES)
         for test in result.thesis_break_tests:
             fields_to_strip = (
                 "condition",
