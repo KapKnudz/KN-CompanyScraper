@@ -854,17 +854,8 @@ def _numeric_deltas(best: Any, candidate: Any) -> Any:
     return None
 
 
-def _is_case_result_record(record: Mapping) -> bool:
-    if _metadata(record).get("result_scope") != "case":
-        return False
-    content = record.get("content")
-    if not isinstance(content, str):
-        return False
-    try:
-        payload = json.loads(content)
-    except json.JSONDecodeError:
-        return False
-    return isinstance(payload, Mapping) and payload.get("schema_version") == CASE_RESULT_SCHEMA_VERSION
+def _is_case_scoped_record(record: Mapping) -> bool:
+    return _metadata(record).get("result_scope") == "case"
 
 
 def _artifact_field(record: Mapping, field: str) -> Any:
@@ -896,11 +887,11 @@ def _validate_pair_manifest(
     specialist_records = [
         ("best", record)
         for record in best_records
-        if not _is_case_result_record(record)
+        if not _is_case_scoped_record(record)
     ] + [
         ("candidate", record)
         for record in candidate_records
-        if not _is_case_result_record(record)
+        if not _is_case_scoped_record(record)
     ]
     if manifest is None:
         _require(not specialist_records, "paired specialist artifacts require an evaluation manifest")
@@ -914,6 +905,7 @@ def _validate_pair_manifest(
     assignments = []
     seen = {}
     agents = {"best": {}, "candidate": {}}
+    runs = {"best": {}, "candidate": {}}
     for index, raw in enumerate(raw_assignments):
         _require(isinstance(raw, Mapping), f"manifest assignment {index} must be an object")
         tier = raw.get("tier")
@@ -933,12 +925,31 @@ def _validate_pair_manifest(
         identity = (case_id, raw["packet_hash"], run_id, agent_name)
         _require(identity not in seen, f"manifest contains duplicate or conflicting assignment for {case_id}/{agent_name}/{run_id}")
         seen[identity] = tier
+        selected_run = runs[tier].get(case_id)
+        _require(
+            selected_run in (None, run_id),
+            f"manifest has conflicting {tier} run_id assignments for case {case_id}",
+        )
+        runs[tier][case_id] = run_id
         assignments.append(dict(raw))
         agents[tier].setdefault(case_id, set()).add(agent_name)
+    cases_by_packet = {}
+    for case in cases:
+        cases_by_packet.setdefault(case["packet_hash"], []).append(case)
     for tier, record in specialist_records:
         packet_hash = _artifact_packet_hash(record)
         run_id = _record_run_id(record)
         agent_name = _artifact_agent_name(record)
+        packet_cases = cases_by_packet.get(packet_hash, [])
+        _require(
+            len(packet_cases) == 1,
+            f"{tier} specialist artifact must match one evaluation packet",
+        )
+        case_id = packet_cases[0]["case_id"]
+        selected_run = runs[tier].get(case_id)
+        _require(selected_run is not None, f"missing {tier} manifest run assignment for case {case_id}")
+        if run_id != selected_run:
+            continue
         matches = [
             assignment
             for assignment in assignments
@@ -953,7 +964,7 @@ def _validate_pair_manifest(
         )
         metadata_tier = _metadata(record).get("tier")
         _require(metadata_tier in (None, tier), f"{tier} artifact tier metadata conflicts with manifest")
-    return {"agents": agents}
+    return {"agents": agents, "runs": runs}
 
 
 def compare_paired_specialist_evaluations(
@@ -969,8 +980,16 @@ def compare_paired_specialist_evaluations(
     best_records = _artifact_records(best_artifacts)
     candidate_records = _artifact_records(candidate_artifacts)
     manifest_data = _validate_pair_manifest(manifest, case_list, best_records, candidate_records)
-    best_report = compare_specialist_evaluations(case_list, best_artifacts, packets=packets)
-    candidate_report = compare_specialist_evaluations(case_list, candidate_artifacts, packets=packets)
+    best_cases = [
+        {**case, **({"run_id": manifest_data["runs"]["best"][case["case_id"]]} if case["case_id"] in manifest_data["runs"]["best"] else {})}
+        for case in case_list
+    ]
+    candidate_cases = [
+        {**case, **({"run_id": manifest_data["runs"]["candidate"][case["case_id"]]} if case["case_id"] in manifest_data["runs"]["candidate"] else {})}
+        for case in case_list
+    ]
+    best_report = compare_specialist_evaluations(best_cases, best_artifacts, packets=packets)
+    candidate_report = compare_specialist_evaluations(candidate_cases, candidate_artifacts, packets=packets)
     best_cases = {case["case_id"]: case for case in best_report["cases"]}
     candidate_cases = {case["case_id"]: case for case in candidate_report["cases"]}
     aligned_cases = []

@@ -72,6 +72,7 @@ For the trusted 12–20 company cohort, freeze one reviewed packet per company,
 record its hash in a new case, and have two humans label the claims, management
 rows, source validity, conflict triggers, and any verdict/activation expectations.
 Do not label from model output and do not invent investment ground truth. Store
-best-tier and candidate-tier artifacts against the same packet hashes and run IDs,
-then compare the paired reports on a holdout cohort before changing routing.
+best-tier and candidate-tier artifacts against the same packet hashes, with each
+tier's selected run ID recorded in the manifest, then compare the paired reports
+on a holdout cohort before changing routing.
 Keep the synthetic fixture separate and do not treat it as benchmark evidence.

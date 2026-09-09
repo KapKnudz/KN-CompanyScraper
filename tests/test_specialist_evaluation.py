@@ -625,6 +625,74 @@ def test_paired_comparison_allows_case_results_without_tier_metadata():
     assert report["candidate_tier_report"]["cases"][0]["case_level_result"]["available"] is True
 
 
+def test_paired_malformed_case_result_is_unavailable_not_a_manifest_failure():
+    cases, best_artifacts, packets = documents()
+    cases["cases"][0]["labels"]["activation"] = True
+    candidate_artifacts = copy.deepcopy(best_artifacts)
+    set_artifact_run(candidate_artifacts, "candidate-run")
+    for artifact_set, tier in ((best_artifacts, "best"), (candidate_artifacts, "candidate")):
+        artifact_set["artifacts"][0]["metadata"]["result_scope"] = "case"
+        artifact_set["artifacts"][0]["content"] = "not-json"
+        artifact_set["artifacts"][0]["metadata"]["model_tier"] = tier
+
+    report = compare_paired_specialist_evaluations(
+        cases,
+        best_artifacts,
+        candidate_artifacts,
+        packets=packets,
+        manifest=pair_manifest(cases),
+    )
+
+    assert report["best_tier_report"]["cases"][0]["case_level_result"]["available"] is False
+    assert report["candidate_tier_report"]["cases"][0]["case_level_result"]["available"] is False
+    assert report["best_tier_report"]["metrics"]["activation_outcomes"]["unavailable"] == 1
+
+
+def test_paired_manifest_selects_one_run_and_ignores_historical_artifacts():
+    cases, best_artifacts, packets = documents()
+    candidate_artifacts = copy.deepcopy(best_artifacts)
+    set_artifact_run(candidate_artifacts, "candidate-run")
+    for artifact in candidate_artifacts["artifacts"]:
+        artifact["metadata"]["model_tier"] = "candidate"
+    historical = copy.deepcopy(candidate_artifacts["artifacts"][0])
+    historical["metadata"]["run_id"] = "historical-run"
+    historical_payload = json.loads(historical["content"])
+    historical_payload["run_id"] = "historical-run"
+    historical["content"] = json.dumps(historical_payload)
+    candidate_artifacts["artifacts"].append(historical)
+
+    report = compare_paired_specialist_evaluations(
+        cases,
+        best_artifacts,
+        candidate_artifacts,
+        packets=packets,
+        manifest=pair_manifest(cases),
+    )
+
+    assert report["candidate_tier_report"]["cases"][0]["accepted_count"] == 2
+    assert report["candidate_tier_report"]["metrics"]["parse_semantic_rejection"] == {
+        "rejected": 0,
+        "total": 2,
+        "rejection_rate": 0,
+    }
+
+
+def test_paired_manifest_rejects_conflicting_runs_per_tier():
+    cases, best_artifacts, candidate_artifacts = documents()
+    manifest = pair_manifest(cases)
+    conflicting = copy.deepcopy(manifest["assignments"][2])
+    conflicting["run_id"] = "other-candidate-run"
+    manifest["assignments"].append(conflicting)
+
+    with pytest.raises(EvaluationFormatError, match="conflicting candidate run_id"):
+        compare_paired_specialist_evaluations(
+            cases,
+            best_artifacts,
+            candidate_artifacts,
+            manifest=manifest,
+        )
+
+
 def test_unhashable_artifact_run_id_is_rejected_not_crashing():
     cases, artifacts, packets = documents()
     payload = json.loads(artifacts["artifacts"][0]["content"])
