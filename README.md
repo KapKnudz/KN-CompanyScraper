@@ -353,12 +353,18 @@ company packet is frozen. The first wave covers `business_model`,
 `management_credibility`, `margin`, `insider_ownership`, and `growth_valuation`,
 followed by the `sell_conditions` stage, which consumes their typed outputs and
 deterministic scenario data to assess six thesis-break types. Their raw outputs
-are persisted as non-authoritative shadow artifacts; the existing qualitative
-and scenario analysis remains the source of the accepted verdict. The run also
-records deterministic, non-authoritative annotations for four explicit conflicts:
+are persisted as non-authoritative shadow artifacts. When authoritative scenario
+data is available, the specialist graph is rerun with that result before the
+typed outputs are sent to the Petter Hedborg shadow aggregator. The aggregator
+emits a non-authoritative v3 candidate and auditable evidence manifest; raw and
+validated aggregator artifacts are persisted separately. The existing
+qualitative and scenario analysis remains the source of the accepted verdict.
+The run also records deterministic, non-authoritative annotations for four
+explicit conflicts:
 `margin_vs_sell_condition`, `insider_vs_credibility_record`,
 `circle_of_competence_vs_valuation`, and `multiple_expansion_vs_activation`.
-These annotations do not change the accepted verdict or activation decision.
+Neither these annotations nor the aggregator result changes the accepted verdict
+or production activation decision.
 The setting defaults to `false`.
 
 Selectors must identify distinct active companies. The command refreshes every

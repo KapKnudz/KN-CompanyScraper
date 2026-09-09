@@ -63,6 +63,7 @@ class CompanyAnalysisPipeline:
         progress: Callable[[str], None] | None = None,
         shadow_specialist_runner=None,
         shadow_specialists_enabled: bool = False,
+        shadow_aggregator_runner=None,
     ):
         self.company_repository = company_repository
         self.refresh_service = refresh_service
@@ -75,6 +76,7 @@ class CompanyAnalysisPipeline:
         self.progress = progress or print
         self.shadow_specialist_runner = shadow_specialist_runner
         self.shadow_specialists_enabled = shadow_specialists_enabled
+        self.shadow_aggregator_runner = shadow_aggregator_runner
         self._job_starts = {}
         self._stage_starts = {}
 
@@ -175,13 +177,25 @@ class CompanyAnalysisPipeline:
         try:
             self._verify_packet_hash(job_id, result)
             self._verify_frozen_stage_inputs(job_id, result)
-            self._run_shadow_specialists(
+            shadow_run = self._run_shadow_specialists(
                 job_id,
                 result,
                 deserialize_packet(result["packet_json"]),
             )
             qualitative, metadata, created_by = self._resume_model_stages(
                 job_id, result, candidate
+            )
+            scenario = getattr(qualitative, "forward_scenario_analysis", None)
+            if scenario is not None:
+                shadow_run = self._run_shadow_specialists(
+                    job_id,
+                    result,
+                    deserialize_packet(result["packet_json"]),
+                    deterministic_scenario_data=scenario,
+                )
+            self._run_shadow_aggregator(
+                job_id, result, deserialize_packet(result["packet_json"]),
+                shadow_run, qualitative,
             )
             return self._persist_and_complete(
                 job_id, result, candidate, qualitative, metadata, created_by
@@ -274,10 +288,21 @@ class CompanyAnalysisPipeline:
                 packet_hash=result["packet_hash"],
                 packet_measurement=result["packet_measurement"],
             )
-            self._run_shadow_specialists(job_id, result, packet)
+            shadow_run = self._run_shadow_specialists(job_id, result, packet)
 
             qualitative, metadata, created_by = self._run_model_stages(
                 job_id, result, candidate
+            )
+            scenario = getattr(qualitative, "forward_scenario_analysis", None)
+            if scenario is not None:
+                shadow_run = self._run_shadow_specialists(
+                    job_id,
+                    result,
+                    packet,
+                    deterministic_scenario_data=scenario,
+                )
+            self._run_shadow_aggregator(
+                job_id, result, packet, shadow_run, qualitative
             )
             outcome = self._persist_and_complete(
                 job_id, result, candidate, qualitative, metadata, created_by
@@ -306,23 +331,34 @@ class CompanyAnalysisPipeline:
                 resumable=resumable,
             )
 
-    def _run_shadow_specialists(self, job_id, result, packet):
+    def _run_shadow_specialists(
+        self, job_id, result, packet, *, deterministic_scenario_data=None
+    ):
         if self.shadow_specialist_runner is None or not self.shadow_specialists_enabled:
-            return
+            return None
         stage = result.setdefault("stages", {}).get("shadow_specialists", {})
         sell_stage = result.get("stages", {}).get("shadow_sell_conditions", {})
         if (
             stage.get("status") == "accepted"
             and sell_stage.get("status") == "accepted"
+            and (
+                self.shadow_aggregator_runner is None
+                or result.setdefault("stages", {}).get("shadow_aggregator", {}).get(
+                "status"
+                ) == "accepted"
+            )
+            and deterministic_scenario_data is None
         ):
-            return
+            return None
         self._start_stage(result, job_id, "shadow_specialists")
         try:
-            run = self.shadow_specialist_runner.run(
-                packet,
-                run_id=f"company-analysis-{job_id}",
-                packet_hash=result.get("packet_hash"),
-            )
+            run_kwargs = {
+                "run_id": f"company-analysis-{job_id}",
+                "packet_hash": result.get("packet_hash"),
+            }
+            if deterministic_scenario_data is not None:
+                run_kwargs["deterministic_scenario_data"] = deterministic_scenario_data
+            run = self.shadow_specialist_runner.run(packet, **run_kwargs)
             result["shadow_specialists"] = run.to_dict()
             self._complete_stage(
                 result,
@@ -353,6 +389,7 @@ class CompanyAnalysisPipeline:
                     run_id=run.run_id,
                     packet_hash=run.packet_hash,
                 )
+            return run
         except Exception as exc:
             # Shadow work is deliberately non-authoritative: a runner failure
             # must never prevent the existing qualitative path from completing.
@@ -365,6 +402,61 @@ class CompanyAnalysisPipeline:
                 result,
                 job_id,
                 "shadow_specialists",
+                execution_status="failed",
+                error=str(exc),
+            )
+            return None
+
+    def _run_shadow_aggregator(self, job_id, result, packet, shadow_run, qualitative):
+        if (
+            self.shadow_aggregator_runner is None
+            or not self.shadow_specialists_enabled
+            or shadow_run is None
+        ):
+            return
+        stage = result.setdefault("stages", {}).get("shadow_aggregator", {})
+        if stage.get("status") == "accepted":
+            return
+        self._start_stage(result, job_id, "shadow_aggregator")
+        try:
+            from kncompanyscraper.analysis.agent.petter_aggregator import AggregatorInput
+            aggregate_input = AggregatorInput.from_shadow_run(
+                packet,
+                shadow_run,
+                deterministic_scenario_results=getattr(
+                    qualitative, "forward_scenario_analysis", None
+                ),
+                reverse_dcf_results=(
+                    packet.full_results.get("reverse_dcf", {})
+                    if hasattr(packet, "full_results")
+                    else packet.get("full_results", {}).get("reverse_dcf", {})
+                ),
+            )
+            aggregation = self.shadow_aggregator_runner.run(aggregate_input)
+            result["shadow_aggregator"] = aggregation.to_dict()
+            self._complete_stage(
+                result,
+                job_id,
+                "shadow_aggregator",
+                execution_status=aggregation.status,
+                attempts=aggregation.attempts,
+                raw_artifact_ids=list(aggregation.raw_artifact_ids),
+                validated_artifact_ids=list(aggregation.validated_artifact_ids),
+                validation_errors=list(aggregation.validation_errors),
+                run_id=aggregate_input.run_id,
+                packet_hash=aggregate_input.packet_hash,
+            )
+        except Exception as exc:
+            # Aggregation is shadow-only and must not affect the authoritative path.
+            result["shadow_aggregator"] = {
+                "run_id": f"company-analysis-{job_id}",
+                "packet_hash": result.get("packet_hash"),
+                "error": str(exc),
+            }
+            self._complete_stage(
+                result,
+                job_id,
+                "shadow_aggregator",
                 execution_status="failed",
                 error=str(exc),
             )

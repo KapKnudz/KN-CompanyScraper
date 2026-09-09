@@ -131,6 +131,7 @@ class AgentAnalysisService:
         )
         qualitative.case_horizon_months = authored["case_horizon_months"]
         qualitative.scenario_bundles = list(authored["scenario_bundles"])
+        qualitative.forward_scenario_analysis = analysis
         metadata["scenario_authoring_raw_analysis_ids"] = metadata.get(
             "scenario_authoring_raw_analysis_ids", []
         )
@@ -471,6 +472,7 @@ class AgentAnalysisService:
         )
         qualitative.case_horizon_months = authored.case_horizon_months
         qualitative.scenario_bundles = list(authored.scenario_bundles)
+        qualitative.forward_scenario_analysis = authored.analysis
         metadata["scenario_authoring_attempts"] = authored.attempts
         metadata["scenario_authoring_raw_analysis_ids"] = list(
             authored.raw_analysis_ids

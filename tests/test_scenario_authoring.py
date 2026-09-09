@@ -635,7 +635,7 @@ def test_agent_analysis_service_persists_only_after_scenario_enrichment():
     adapter.repair.assert_not_called()
     persisted = boundary.persist_validated_result.call_args.args[0]
     assert len(persisted.scenario_bundles) == 3
-    assert persisted.forward_scenario_analysis is None
+    assert persisted.forward_scenario_analysis.status == "available"
     boundary.validate_forward_scenario_sources.assert_called_once()
 
 
@@ -716,6 +716,7 @@ def test_agent_analysis_service_does_not_regenerate_scenario_after_qualitative_r
     authoring.author.return_value = SimpleNamespace(
         case_horizon_months=36,
         scenario_bundles=valid_inputs().bundles,
+        analysis=SimpleNamespace(status="available"),
         attempts=1,
         raw_analysis_ids=(91,),
     )

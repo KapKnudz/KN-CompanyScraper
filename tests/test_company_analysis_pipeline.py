@@ -737,12 +737,21 @@ class ShadowRun:
 class ShadowSpy:
     def __init__(self):
         self.calls = 0
+        self.scenario_data = []
 
-    def run(self, packet, *, run_id, packet_hash):
+    def run(self, packet, *, run_id, packet_hash, deterministic_scenario_data=None):
         self.calls += 1
+        self.scenario_data.append(deterministic_scenario_data)
         assert packet.company_id == 1
         assert packet_hash
         return ShadowRun()
+
+
+class ScenarioShadowAgent(Agent):
+    def run_scenario(self, candidate, qualitative, metadata):
+        qualitative = super().run_scenario(candidate, qualitative, metadata)
+        qualitative.forward_scenario_analysis = SimpleNamespace(status="available")
+        return qualitative
 
 
 def test_shadow_specialists_are_opt_in_and_do_not_change_authoritative_result():
@@ -763,3 +772,17 @@ def test_shadow_specialists_are_opt_in_and_do_not_change_authoritative_result():
     assert jobs.jobs[101]["result"]["stages"]["shadow_specialists"]["status"] == "accepted"
     assert jobs.jobs[101]["result"]["final_analysis_id"] == 801
     assert agent.persisted_metadata[-1]["analysis_mode"] == "initial"
+
+
+def test_shadow_sell_stage_receives_authoritative_scenario_result():
+    shadow = ShadowSpy()
+    service, _, _, _ = pipeline([company(1)], agent=ScenarioShadowAgent(RawStore()))
+    service.shadow_specialist_runner = shadow
+    service.shadow_specialists_enabled = True
+
+    outcome = service.run([company(1)])[0]
+
+    assert outcome.status == "accepted"
+    assert shadow.calls == 2
+    assert shadow.scenario_data[0] is None
+    assert shadow.scenario_data[1].status == "available"
