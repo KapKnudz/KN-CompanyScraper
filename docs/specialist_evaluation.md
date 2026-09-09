@@ -20,7 +20,8 @@ are human-authored and are never inferred from an artifact:
   `result_scope: "case"` and whose content is a validated
   `specialist-case-result-v1` object bound to the case packet hash; otherwise use
   `"not_applicable"`.
-- `source_validity`: `all_valid`, `invalid_present`, or `not_applicable`.
+- `source_validity`: `all_valid`, `invalid_present`, `unavailable`, or
+  `not_applicable`.
 - `activation`: human-labeled boolean or `not_applicable`; reports include full
   true/false positive and negative outcomes.
 - `confidence`: an `agent_name` to expected low/medium/high mapping, or
@@ -32,11 +33,14 @@ not the trusted 12–20 company benchmark.
 
 ## Run comparison
 
-Artifacts are the existing raw specialist records, represented as a JSON array or
-`{"artifacts": [...]}`. Each record contains `content` and the stored `metadata`
-(`agent_name`, `run_id`, `packet_hash`, `prompt_sha256`, usage, and attempts when
-available). Optional `model`, `tier`, `latency_ms`, `cost`, `repairs`, and final
-verdict metadata are recorded when present; unavailable values remain `null`.
+Artifacts are the existing raw specialist or packet-bound case-level records,
+represented as a JSON array or `{"artifacts": [...]}`. Each record contains
+`content` and stored metadata. Specialist records normally include `agent_name`,
+`run_id`, `packet_hash`, `prompt_sha256`, usage, and attempts when available;
+case-level records use the same packet and run metadata without requiring a
+specialist agent name. Optional `model`, `tier`, `latency_ms`, `cost`, `repairs`,
+and final verdict metadata are recorded when present; unavailable values remain
+`null`.
 
 ```sh
 python -m kncompanyscraper.main evaluate-specialists \
