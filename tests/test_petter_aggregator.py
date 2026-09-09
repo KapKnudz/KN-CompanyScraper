@@ -8,6 +8,8 @@ from kncompanyscraper.analysis.agent.output_schema import (
     BusinessModelSpecialistOutput,
     GrowthValuationSpecialistOutput,
     InsiderOwnershipSpecialistOutput,
+    OwnershipBinding,
+    OwnershipClaim,
     ManagementCredibilityCoverage,
     ManagementCredibilitySpecialistOutput,
     MarginSpecialistOutput,
@@ -34,6 +36,10 @@ from kncompanyscraper.analysis.agent.output_schema import StockAnalysisResult
 
 
 SOURCE = "financial:fixture"
+DETERMINISTIC_SOURCE = "valuation:reverse_dcf:revenue_growth"
+SCENARIO_SOURCE = "news:scenario"
+SELL_SOURCE = "news:sell-unassessable"
+OWNERSHIP_SOURCE = "news:ownership"
 
 
 def packet():
@@ -41,13 +47,23 @@ def packet():
         rank=1, company_id=42, ticker="TEST", name="Test", ranking_model="general",
         rank_eligible=True, eligibility_reasons=[], total_score=1.0,
         score_breakdown={}, data_quality="medium", flags=[], candidate_reason=None,
-        positives=[], negatives=[], missing_data=[], full_results={},
+        positives=[], negatives=[], missing_data=[],
+        full_results={
+            "reverse_dcf": {
+                "implied_expectations": {
+                    "revenue_growth": {"source_id": DETERMINISTIC_SOURCE}
+                }
+            }
+        },
         research_evidence={
             "as_of": "2026-08-16",
             "documents": [
                 {"source_id": SOURCE},
                 {"source_id": "news:unmatched"},
                 {"source_id": "news:unassessable"},
+                {"source_id": SCENARIO_SOURCE},
+                {"source_id": SELL_SOURCE},
+                {"source_id": OWNERSHIP_SOURCE},
             ],
         },
     )
@@ -238,15 +254,58 @@ def test_expectation_and_baseline_references_are_traced():
     aggregation_inputs = inputs(bundle())
     candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
     candidate.structured_conclusions = {
-        "headline_case": {"expectation_refs": [SOURCE]},
-        "falsifiable_case": {"baseline_refs": [SOURCE]},
+        "headline_case": {"expectation_refs": [DETERMINISTIC_SOURCE]},
+        "falsifiable_case": {"baseline_refs": [DETERMINISTIC_SOURCE]},
     }
 
     candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
     manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
 
-    assert [trace.source_ids for trace in manifest.evidence_trace] == [(SOURCE,), (SOURCE,)]
-    assert all(trace.upstream_claim_ids for trace in manifest.evidence_trace)
+    assert [trace.source_ids for trace in manifest.evidence_trace] == [
+        (DETERMINISTIC_SOURCE,), (DETERMINISTIC_SOURCE,)
+    ]
+    assert all(not trace.upstream_claim_ids for trace in manifest.evidence_trace)
+    assert all(
+        trace.deterministic_source_ids == (DETERMINISTIC_SOURCE,)
+        for trace in manifest.evidence_trace
+    )
+
+
+def test_sourced_scenario_assumption_is_an_upstream_trace_record():
+    items = list(bundle())
+    items[4].output.growth_valuation.scenario_bundles = [{
+        "revenue_cagr": {"value": 0.1, "source_ids": [SCENARIO_SOURCE]},
+    }]
+    aggregation_inputs = inputs(tuple(items))
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "evidence_claims": [{
+            "claim_id": "scenario.final", "domain": "revenue",
+            "predicate": "assessment", "value": "supported",
+            "source_ids": [SCENARIO_SOURCE],
+        }]
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].upstream_claim_ids == (
+        "growth_valuation:scenario_bundle:0:revenue_cagr",
+    )
+
+
+def test_every_cited_source_requires_complete_trace_linkage():
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "partially_traced", "domain": "revenue",
+            "predicate": "assessment", "value": "supported",
+            "source_ids": [SOURCE, "news:unmatched"],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="complete source linkage"):
+        validate_aggregator_output(candidate, inputs(bundle()))
 
 
 def test_sell_activation_blocker_blocks_activation():
@@ -284,6 +343,68 @@ def test_management_ledger_is_an_upstream_trace_record():
     manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
 
     assert manifest.evidence_trace[0].upstream_claim_ids == ("management_credibility:management.row",)
+
+
+def test_specialist_missing_information_reaches_final_trace():
+    items = list(bundle())
+    items[0].output.missing_information = [
+        SpecialistMissingInformation("missing_history", "supplemental", "case_limited")
+    ]
+    aggregation_inputs = inputs(tuple(items))
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "limited_support", "domain": "business_model",
+            "predicate": "assessment", "value": "supported", "source_ids": [SOURCE],
+        }
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].limitation_codes == ("missing_history",)
+
+
+def test_unassessable_sell_test_cannot_support_final_claim():
+    items = list(bundle())
+    items[-1].output.sell_conditions.tests[0].source_ids = [SELL_SOURCE]
+    items[-1].output.sell_conditions.tests[0].current_break_status = "unassessable"
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "sell_gap", "domain": "revenue",
+            "predicate": "assessment", "value": "supported", "source_ids": [SELL_SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, inputs(tuple(items)))
+
+
+def test_top_level_ownership_claim_is_traced():
+    items = list(bundle())
+    items[3].output.insider_ownership.event_claims = [
+        claim("insider.event", "insider")
+    ]
+    items[3].output.insider_ownership.event_claims[0].source_ids = [OWNERSHIP_SOURCE]
+    aggregation_inputs = inputs(tuple(items))
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {}
+    candidate.ownership_claims = [
+        OwnershipClaim(
+            claim_kind="buyback", subject_role="company", measure="latest_event_date",
+            binding=OwnershipBinding(
+                source_ids=[OWNERSHIP_SOURCE],
+                deterministic_field="research_evidence.ownership_liquidity.flow_signals.buybacks.latest_event_date",
+                asserted_value="2026-08-16", asserted_unit="date",
+            ),
+        )
+    ]
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].upstream_claim_ids == ("insider_ownership:insider.event",)
 
 
 def test_source_empty_unassessable_claim_remains_limited():
