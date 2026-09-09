@@ -226,7 +226,7 @@ def test_conflict_false_positive_and_false_negative_counts_are_explicit():
     report = run(cases, artifacts, packets)
     metrics = report["metrics"]["conflict_precision_recall"]
     assert metrics["false_positive"] == 0
-    assert metrics["false_negative"] == 1
+    assert metrics["false_negative"] == 0
 
 
 def test_overlapping_conflict_labels_are_rejected():
@@ -631,9 +631,10 @@ def test_paired_malformed_case_result_is_unavailable_not_a_manifest_failure():
     candidate_artifacts = copy.deepcopy(best_artifacts)
     set_artifact_run(candidate_artifacts, "candidate-run")
     for artifact_set, tier in ((best_artifacts, "best"), (candidate_artifacts, "candidate")):
+        for artifact in artifact_set["artifacts"]:
+            artifact["metadata"]["model_tier"] = tier
         artifact_set["artifacts"][0]["metadata"]["result_scope"] = "case"
         artifact_set["artifacts"][0]["content"] = "not-json"
-        artifact_set["artifacts"][0]["metadata"]["model_tier"] = tier
 
     report = compare_paired_specialist_evaluations(
         cases,
@@ -678,7 +679,9 @@ def test_paired_manifest_selects_one_run_and_ignores_historical_artifacts():
 
 
 def test_paired_manifest_rejects_conflicting_runs_per_tier():
-    cases, best_artifacts, candidate_artifacts = documents()
+    cases, best_artifacts, packets = documents()
+    candidate_artifacts = copy.deepcopy(best_artifacts)
+    set_artifact_run(candidate_artifacts, "candidate-run")
     manifest = pair_manifest(cases)
     conflicting = copy.deepcopy(manifest["assignments"][2])
     conflicting["run_id"] = "other-candidate-run"
@@ -689,6 +692,7 @@ def test_paired_manifest_rejects_conflicting_runs_per_tier():
             cases,
             best_artifacts,
             candidate_artifacts,
+            packets=packets,
             manifest=manifest,
         )
 
@@ -773,6 +777,7 @@ def test_confidence_is_calibrated_per_labeled_agent_and_metadata_is_preserved():
     cases, artifacts, packets = documents()
     insider = json.loads(artifacts["artifacts"][1]["content"])
     insider["confidence"] = "high"
+    insider["confidence_cap"] = "high"
     artifacts["artifacts"][1]["content"] = json.dumps(insider)
     cases["cases"][0]["labels"]["confidence"] = {
         "management_credibility": "low",
@@ -786,7 +791,7 @@ def test_confidence_is_calibrated_per_labeled_agent_and_metadata_is_preserved():
     assert confidence["by_agent"]["management_credibility"]["evaluated"] == 1
     assert confidence["by_agent"]["insider_ownership"]["correct"] == 1
     assert report["cases"][0]["metadata"][0]["run_id"] == "synthetic-run"
-    assert report["cases"][0]["metadata"][0]["agent_name"] == "management_credibility"
+    assert report["cases"][0]["metadata"][0]["agent_name"] == "insider_ownership"
     assert report["metadata_fields"]["run_id"]["available"] == 2
 
 

@@ -895,7 +895,7 @@ def _validate_pair_manifest(
     ]
     if manifest is None:
         _require(not specialist_records, "paired specialist artifacts require an evaluation manifest")
-        return {"agents": {"best": {}, "candidate": {}}}
+        return {"agents": {"best": {}, "candidate": {}}, "runs": {"best": {}, "candidate": {}}}
     document = _load_json(manifest)
     _require(isinstance(document, Mapping), "evaluation manifest must be an object")
     _require(document.get("schema_version") == MANIFEST_SCHEMA_VERSION, "unsupported evaluation manifest schema version")
