@@ -69,6 +69,60 @@ class AnalysisRepository(BaseRepository):
             metadata=specialist_metadata,
         )
 
+    def save_aggregator_artifact(
+        self,
+        company_id: int,
+        raw_response: str,
+        created_by: str,
+        *,
+        run_id: str,
+        packet_hash: str,
+        artifact_type: str,
+        metadata: dict | None = None,
+    ) -> int:
+        """Persist non-authoritative aggregator raw or validated output."""
+        if artifact_type not in {"aggregator_raw", "aggregator_validated"}:
+            raise ValueError("unknown aggregator artifact type")
+        aggregator_metadata = {
+            **(metadata or {}),
+            "analysis_mode": "aggregator",
+            "agent_name": "petter_hedborg",
+            "run_id": run_id,
+            "packet_hash": packet_hash,
+            "artifact_type": artifact_type,
+        }
+        return self.save_stock_analysis_raw(
+            company_id, raw_response, created_by, metadata=aggregator_metadata
+        )
+
+    def get_aggregator_artifact(self, analysis_id: int) -> dict | None:
+        """Read a non-authoritative aggregator artifact."""
+        artifact = self.get_stock_analysis_raw(analysis_id)
+        if artifact is None:
+            return None
+        if (artifact.get("metadata") or {}).get("analysis_mode") != "aggregator":
+            return None
+        return artifact
+
+    def get_aggregator_artifacts_for_run(
+        self, company_id: int, run_id: str
+    ) -> list[dict]:
+        """Return non-authoritative aggregator artifacts for idempotent resume."""
+        query = """
+            SELECT id, company_id, content, created_by, metadata
+            FROM analysis
+            WHERE company_id = %s
+              AND analysis_type = 'stock_analysis_raw'
+              AND metadata->>'analysis_mode' = 'aggregator'
+              AND metadata->>'run_id' = %s
+            ORDER BY id ASC
+        """
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, (company_id, run_id))
+                rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
     def get_specialist_artifact(self, analysis_id: int) -> dict | None:
         """Read a raw artifact only when it is marked as specialist output."""
         artifact = self.get_stock_analysis_raw(analysis_id)

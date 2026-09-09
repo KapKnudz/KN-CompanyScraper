@@ -265,6 +265,22 @@ def build_shadow_specialist_runner(model_adapter, raw_response_repository=None):
     )
 
 
+def build_shadow_aggregator_runner(
+    model_adapter, raw_response_repository=None, execution_boundary=None
+):
+    """Build the opt-in, non-authoritative Petter aggregator."""
+    from kncompanyscraper.analysis.agent.petter_aggregator import (
+        ShadowPetterAggregatorRunner,
+    )
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
+
+    return ShadowPetterAggregatorRunner(
+        model_adapter,
+        raw_response_repository or AnalysisRepository(),
+        execution_boundary=execution_boundary,
+    )
+
+
 def build_company_analysis_pipeline(model_adapter, *, progress=None):
     """Build the exact-company refresh, snapshot, packet, and agent workflow."""
     from kncompanyscraper.analysis.company_analysis_pipeline import (
@@ -281,6 +297,15 @@ def build_company_analysis_pipeline(model_adapter, *, progress=None):
         if config.SHADOW_SPECIALISTS_ENABLED
         else None
     )
+    shadow_aggregator_runner = (
+        build_shadow_aggregator_runner(
+            model_adapter,
+            analysis_service.raw_response_repository,
+            analysis_service.execution_boundary,
+        )
+        if config.SHADOW_SPECIALISTS_ENABLED
+        else None
+    )
     return CompanyAnalysisPipeline(
         CompanyRepository(),
         build_company_refresh_service(),
@@ -291,6 +316,7 @@ def build_company_analysis_pipeline(model_adapter, *, progress=None):
         progress=progress,
         shadow_specialist_runner=shadow_runner,
         shadow_specialists_enabled=config.SHADOW_SPECIALISTS_ENABLED,
+        shadow_aggregator_runner=shadow_aggregator_runner,
     )
 
 
