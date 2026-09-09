@@ -255,20 +255,19 @@ def test_expectation_and_baseline_references_are_traced():
     candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
     candidate.structured_conclusions = {
         "headline_case": {"expectation_refs": [DETERMINISTIC_SOURCE]},
-        "falsifiable_case": {"baseline_refs": [DETERMINISTIC_SOURCE]},
+        "falsifiable_case": {"baseline_refs": [SOURCE]},
     }
 
     candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
     manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
 
     assert [trace.source_ids for trace in manifest.evidence_trace] == [
-        (DETERMINISTIC_SOURCE,), (DETERMINISTIC_SOURCE,)
+        (DETERMINISTIC_SOURCE,), (SOURCE,)
     ]
-    assert all(not trace.upstream_claim_ids for trace in manifest.evidence_trace)
-    assert all(
-        trace.deterministic_source_ids == (DETERMINISTIC_SOURCE,)
-        for trace in manifest.evidence_trace
-    )
+    assert not manifest.evidence_trace[0].upstream_claim_ids
+    assert manifest.evidence_trace[0].deterministic_source_ids == (DETERMINISTIC_SOURCE,)
+    assert manifest.evidence_trace[1].upstream_claim_ids
+    assert not manifest.evidence_trace[1].deterministic_source_ids
 
 
 def test_sourced_scenario_assumption_is_an_upstream_trace_record():

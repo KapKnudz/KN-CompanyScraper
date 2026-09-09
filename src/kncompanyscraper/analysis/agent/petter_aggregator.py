@@ -315,11 +315,20 @@ class ShadowPetterAggregatorRunner:
         self.execution_boundary = execution_boundary
 
     def run(self, inputs: AggregatorInput) -> AggregatorArtifactResult:
-        existing = self._reuse_completed(inputs)
-        if existing is not None:
-            return existing
         prompt = self.prompt_builder.build(inputs)
         prompt_hash = sha256(_prompt_artifact(prompt).encode()).hexdigest()
+        upstream_outputs_hash = _sha256_json(inputs.specialist_outputs)
+        deterministic_scenario_hash = _sha256_json(inputs.deterministic_scenario_results)
+        reverse_dcf_hash = _sha256_json(inputs.reverse_dcf_results)
+        existing = self._reuse_completed(
+            inputs,
+            prompt_hash=prompt_hash,
+            upstream_outputs_hash=upstream_outputs_hash,
+            deterministic_scenario_hash=deterministic_scenario_hash,
+            reverse_dcf_hash=reverse_dcf_hash,
+        )
+        if existing is not None:
+            return existing
         raw_ids: list[int] = []
         errors: list[str] = []
         response = None
@@ -347,11 +356,9 @@ class ShadowPetterAggregatorRunner:
                     "analysis_attempt": attempt,
                     "prompt_sha256": prompt_hash,
                     "prompt_contract_version": prompt.contract_version,
-                    "upstream_outputs_sha256": _sha256_json(inputs.specialist_outputs),
-                    "deterministic_scenario_sha256": _sha256_json(
-                        inputs.deterministic_scenario_results
-                    ),
-                    "reverse_dcf_sha256": _sha256_json(inputs.reverse_dcf_results),
+                    "upstream_outputs_sha256": upstream_outputs_hash,
+                    "deterministic_scenario_sha256": deterministic_scenario_hash,
+                    "reverse_dcf_sha256": reverse_dcf_hash,
                 },
             )
             if raw_id is not None:
@@ -378,11 +385,9 @@ class ShadowPetterAggregatorRunner:
                         "analysis_stage": "petter_aggregator",
                         "analysis_attempt": attempt,
                         "prompt_sha256": prompt_hash,
-                        "upstream_outputs_sha256": _sha256_json(inputs.specialist_outputs),
-                        "deterministic_scenario_sha256": _sha256_json(
-                            inputs.deterministic_scenario_results
-                        ),
-                        "reverse_dcf_sha256": _sha256_json(inputs.reverse_dcf_results),
+                        "upstream_outputs_sha256": upstream_outputs_hash,
+                        "deterministic_scenario_sha256": deterministic_scenario_hash,
+                        "reverse_dcf_sha256": reverse_dcf_hash,
                         "validation_status": "accepted",
                     },
                 )
@@ -404,7 +409,15 @@ class ShadowPetterAggregatorRunner:
             "failed", len(raw_ids) or 1, tuple(raw_ids), (), tuple(errors)
         )
 
-    def _reuse_completed(self, inputs: AggregatorInput):
+    def _reuse_completed(
+        self,
+        inputs: AggregatorInput,
+        *,
+        prompt_hash: str,
+        upstream_outputs_hash: str,
+        deterministic_scenario_hash: str,
+        reverse_dcf_hash: str,
+    ):
         getter = getattr(self.raw_response_repository, "get_aggregator_artifacts_for_run", None)
         if not callable(getter):
             return None
@@ -414,6 +427,10 @@ class ShadowPetterAggregatorRunner:
                 metadata.get("artifact_type") != "aggregator_validated"
                 or metadata.get("packet_hash") != inputs.packet_hash
                 or metadata.get("validation_status") != "accepted"
+                or metadata.get("prompt_sha256") != prompt_hash
+                or metadata.get("upstream_outputs_sha256") != upstream_outputs_hash
+                or metadata.get("deterministic_scenario_sha256") != deterministic_scenario_hash
+                or metadata.get("reverse_dcf_sha256") != reverse_dcf_hash
             ):
                 continue
             try:
@@ -1011,11 +1028,11 @@ def _all_evidence_entries(value, path=()):
             result.append((value, str(value.get("claim_id") or ".".join(path))))
         for field_name in ("expectation_refs", "baseline_refs"):
             for index, source_id in enumerate(value.get(field_name) or ()):
+                entry = {"source_ids": [source_id]}
+                if field_name == "expectation_refs":
+                    entry["__provenance__"] = "deterministic"
                 result.append((
-                    {
-                        "source_ids": [source_id],
-                        "__provenance__": "deterministic",
-                    },
+                    entry,
                     ".".join((*path, field_name, str(index))),
                 ))
         for key, child in value.items():
@@ -1145,7 +1162,21 @@ def _sha256_json(value):
 
 
 def _prompt_artifact(prompt):
-    return json.dumps({"system": prompt.system, "user": prompt.user, "schema_name": prompt.schema_name, "contract_version": prompt.contract_version}, ensure_ascii=False, sort_keys=True)
+    return json.dumps(
+        {
+            "system": prompt.system,
+            "user": prompt.user,
+            "policy_name": prompt.policy_name,
+            "policy_version": prompt.policy_version,
+            "policy_sha256": prompt.policy_sha256,
+            "output_schema": _json_value(prompt.output_schema),
+            "schema_name": prompt.schema_name,
+            "packet_measurement": _json_value(prompt.packet_measurement),
+            "contract_version": prompt.contract_version,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
 
 
 def _save_aggregator_artifact(repository, inputs, content, created_by, *, artifact_type, metadata):
