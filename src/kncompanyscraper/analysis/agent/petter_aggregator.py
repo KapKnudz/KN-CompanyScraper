@@ -143,6 +143,7 @@ class UpstreamArtifact:
     confidence: str | None = None
     confidence_cap: str | None = None
     missing: tuple[str, ...] = ()
+    missing_information: tuple[dict, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -153,6 +154,7 @@ class UpstreamArtifact:
             "confidence": self.confidence,
             "confidence_cap": self.confidence_cap,
             "missing": list(self.missing),
+            "missing_information": list(self.missing_information),
         }
 
 
@@ -161,12 +163,14 @@ class EvidenceTrace:
     final_claim_id: str
     upstream_claim_ids: tuple[str, ...]
     source_ids: tuple[str, ...]
+    limitation_codes: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
         return {
             "final_claim_id": self.final_claim_id,
             "upstream_claim_ids": list(self.upstream_claim_ids),
             "source_ids": list(self.source_ids),
+            "limitation_codes": list(self.limitation_codes),
         }
 
 
@@ -442,6 +446,11 @@ def enforce_aggregation_constraints(
             blockers.append(f"missing_{name}")
         elif _output_status(output) != "complete":
             blockers.append(f"{name}_insufficient_or_failed")
+        if output is not None and any(
+            _enum(_field(item, "limitation_class")) == "core"
+            for item in (_field(_output(output), "missing_information") or ())
+        ):
+            blockers.append(f"{name}_core_evidence_missing")
 
     business = _domain(outputs.get("business_model"), "business_model")
     margin = _domain(outputs.get("margin"), "margin")
@@ -548,6 +557,10 @@ def build_aggregation_manifest(
                     _field(missing, "item_code")
                     for missing in (_field(output, "missing_information") or ())
                 ) if output else (),
+                missing_information=tuple(
+                    _json_value(missing)
+                    for missing in (_field(output, "missing_information") or ())
+                ) if output else (),
             )
         )
     traces = _evidence_traces(candidate, inputs)
@@ -621,19 +634,22 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
     references = _specialist_claim_references(
         inputs, full_results, research, catalog
     )
-    for claim in _all_claim_dicts(conclusions):
+    for claim, claim_id in _all_evidence_entries(conclusions):
         source_ids = claim.get("source_ids", [])
         if not source_ids:
             raise AggregatorValidationError(
-                f"aggregator claim requires source_ids: {claim.get('claim_id', '')}"
+                f"aggregator claim requires source_ids: {claim_id}"
             )
         normalized = _normalized_source_ids(
-            source_ids, full_results, research, catalog, claim.get("claim_id", "")
+            source_ids, full_results, research, catalog, claim_id
         )
-        if not any(set(normalized).intersection(sources) for _, sources in references):
+        if not any(
+            set(normalized).intersection(sources)
+            for _, sources, _ in references
+        ):
             raise AggregatorValidationError(
                 "aggregator claim requires an upstream specialist claim: "
-                + str(claim.get("claim_id", ""))
+                + claim_id
             )
 
 
@@ -641,7 +657,7 @@ def _validate_no_model_arithmetic(candidate: StockAnalysisResult, inputs: Aggreg
     conclusions = candidate.structured_conclusions
     if conclusions is None:
         return
-    for claim in _all_claim_dicts(conclusions):
+    for claim, _ in _all_evidence_entries(conclusions):
         value = claim.get("value")
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             continue
@@ -649,7 +665,11 @@ def _validate_no_model_arithmetic(candidate: StockAnalysisResult, inputs: Aggreg
             str(claim.get(key, "")).lower()
             for key in ("domain", "claim_id", "predicate", "fact_code")
         ).replace("-", "_")
-        if claim.get("domain") == "valuation" or any(
+        domain = str(_enum(claim.get("domain", ""))).lower().replace("-", "_")
+        domain_tokens = set(domain.split("_"))
+        if domain_tokens.intersection(
+            {"valuation", "price", "prices", "return", "returns", "fair", "value", "hurdle", "hurdles"}
+        ) or any(
             term in text for term in ("price", "return", "fair_value", "required_return", "hurdle")
         ):
             raise AggregatorValidationError("aggregator may not author prices, returns, fair value, or hurdles")
@@ -712,24 +732,30 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
         inputs, full_results, research, catalog
     )
     traces = []
-    for claim in _all_claim_dicts(candidate.structured_conclusions):
+    for claim, claim_id in _all_evidence_entries(candidate.structured_conclusions):
         source_ids = _normalized_source_ids(
             claim.get("source_ids", []),
             full_results,
             research,
             catalog,
-            claim.get("claim_id", ""),
+            claim_id,
         )
         matching = tuple(
-            claim_id for claim_id, sources in references
+            claim_id for claim_id, sources, _ in references
             if set(source_ids).intersection(sources)
         )
         if not matching:
             raise AggregatorValidationError(
                 "aggregator claim requires an upstream specialist claim: "
-                + str(claim.get("claim_id", ""))
+                + claim_id
             )
-        traces.append(EvidenceTrace(claim.get("claim_id", ""), matching, source_ids))
+        limitations = tuple(dict.fromkeys(
+            limitation
+            for upstream_id, _, claim_limitations in references
+            if upstream_id in matching
+            for limitation in claim_limitations
+        ))
+        traces.append(EvidenceTrace(claim_id, matching, source_ids, limitations))
     return tuple(traces)
 
 
@@ -742,7 +768,7 @@ def _specialist_claim_references(inputs, full_results, research, catalog):
         agent = _enum(_field(output, "agent_name"))
         for claim in _specialist_claims(output):
             source_ids = _field(claim, "source_ids") or ()
-            if not source_ids:
+            if not source_ids or not _specialist_claim_is_assessable(claim):
                 continue
             normalized = _normalized_source_ids(
                 source_ids,
@@ -751,8 +777,18 @@ def _specialist_claim_references(inputs, full_results, research, catalog):
                 catalog,
                 f"{agent}:{_field(claim, 'claim_id')}",
             )
-            references.append((f"{agent}:{_field(claim, 'claim_id')}", set(normalized)))
+            references.append((
+                f"{agent}:{_field(claim, 'claim_id')}",
+                set(normalized),
+                tuple(_field(claim, "limitation_codes") or ()),
+            ))
     return tuple(references)
+
+
+def _specialist_claim_is_assessable(claim):
+    direction = _enum(_field(claim, "direction"))
+    value = _enum(_field(claim, "value"))
+    return direction != "unassessable" and value not in (None, "unassessable", "unavailable")
 
 
 def _normalized_source_ids(source_ids, full_results, research, catalog, claim_id):
@@ -790,20 +826,20 @@ def _specialist_claims(output):
     return claims
 
 
-def _all_claim_dicts(value):
+def _all_evidence_entries(value, path=()):
     if is_dataclass(value):
         value = asdict(value)
     if isinstance(value, Mapping):
         result = []
-        if "claim_id" in value and "source_ids" in value:
-            result.append(value)
-        for child in value.values():
-            result.extend(_all_claim_dicts(child))
+        if "source_ids" in value:
+            result.append((value, str(value.get("claim_id") or ".".join(path))))
+        for key, child in value.items():
+            result.extend(_all_evidence_entries(child, (*path, str(key))))
         return result
     if isinstance(value, (list, tuple)):
         result = []
-        for child in value:
-            result.extend(_all_claim_dicts(child))
+        for index, child in enumerate(value):
+            result.extend(_all_evidence_entries(child, (*path, str(index))))
         return result
     return []
 

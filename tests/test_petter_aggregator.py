@@ -15,6 +15,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
     SpecialistClaim,
     SpecialistClaimDirection,
     SpecialistConfidence,
+    SpecialistMissingInformation,
     SpecialistOutput,
     SpecialistStatus,
     SellConditionAssessment,
@@ -24,6 +25,7 @@ from kncompanyscraper.analysis.agent.petter_aggregator import (
     AggregatorValidationError,
     AggregatorInput,
     PetterAggregatorPromptBuilder,
+    build_aggregation_manifest,
     enforce_aggregation_constraints,
     validate_aggregator_output,
 )
@@ -41,7 +43,11 @@ def packet():
         positives=[], negatives=[], missing_data=[], full_results={},
         research_evidence={
             "as_of": "2026-08-16",
-            "documents": [{"source_id": SOURCE}, {"source_id": "news:unmatched"}],
+            "documents": [
+                {"source_id": SOURCE},
+                {"source_id": "news:unmatched"},
+                {"source_id": "news:unassessable"},
+            ],
         },
     )
 
@@ -195,6 +201,22 @@ def test_numeric_valuation_claim_is_rejected_with_generic_identifiers():
         validate_aggregator_output(candidate, inputs(bundle()))
 
 
+def test_numeric_valuation_domain_variant_is_rejected():
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "generic",
+            "domain": "valuation_expectations",
+            "predicate": "assessment",
+            "value": 123.0,
+            "source_ids": [SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="may not author"):
+        validate_aggregator_output(candidate, inputs(bundle()))
+
+
 def test_final_claim_requires_upstream_specialist_linkage():
     candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
     candidate.structured_conclusions = {
@@ -209,3 +231,51 @@ def test_final_claim_requires_upstream_specialist_linkage():
 
     with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
         validate_aggregator_output(candidate, inputs(bundle()))
+
+
+def test_source_bearing_break_test_is_traced_and_preserves_limitations():
+    items = list(bundle())
+    items[0].output.business_model.claims[0].limitation_codes = ["limited_history"]
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "thesis_break_tests": [{"break_type": "revenue_or_demand", "source_ids": [SOURCE]}]
+    }
+
+    aggregation_inputs = inputs(tuple(items))
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert "business_model:business.engine" in manifest.evidence_trace[0].upstream_claim_ids
+    assert manifest.evidence_trace[0].limitation_codes == ("limited_history",)
+
+
+def test_unassessable_specialist_claim_cannot_support_final_claim():
+    items = list(bundle())
+    items[0].output.business_model.claims[0].source_ids = ["news:unassessable"]
+    items[0].output.business_model.claims[0].direction = SpecialistClaimDirection.UNASSESSABLE
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "unsupported",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": ["news:unassessable"],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, inputs(tuple(items)))
+
+
+def test_core_specialist_missing_information_blocks_activation():
+    items = list(bundle())
+    items[0].output.missing_information = [
+        SpecialistMissingInformation("missing_history", "core", "case_limited")
+    ]
+
+    result = StockAnalysisResult(42, "TEST", "Test", "activated_case", "high", "")
+    result, decision = enforce_aggregation_constraints(result, inputs(tuple(items)))
+
+    assert not decision.eligible
+    assert "business_model_core_evidence_missing" in decision.blocked_by
