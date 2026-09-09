@@ -185,6 +185,14 @@ class CompanyAnalysisPipeline:
             qualitative, metadata, created_by = self._resume_model_stages(
                 job_id, result, candidate
             )
+            scenario = getattr(qualitative, "forward_scenario_analysis", None)
+            if scenario is not None:
+                shadow_run = self._run_shadow_specialists(
+                    job_id,
+                    result,
+                    deserialize_packet(result["packet_json"]),
+                    deterministic_scenario_data=scenario,
+                )
             self._run_shadow_aggregator(
                 job_id, result, deserialize_packet(result["packet_json"]),
                 shadow_run, qualitative,
@@ -285,6 +293,14 @@ class CompanyAnalysisPipeline:
             qualitative, metadata, created_by = self._run_model_stages(
                 job_id, result, candidate
             )
+            scenario = getattr(qualitative, "forward_scenario_analysis", None)
+            if scenario is not None:
+                shadow_run = self._run_shadow_specialists(
+                    job_id,
+                    result,
+                    packet,
+                    deterministic_scenario_data=scenario,
+                )
             self._run_shadow_aggregator(
                 job_id, result, packet, shadow_run, qualitative
             )
@@ -315,7 +331,9 @@ class CompanyAnalysisPipeline:
                 resumable=resumable,
             )
 
-    def _run_shadow_specialists(self, job_id, result, packet):
+    def _run_shadow_specialists(
+        self, job_id, result, packet, *, deterministic_scenario_data=None
+    ):
         if self.shadow_specialist_runner is None or not self.shadow_specialists_enabled:
             return None
         stage = result.setdefault("stages", {}).get("shadow_specialists", {})
@@ -326,18 +344,21 @@ class CompanyAnalysisPipeline:
             and (
                 self.shadow_aggregator_runner is None
                 or result.setdefault("stages", {}).get("shadow_aggregator", {}).get(
-                    "status"
+                "status"
                 ) == "accepted"
             )
+            and deterministic_scenario_data is None
         ):
             return None
         self._start_stage(result, job_id, "shadow_specialists")
         try:
-            run = self.shadow_specialist_runner.run(
-                packet,
-                run_id=f"company-analysis-{job_id}",
-                packet_hash=result.get("packet_hash"),
-            )
+            run_kwargs = {
+                "run_id": f"company-analysis-{job_id}",
+                "packet_hash": result.get("packet_hash"),
+            }
+            if deterministic_scenario_data is not None:
+                run_kwargs["deterministic_scenario_data"] = deterministic_scenario_data
+            run = self.shadow_specialist_runner.run(packet, **run_kwargs)
             result["shadow_specialists"] = run.to_dict()
             self._complete_stage(
                 result,

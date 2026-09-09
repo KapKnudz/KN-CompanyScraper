@@ -100,20 +100,6 @@ class AggregatorInput:
             ):
                 raise ValueError("specialist output identity does not match aggregator input")
 
-    @property
-    def first_wave_outputs(self) -> tuple[Any, ...]:
-        return tuple(
-            item for item in self.specialist_outputs
-            if _enum(_field(_output(item), "agent_name")) in FIRST_WAVE_NAMES
-        )
-
-    @property
-    def sell_conditions_output(self) -> Any:
-        for item in self.specialist_outputs:
-            if _enum(_field(_output(item), "agent_name")) == "sell_conditions":
-                return item
-        return None
-
     def to_dict(self) -> dict:
         return _aggregator_payload(self)
 
@@ -482,7 +468,6 @@ def enforce_aggregation_constraints(
     business = _domain(outputs.get("business_model"), "business_model")
     margin = _domain(outputs.get("margin"), "margin")
     growth = _domain(outputs.get("growth_valuation"), "growth_valuation")
-    management = _domain(outputs.get("management_credibility"), "management_credibility")
     sell = _domain(outputs.get("sell_conditions"), "sell_conditions")
 
     circle = _field(business, "circle_of_competence")
