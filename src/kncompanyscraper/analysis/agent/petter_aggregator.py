@@ -197,6 +197,7 @@ class AggregationManifest:
     must_surface_conflicts: tuple[dict, ...]
     evidence_trace: tuple[EvidenceTrace, ...]
     validation_status: str = "pending"
+    candidate_missing_information: tuple[dict, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -211,6 +212,7 @@ class AggregationManifest:
             "must_surface_conflicts": list(self.must_surface_conflicts),
             "evidence_trace": [item.to_dict() for item in self.evidence_trace],
             "validation_status": self.validation_status,
+            "candidate_missing_information": list(self.candidate_missing_information),
         }
 
 
@@ -464,6 +466,11 @@ def enforce_aggregation_constraints(
             for item in (_field(_output(output), "missing_information") or ())
         ):
             blockers.append(f"{name}_core_evidence_missing")
+    if any(
+        _enum(_field(item, "limitation_class")) == "core"
+        for item in _candidate_missing_information(candidate)
+    ):
+        blockers.append("candidate_core_evidence_missing")
 
     business = _domain(outputs.get("business_model"), "business_model")
     margin = _domain(outputs.get("margin"), "margin")
@@ -604,6 +611,9 @@ def build_aggregation_manifest(
         must_surface_conflicts=conflicts,
         evidence_trace=traces,
         validation_status="accepted",
+        candidate_missing_information=tuple(
+            _json_value(item) for item in _candidate_missing_information(candidate)
+        ),
     )
 
 
@@ -1064,6 +1074,15 @@ def _candidate_evidence_entries(candidate):
             f"ownership_claims.{index}",
         ))
     return tuple(entries)
+
+
+def _candidate_missing_information(candidate):
+    structured = _field(candidate, "structured_conclusions")
+    if structured is not None:
+        details = _field(structured, "missing_information_details")
+        if details is not None:
+            return details
+    return _field(candidate, "missing_information_details") or ()
 
 
 def _is_deterministic_source(source_id, resolved):

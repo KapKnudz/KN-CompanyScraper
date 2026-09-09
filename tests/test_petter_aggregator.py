@@ -495,3 +495,26 @@ def test_core_specialist_missing_information_blocks_activation():
 
     assert not decision.eligible
     assert "business_model_core_evidence_missing" in decision.blocked_by
+
+
+def test_core_candidate_missing_information_blocks_and_is_manifested():
+    candidate = StockAnalysisResult(42, "TEST", "Test", "activated_case", "high", "")
+    aggregation_inputs = inputs(bundle())
+    candidate.structured_conclusions = {
+        "missing_information_details": [{
+            "item_code": "missing_cash_flow_history",
+            "limitation_class": "core",
+            "impact_code": "case_limited",
+        }]
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert not decision.eligible
+    assert "candidate_core_evidence_missing" in decision.blocked_by
+    assert manifest.candidate_missing_information == ({
+        "item_code": "missing_cash_flow_history",
+        "limitation_class": "core",
+        "impact_code": "case_limited",
+    },)
