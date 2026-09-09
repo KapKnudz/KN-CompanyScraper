@@ -515,7 +515,7 @@ def enforce_aggregation_constraints(
     if (
         _deterministic_status(inputs.deterministic_scenario_results) == "available"
         and _deterministic_status(inputs.reverse_dcf_results) == "available"
-        and not _hurdle_is_satisfied(inputs)
+        and not _hurdle_is_satisfied(inputs, candidate)
     ):
         blockers.append("required_return_hurdle_unsatisfied")
 
@@ -753,21 +753,39 @@ def _apply_confidence_cap(candidate: StockAnalysisResult, outputs: dict) -> Stoc
     return candidate
 
 
-def _hurdle_is_satisfied(inputs: AggregatorInput) -> bool:
+def _hurdle_is_satisfied(inputs: AggregatorInput, candidate: StockAnalysisResult) -> bool:
     scenario = inputs.deterministic_scenario_results
     reverse = inputs.reverse_dcf_results
     hurdle = _nested(reverse, "required_return", "required_return")
     if hurdle is None:
         hurdle = _nested(_packet_value(inputs.packet, "full_results") or {}, "reverse_dcf", "required_return", "required_return")
-    base_low = _nested(scenario, "base", "low_annualized_return")
-    if base_low is None:
+    base = _field(scenario, "base")
+    base_low = _field(base, "low_annualized_return")
+    base_high = _field(base, "high_annualized_return")
+    if base_low is None or base_high is None:
         bands = _field(scenario, "bands") or _field(scenario, "results") or []
         for band in bands:
             if _field(band, "case") == "base":
                 base_low = _field(band, "low_annualized_return")
+                base_high = _field(band, "high_annualized_return")
                 break
+    if candidate.verdict == "activated_case":
+        required_return_value = base_low
+    elif candidate.verdict == "latent_case" and candidate.latent_case_type == "operating":
+        required_return_value = base_high
+    elif candidate.verdict == "latent_case" and candidate.latent_case_type == "price":
+        try:
+            return base_low is not None and hurdle is not None and float(base_low) < float(hurdle)
+        except (TypeError, ValueError):
+            return False
+    else:
+        return True
     try:
-        return base_low is not None and hurdle is not None and float(base_low) >= float(hurdle)
+        return (
+            required_return_value is not None
+            and hurdle is not None
+            and float(required_return_value) >= float(hurdle)
+        )
     except (TypeError, ValueError):
         return False
 

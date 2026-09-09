@@ -192,6 +192,30 @@ def test_activation_is_blocked_by_missing_inputs_and_deterministic_hurdle():
     assert "deterministic_valuation_insufficient" in decision.blocked_by
 
 
+def test_operating_latent_uses_upper_bound_for_return_hurdle():
+    result = StockAnalysisResult(42, "TEST", "Test", "latent_case", "high", "")
+    result.latent_case_type = "operating"
+    aggregation_inputs = inputs(bundle())
+    aggregation_inputs = AggregatorInput(
+        packet=aggregation_inputs.packet,
+        packet_hash=aggregation_inputs.packet_hash,
+        run_id=aggregation_inputs.run_id,
+        specialist_outputs=aggregation_inputs.specialist_outputs,
+        deterministic_scenario_results={
+            "status": "available",
+            "base": {
+                "low_annualized_return": 0.05,
+                "high_annualized_return": 0.20,
+            },
+        },
+        reverse_dcf_results=aggregation_inputs.reverse_dcf_results,
+    )
+
+    _, decision = enforce_aggregation_constraints(result, aggregation_inputs)
+
+    assert "required_return_hurdle_unsatisfied" not in decision.blocked_by
+
+
 def test_management_cap_and_sell_break_are_deterministic_and_flow_cannot_rescue():
     result = StockAnalysisResult(42, "TEST", "Test", "activated_case", "high", "")
     result, decision = enforce_aggregation_constraints(
