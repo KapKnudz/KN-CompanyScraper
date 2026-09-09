@@ -1,0 +1,40 @@
+{
+  "schema_version": "specialist-evaluation-cases-v1",
+  "cases": [
+    {
+      "case_id": "synthetic-management-insider",
+      "company_id": 1,
+      "ticker": "SYN",
+      "packet_hash": "32ab52c4d957cd381ca33c51d847a6229b0f2fa4a68ffd1525e17a419f7dc0af",
+      "packet_ref": "1",
+      "labels": {
+        "claims": [
+          {
+            "agent_name": "management_credibility",
+            "claim_id": "management.pattern",
+            "expected_direction": "negative",
+            "expected_value": "missed"
+          }
+        ],
+        "management_rows": [
+          {"claim_id": "management.promise", "expected_result": "missed"}
+        ],
+        "conflicts": {
+          "expected_triggered": ["insider_vs_credibility_record"],
+          "expected_not_triggered": [
+            "margin_vs_sell_condition",
+            "circle_of_competence_vs_valuation",
+            "multiple_expansion_vs_activation"
+          ]
+        },
+        "source_validity": "all_valid",
+        "activation": "not_applicable",
+        "final_verdict": "not_applicable",
+        "confidence": {
+          "management_credibility": "low",
+          "insider_ownership": "low"
+        }
+      }
+    }
+  ]
+}
