@@ -377,6 +377,10 @@ class ShadowPetterAggregatorRunner:
                         "deterministic_scenario_sha256": deterministic_scenario_hash,
                         "reverse_dcf_sha256": reverse_dcf_hash,
                         "validation_status": "accepted",
+                        # The evaluator consumes this at the stable artifact
+                        # boundary; the aggregator contract remains unchanged.
+                        "result_scope": "case",
+                        "final_verdict": candidate.verdict,
                     },
                 )
                 if raw_id is not None:
@@ -427,7 +431,10 @@ class ShadowPetterAggregatorRunner:
                     json.dumps(payload["candidate"], ensure_ascii=False)
                 )
                 manifest = payload["manifest"]
-                if manifest.get("run_id") != inputs.run_id:
+                if (
+                    manifest.get("run_id") != inputs.run_id
+                    or manifest.get("packet_hash") != inputs.packet_hash
+                ):
                     continue
                 candidate, decision = validate_aggregator_output(candidate, inputs)
                 return AggregatorArtifactResult(
@@ -444,6 +451,13 @@ def validate_aggregator_output(
     candidate: StockAnalysisResult, inputs: AggregatorInput
 ) -> tuple[StockAnalysisResult, ActivationDecision]:
     """Validate provenance/arithmetic and apply deterministic activation gates."""
+    if (
+        candidate.company_id != inputs.company_id
+        or candidate.ticker != _packet_value(inputs.packet, "ticker")
+    ):
+        raise AggregatorValidationError(
+            "aggregator candidate identity does not match frozen packet"
+        )
     _validate_no_model_arithmetic(candidate, inputs)
     _validate_aggregator_sources(candidate, inputs)
     return enforce_aggregation_constraints(candidate, inputs)

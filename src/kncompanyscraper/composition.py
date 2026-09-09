@@ -281,6 +281,18 @@ def build_shadow_aggregator_runner(
     )
 
 
+def build_shadow_integration_runner(model_adapter, raw_response_repository=None):
+    """Build the complete opt-in shadow graph for an already frozen packet."""
+    from kncompanyscraper.analysis.agent.shadow_integration import ShadowIntegrationRunner
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
+
+    repository = raw_response_repository or AnalysisRepository()
+    return ShadowIntegrationRunner(
+        build_shadow_specialist_runner(model_adapter, repository),
+        build_shadow_aggregator_runner(model_adapter, repository),
+    )
+
+
 def build_company_analysis_pipeline(model_adapter, *, progress=None):
     """Build the exact-company refresh, snapshot, packet, and agent workflow."""
     from kncompanyscraper.analysis.company_analysis_pipeline import (

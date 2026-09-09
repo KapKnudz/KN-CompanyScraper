@@ -367,6 +367,20 @@ Neither these annotations nor the aggregator result changes the accepted verdict
 or production activation decision.
 The setting defaults to `false`.
 
+For evaluation of an already frozen packet, use the separate explicit shadow
+operator path. It prints a bounded model-call plan and refuses to execute unless
+`--allow-model-calls` is supplied:
+
+```
+python -m kncompanyscraper.main run-shadow-analysis \
+  --packets frozen-packets.json --output shadow-artifacts.json \
+  --allow-model-calls
+```
+
+See `docs/specialist_evaluation.md` and
+`docs/specialist_evaluation_three_company_pilot.json` for the three-company
+pilot workflow. This path persists only non-authoritative shadow artifacts.
+
 Selectors must identify distinct active companies. The command refreshes every
 mandatory upstream domain before model invocation (reports, the mutable price
 window, dividends, required KPIs, historical valuation/fundamental inputs, and

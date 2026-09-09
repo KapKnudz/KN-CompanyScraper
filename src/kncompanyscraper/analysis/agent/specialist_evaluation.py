@@ -347,21 +347,48 @@ def _parse_case_level_result(record: Mapping, case: Mapping) -> tuple[dict | Non
     try:
         payload = json.loads(content)
     except json.JSONDecodeError:
-        return None, "case-level artifact content is not valid JSON"
+        return None, "case-level result content is not valid JSON"
     if not isinstance(payload, Mapping):
-        return None, "case-level artifact content must be an object"
-    if payload.get("schema_version") != CASE_RESULT_SCHEMA_VERSION:
-        return None, "unsupported case-level result schema version"
-    if payload.get("company_id") != case["company_id"] or payload.get("ticker") != case["ticker"]:
-        return None, "case-level result identity does not match evaluation case"
-    if payload.get("packet_hash") != case["packet_hash"]:
-        return None, "case-level result packet_hash must match evaluation case"
-    final_verdict = payload.get("final_verdict")
-    if not isinstance(final_verdict, str) or final_verdict not in _FINAL_VERDICTS:
-        return None, "case-level result final_verdict is unknown"
+        return None, "case-level result content must be an object"
+
+    # Aggregator artifacts have their own stable candidate+manifest contract.
+    # Adapt only the verdict boundary here instead of duplicating that contract.
+    if metadata.get("artifact_type") == "aggregator_validated":
+        candidate = payload.get("candidate")
+        manifest = payload.get("manifest")
+        if not isinstance(candidate, Mapping) or not isinstance(manifest, Mapping):
+            return None, "validated aggregator artifact needs candidate and manifest"
+        if (
+            manifest.get("run_id") != metadata.get("run_id")
+            or manifest.get("packet_hash") != case["packet_hash"]
+        ):
+            return None, "validated aggregator manifest identity does not match evaluation case"
+        if (
+            candidate.get("company_id") != case["company_id"]
+            or candidate.get("ticker") != case["ticker"]
+            or candidate.get("verdict") not in _FINAL_VERDICTS
+        ):
+            return None, "validated aggregator candidate identity or verdict is invalid"
+        final_verdict = candidate["verdict"]
+    else:
+        if payload.get("schema_version") != CASE_RESULT_SCHEMA_VERSION:
+            return None, "unsupported case-level result schema version"
+        if payload.get("company_id") != case["company_id"] or payload.get("ticker") != case["ticker"]:
+            return None, "case-level result identity does not match evaluation case"
+        if payload.get("packet_hash") != case["packet_hash"]:
+            return None, "case-level result packet_hash must match evaluation case"
+        final_verdict = payload.get("final_verdict")
+        if not isinstance(final_verdict, str) or final_verdict not in _FINAL_VERDICTS:
+            return None, "case-level result final_verdict is unknown"
     if metadata.get("final_verdict") not in (None, final_verdict):
         return None, "case-level result final_verdict disagrees with metadata"
-    return dict(payload), None
+    return {
+        "schema_version": CASE_RESULT_SCHEMA_VERSION,
+        "company_id": case["company_id"],
+        "ticker": case["ticker"],
+        "packet_hash": case["packet_hash"],
+        "final_verdict": final_verdict,
+    }, None
 
 
 def _actual_final_verdict(results: Sequence[Mapping]) -> str | None:
