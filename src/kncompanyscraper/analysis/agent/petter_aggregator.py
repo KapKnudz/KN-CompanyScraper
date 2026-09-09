@@ -429,8 +429,8 @@ def validate_aggregator_output(
     candidate: StockAnalysisResult, inputs: AggregatorInput
 ) -> tuple[StockAnalysisResult, ActivationDecision]:
     """Validate provenance/arithmetic and apply deterministic activation gates."""
-    _validate_aggregator_sources(candidate, inputs)
     _validate_no_model_arithmetic(candidate, inputs)
+    _validate_aggregator_sources(candidate, inputs)
     return enforce_aggregation_constraints(candidate, inputs)
 
 
@@ -502,6 +502,8 @@ def enforce_aggregation_constraints(
 
     if _field(sell, "current_break_status") == "triggered":
         blockers.append("causal_sell_break_triggered")
+    if _field(sell, "activation_blockers"):
+        blockers.append("causal_activation_blocker")
     sell_tests = _field(sell, "tests") or ()
     if { _field(item, "break_type") for item in sell_tests } != set(THESIS_BREAK_TYPES):
         blockers.append("sell_conditions_incomplete")
@@ -511,6 +513,11 @@ def enforce_aggregation_constraints(
         blockers.append("sell_conditions_unassessable")
     if _field(growth, "engine_dependency") == "multiple_only":
         blockers.append("multiple_only_economics")
+    if any(
+        _is_limited_evidence_entry(claim)
+        for claim, _ in _all_evidence_entries(candidate.structured_conclusions)
+    ):
+        blockers.append("unassessable_final_evidence")
 
     # The fundamental case is load-bearing; flow cannot promote a weak case.
     if _field(growth, "growth_state") in ("weak", "unassessable") or _field(margin, "margin_state") in ("invalidated", "stalled"):
@@ -637,6 +644,8 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
     for claim, claim_id in _all_evidence_entries(conclusions):
         source_ids = claim.get("source_ids", [])
         if not source_ids:
+            if _is_limited_evidence_entry(claim):
+                continue
             raise AggregatorValidationError(
                 f"aggregator claim requires source_ids: {claim_id}"
             )
@@ -645,7 +654,8 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
         )
         if not any(
             set(normalized).intersection(sources)
-            for _, sources, _ in references
+            and _reference_matches_domain(claim, domains)
+            for _, sources, _, domains in references
         ):
             raise AggregatorValidationError(
                 "aggregator claim requires an upstream specialist claim: "
@@ -733,6 +743,10 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
     )
     traces = []
     for claim, claim_id in _all_evidence_entries(candidate.structured_conclusions):
+        limitations = tuple(dict.fromkeys(claim.get("limitation_codes", [])))
+        if not claim.get("source_ids") and _is_limited_evidence_entry(claim):
+            traces.append(EvidenceTrace(claim_id, (), (), limitations))
+            continue
         source_ids = _normalized_source_ids(
             claim.get("source_ids", []),
             full_results,
@@ -741,8 +755,10 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
             claim_id,
         )
         matching = tuple(
-            claim_id for claim_id, sources, _ in references
+            upstream_id
+            for upstream_id, sources, _, domains in references
             if set(source_ids).intersection(sources)
+            and _reference_matches_domain(claim, domains)
         )
         if not matching:
             raise AggregatorValidationError(
@@ -751,11 +767,16 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
             )
         limitations = tuple(dict.fromkeys(
             limitation
-            for upstream_id, _, claim_limitations in references
+            for upstream_id, _, claim_limitations, _ in references
             if upstream_id in matching
             for limitation in claim_limitations
         ))
-        traces.append(EvidenceTrace(claim_id, matching, source_ids, limitations))
+        traces.append(EvidenceTrace(
+            claim_id,
+            matching,
+            source_ids,
+            tuple(dict.fromkeys((*claim.get("limitation_codes", []), *limitations))),
+        ))
     return tuple(traces)
 
 
@@ -766,7 +787,7 @@ def _specialist_claim_references(inputs, full_results, research, catalog):
         if output is None:
             continue
         agent = _enum(_field(output, "agent_name"))
-        for claim in _specialist_claims(output):
+        for claim, upstream_id, domains in _specialist_evidence_records(output):
             source_ids = _field(claim, "source_ids") or ()
             if not source_ids or not _specialist_claim_is_assessable(claim):
                 continue
@@ -775,12 +796,13 @@ def _specialist_claim_references(inputs, full_results, research, catalog):
                 full_results,
                 research,
                 catalog,
-                f"{agent}:{_field(claim, 'claim_id')}",
+                upstream_id,
             )
             references.append((
-                f"{agent}:{_field(claim, 'claim_id')}",
+                upstream_id,
                 set(normalized),
                 tuple(_field(claim, "limitation_codes") or ()),
+                domains,
             ))
     return tuple(references)
 
@@ -788,7 +810,74 @@ def _specialist_claim_references(inputs, full_results, research, catalog):
 def _specialist_claim_is_assessable(claim):
     direction = _enum(_field(claim, "direction"))
     value = _enum(_field(claim, "value"))
-    return direction != "unassessable" and value not in (None, "unassessable", "unavailable")
+    if direction is not None or value is not None:
+        return direction != "unassessable" and value not in ("unassessable", "unavailable")
+    result = _enum(_field(claim, "result"))
+    if result is not None:
+        return result not in ("unverifiable", "too_vague_to_test")
+    return True
+
+
+def _specialist_evidence_records(output):
+    agent = _enum(_field(output, "agent_name"))
+    domain = _field(output, agent) if agent else None
+    records = [
+        (claim, f"{agent}:{_field(claim, 'claim_id')}", {_field(claim, "domain")})
+        for claim in [
+            *(_field(output, "claims") or ()),
+            *(_field(domain, "claims") or ()),
+            *(_field(domain, "event_claims") or ()),
+        ]
+    ]
+    management = _field(output, "management_credibility")
+    records.extend(
+        (
+            row,
+            f"{agent}:{_field(row, 'claim_id')}",
+            {"management"},
+        )
+        for row in (_field(management, "ledger") or ())
+    )
+    sell = _field(output, "sell_conditions")
+    records.extend(
+        (
+            test,
+            f"{agent}:sell_test:{index}",
+            set(),
+        )
+        for index, test in enumerate(_field(sell, "tests") or ())
+        if _field(test, "source_ids")
+    )
+    records.extend(
+        (
+            blocker,
+            f"{agent}:activation_blocker:{index}",
+            set(),
+        )
+        for index, blocker in enumerate(_field(sell, "activation_blockers") or ())
+        if _field(blocker, "source_ids")
+    )
+    for source_field in ("supporting_source_ids", "contrary_source_ids"):
+        source_ids = _field(domain, source_field) or ()
+        if source_ids:
+            records.append(
+                (
+                    {"source_ids": source_ids},
+                    f"{agent}:{source_field}",
+                    {_enum(_field(output, "agent_name"))},
+                )
+            )
+    return tuple(records)
+
+
+def _reference_matches_domain(claim, domains):
+    final_domain = _enum(claim.get("domain"))
+    return not final_domain or not domains or final_domain in domains
+
+
+def _is_limited_evidence_entry(claim):
+    value = _enum(claim.get("value"))
+    return value in ("unassessable", "unavailable") or claim.get("predicate") == "source_gap"
 
 
 def _normalized_source_ids(source_ids, full_results, research, catalog, claim_id):
@@ -817,15 +906,6 @@ def _normalized_source_ids(source_ids, full_results, research, catalog, claim_id
     return tuple(normalized)
 
 
-def _specialist_claims(output):
-    agent = _enum(_field(output, "agent_name"))
-    domain = _field(output, agent) if agent else None
-    claims = list(_field(output, "claims") or ())
-    claims.extend(_field(domain, "claims") or ())
-    claims.extend(_field(domain, "event_claims") or ())
-    return claims
-
-
 def _all_evidence_entries(value, path=()):
     if is_dataclass(value):
         value = asdict(value)
@@ -833,6 +913,12 @@ def _all_evidence_entries(value, path=()):
         result = []
         if "source_ids" in value:
             result.append((value, str(value.get("claim_id") or ".".join(path))))
+        for field_name in ("expectation_refs", "baseline_refs"):
+            for index, source_id in enumerate(value.get(field_name) or ()):
+                result.append((
+                    {"source_ids": [source_id]},
+                    ".".join((*path, field_name, str(index))),
+                ))
         for key, child in value.items():
             result.extend(_all_evidence_entries(child, (*path, str(key))))
         return result

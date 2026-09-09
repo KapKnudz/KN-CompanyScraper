@@ -18,6 +18,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
     SpecialistMissingInformation,
     SpecialistOutput,
     SpecialistStatus,
+    ManagementLedgerRow,
     SellConditionAssessment,
     SellConditionsSpecialistOutput,
 )
@@ -231,6 +232,77 @@ def test_final_claim_requires_upstream_specialist_linkage():
 
     with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
         validate_aggregator_output(candidate, inputs(bundle()))
+
+
+def test_expectation_and_baseline_references_are_traced():
+    aggregation_inputs = inputs(bundle())
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "headline_case": {"expectation_refs": [SOURCE]},
+        "falsifiable_case": {"baseline_refs": [SOURCE]},
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert [trace.source_ids for trace in manifest.evidence_trace] == [(SOURCE,), (SOURCE,)]
+    assert all(trace.upstream_claim_ids for trace in manifest.evidence_trace)
+
+
+def test_sell_activation_blocker_blocks_activation():
+    items = list(bundle())
+    items[-1].output.sell_conditions.activation_blockers = [
+        {"blocker_code": "valuation_overshoot", "source_ids": [SOURCE], "claim_ids": []}
+    ]
+
+    result = StockAnalysisResult(42, "TEST", "Test", "activated_case", "high", "")
+    _, decision = enforce_aggregation_constraints(result, inputs(tuple(items)))
+
+    assert not decision.eligible
+    assert "causal_activation_blocker" in decision.blocked_by
+
+
+def test_management_ledger_is_an_upstream_trace_record():
+    items = list(bundle())
+    items[1].output.management_credibility.ledger = [
+        ManagementLedgerRow(
+            quarter="2026-Q2", claim_id="management.row", claim="Guidance",
+            expected_timing="2026-Q2", observed_outcome="Kept", result="kept",
+            claim_source_ids=[SOURCE], outcome_source_ids=[SOURCE], source_ids=[SOURCE],
+        )
+    ]
+    aggregation_inputs = inputs(tuple(items))
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "management_claims": [{
+            "claim_id": "management.final", "domain": "management",
+            "predicate": "outcome", "value": "confirmed", "source_ids": [SOURCE],
+        }]
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].upstream_claim_ids == ("management_credibility:management.row",)
+
+
+def test_source_empty_unassessable_claim_remains_limited():
+    aggregation_inputs = inputs(bundle())
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "limited", "domain": "evidence",
+            "predicate": "source_gap", "value": "unassessable", "source_ids": [],
+            "limitation_codes": ["missing_history"],
+        }
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert not decision.eligible
+    assert manifest.evidence_trace[0].source_ids == ()
+    assert manifest.evidence_trace[0].upstream_claim_ids == ()
 
 
 def test_source_bearing_break_test_is_traced_and_preserves_limitations():
