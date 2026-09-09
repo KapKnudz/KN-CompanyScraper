@@ -1,6 +1,8 @@
 from hashlib import sha256
 from types import SimpleNamespace
 
+import pytest
+
 from kncompanyscraper.analysis.agent.agent_packet import AgentCandidatePacket, serialize_packet
 from kncompanyscraper.analysis.agent.output_schema import (
     BusinessModelSpecialistOutput,
@@ -19,9 +21,11 @@ from kncompanyscraper.analysis.agent.output_schema import (
     SellConditionsSpecialistOutput,
 )
 from kncompanyscraper.analysis.agent.petter_aggregator import (
+    AggregatorValidationError,
     AggregatorInput,
     PetterAggregatorPromptBuilder,
     enforce_aggregation_constraints,
+    validate_aggregator_output,
 )
 from kncompanyscraper.analysis.agent.output_schema import StockAnalysisResult
 
@@ -35,7 +39,10 @@ def packet():
         rank_eligible=True, eligibility_reasons=[], total_score=1.0,
         score_breakdown={}, data_quality="medium", flags=[], candidate_reason=None,
         positives=[], negatives=[], missing_data=[], full_results={},
-        research_evidence={"as_of": "2026-08-16", "documents": []},
+        research_evidence={
+            "as_of": "2026-08-16",
+            "documents": [{"source_id": SOURCE}, {"source_id": "news:unmatched"}],
+        },
     )
 
 
@@ -170,3 +177,35 @@ def test_management_cap_and_sell_break_are_deterministic_and_flow_cannot_rescue(
     assert result.confidence == "low"
     assert result.verdict == "reject"
     assert "causal_sell_break_triggered" in decision.blocked_by
+
+
+def test_numeric_valuation_claim_is_rejected_with_generic_identifiers():
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "generic",
+            "domain": "valuation",
+            "predicate": "assessment",
+            "value": 123.0,
+            "source_ids": [SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="may not author"):
+        validate_aggregator_output(candidate, inputs(bundle()))
+
+
+def test_final_claim_requires_upstream_specialist_linkage():
+    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "unlinked",
+            "domain": "revenue",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": ["news:unmatched"],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, inputs(bundle()))

@@ -618,21 +618,23 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
     )
     full_results = _packet_value(inputs.packet, "full_results") or {}
     research = _packet_value(inputs.packet, "research_evidence") or {}
-    for source_id in _claim_source_ids(conclusions):
-        try:
-            resolved = resolve_source_id(
-                source_id, full_results, research, catalog=catalog
-            )
-            canonical = set(catalog.get("canonical_source_ids", ()))
-            if (
-                resolved not in canonical
-                and not source_id.startswith(("full_results.", "deterministic:"))
-            ):
-                raise ValueError("source is not in the frozen evidence catalog")
-        except Exception as exc:
+    references = _specialist_claim_references(
+        inputs, full_results, research, catalog
+    )
+    for claim in _all_claim_dicts(conclusions):
+        source_ids = claim.get("source_ids", [])
+        if not source_ids:
             raise AggregatorValidationError(
-                f"aggregator claim references unknown source ID: {source_id}"
-            ) from exc
+                f"aggregator claim requires source_ids: {claim.get('claim_id', '')}"
+            )
+        normalized = _normalized_source_ids(
+            source_ids, full_results, research, catalog, claim.get("claim_id", "")
+        )
+        if not any(set(normalized).intersection(sources) for _, sources in references):
+            raise AggregatorValidationError(
+                "aggregator claim requires an upstream specialist claim: "
+                + str(claim.get("claim_id", ""))
+            )
 
 
 def _validate_no_model_arithmetic(candidate: StockAnalysisResult, inputs: AggregatorInput) -> None:
@@ -643,14 +645,14 @@ def _validate_no_model_arithmetic(candidate: StockAnalysisResult, inputs: Aggreg
         value = claim.get("value")
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             continue
-        text = " ".join(str(claim.get(key, "")).lower() for key in ("claim_id", "predicate", "fact_code"))
-        if any(term in text for term in ("price", "return", "fair_value", "required_return", "hurdle")):
-            raise AggregatorValidationError("aggregator may not author prices, returns, fair value, or hurdles")
-        if claim.get("domain") == "valuation" and not any(
-            str(source).startswith(("deterministic:", "full_results."))
-            for source in claim.get("source_ids", [])
+        text = " ".join(
+            str(claim.get(key, "")).lower()
+            for key in ("domain", "claim_id", "predicate", "fact_code")
+        ).replace("-", "_")
+        if claim.get("domain") == "valuation" or any(
+            term in text for term in ("price", "return", "fair_value", "required_return", "hurdle")
         ):
-            raise AggregatorValidationError("numeric valuation claims require deterministic source IDs")
+            raise AggregatorValidationError("aggregator may not author prices, returns, fair value, or hurdles")
 
 
 def _validate_with_boundary(candidate, inputs, boundary):
@@ -701,6 +703,37 @@ def _hurdle_is_satisfied(inputs: AggregatorInput) -> bool:
 
 
 def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
+    full_results = _packet_value(inputs.packet, "full_results") or {}
+    research = _packet_value(inputs.packet, "research_evidence") or {}
+    catalog = _packet_value(inputs.packet, "evidence_catalog") or build_evidence_catalog(
+        full_results, research
+    )
+    references = _specialist_claim_references(
+        inputs, full_results, research, catalog
+    )
+    traces = []
+    for claim in _all_claim_dicts(candidate.structured_conclusions):
+        source_ids = _normalized_source_ids(
+            claim.get("source_ids", []),
+            full_results,
+            research,
+            catalog,
+            claim.get("claim_id", ""),
+        )
+        matching = tuple(
+            claim_id for claim_id, sources in references
+            if set(source_ids).intersection(sources)
+        )
+        if not matching:
+            raise AggregatorValidationError(
+                "aggregator claim requires an upstream specialist claim: "
+                + str(claim.get("claim_id", ""))
+            )
+        traces.append(EvidenceTrace(claim.get("claim_id", ""), matching, source_ids))
+    return tuple(traces)
+
+
+def _specialist_claim_references(inputs, full_results, research, catalog):
     references = []
     for item in inputs.specialist_outputs:
         output = _output(item)
@@ -708,16 +741,44 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
             continue
         agent = _enum(_field(output, "agent_name"))
         for claim in _specialist_claims(output):
-            references.append((f"{agent}:{claim.claim_id}", tuple(claim.source_ids)))
-    traces = []
-    for claim in _all_claim_dicts(candidate.structured_conclusions):
-        source_ids = tuple(dict.fromkeys(claim.get("source_ids", [])))
-        matching = tuple(
-            claim_id for claim_id, sources in references
-            if set(source_ids).intersection(sources)
+            source_ids = _field(claim, "source_ids") or ()
+            if not source_ids:
+                continue
+            normalized = _normalized_source_ids(
+                source_ids,
+                full_results,
+                research,
+                catalog,
+                f"{agent}:{_field(claim, 'claim_id')}",
+            )
+            references.append((f"{agent}:{_field(claim, 'claim_id')}", set(normalized)))
+    return tuple(references)
+
+
+def _normalized_source_ids(source_ids, full_results, research, catalog, claim_id):
+    normalized = []
+    for source_id in source_ids:
+        try:
+            resolved = resolve_source_id(
+                source_id, full_results, research, catalog=catalog
+            )
+            canonical = set(catalog.get("canonical_source_ids", ()))
+            if (
+                resolved not in canonical
+                and not source_id.startswith(("full_results.", "deterministic:"))
+            ):
+                raise ValueError("source is not in the frozen evidence catalog")
+        except Exception as exc:
+            raise AggregatorValidationError(
+                f"aggregator claim references unknown source ID: {source_id}"
+            ) from exc
+        if resolved not in normalized:
+            normalized.append(resolved)
+    if not normalized:
+        raise AggregatorValidationError(
+            f"aggregator claim requires source_ids: {claim_id}"
         )
-        traces.append(EvidenceTrace(claim.get("claim_id", ""), matching, source_ids))
-    return tuple(traces)
+    return tuple(normalized)
 
 
 def _specialist_claims(output):
@@ -745,10 +806,6 @@ def _all_claim_dicts(value):
             result.extend(_all_claim_dicts(child))
         return result
     return []
-
-
-def _claim_source_ids(value):
-    return tuple(dict.fromkeys(source for claim in _all_claim_dicts(value) for source in claim.get("source_ids", [])))
 
 
 def _effective_conflicts(inputs: AggregatorInput, candidate: StockAnalysisResult):
@@ -864,4 +921,3 @@ def _save_aggregator_artifact(repository, inputs, content, created_by, *, artifa
             "artifact_type": artifact_type,
         },
     )
-
