@@ -95,15 +95,6 @@ class AnalysisRepository(BaseRepository):
             company_id, raw_response, created_by, metadata=aggregator_metadata
         )
 
-    def get_aggregator_artifact(self, analysis_id: int) -> dict | None:
-        """Read a non-authoritative aggregator artifact."""
-        artifact = self.get_stock_analysis_raw(analysis_id)
-        if artifact is None:
-            return None
-        if (artifact.get("metadata") or {}).get("analysis_mode") != "aggregator":
-            return None
-        return artifact
-
     def get_aggregator_artifacts_for_run(
         self, company_id: int, run_id: str
     ) -> list[dict]:
