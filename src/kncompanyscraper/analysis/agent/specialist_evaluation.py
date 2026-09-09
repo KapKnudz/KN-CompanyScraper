@@ -229,7 +229,14 @@ def _artifact_records(value: Any) -> list[dict]:
         records = document
     if not isinstance(records, list):
         raise EvaluationFormatError("specialist artifacts must be a list or an object with artifacts")
-    return [dict(record) if isinstance(record, Mapping) else {"_malformed": record} for record in records]
+    return [
+        record
+        for record in (
+            dict(record) if isinstance(record, Mapping) else {"_malformed": record}
+            for record in records
+        )
+        if _metadata(record).get("artifact_type") != "aggregator_raw"
+    ]
 
 
 def _packet_map(value: Any) -> dict[str, Mapping]:

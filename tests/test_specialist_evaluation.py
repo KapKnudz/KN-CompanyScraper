@@ -625,6 +625,42 @@ def test_paired_comparison_allows_case_results_without_tier_metadata():
     assert report["candidate_tier_report"]["cases"][0]["case_level_result"]["available"] is True
 
 
+def test_paired_comparison_ignores_raw_aggregator_artifacts():
+    cases, best_artifacts, packets = documents()
+    candidate_artifacts = copy.deepcopy(best_artifacts)
+    raw_artifact = {
+        "company_id": cases["cases"][0]["company_id"],
+        "metadata": {
+            "analysis_mode": "aggregator",
+            "agent_name": "petter_hedborg",
+            "artifact_type": "aggregator_raw",
+            "run_id": "synthetic-run",
+            "packet_hash": cases["cases"][0]["packet_hash"],
+        },
+        "content": "raw aggregator response",
+    }
+    best_artifacts["artifacts"].append(copy.deepcopy(raw_artifact))
+    set_artifact_run(candidate_artifacts, "candidate-run")
+    for artifact in candidate_artifacts["artifacts"]:
+        artifact["metadata"]["model_tier"] = "candidate"
+    candidate_raw_artifact = copy.deepcopy(raw_artifact)
+    candidate_raw_artifact["metadata"]["run_id"] = "candidate-run"
+    candidate_artifacts["artifacts"].append(candidate_raw_artifact)
+
+    report = compare_paired_specialist_evaluations(
+        cases,
+        best_artifacts,
+        candidate_artifacts,
+        packets=packets,
+        manifest=pair_manifest(cases),
+    )
+
+    assert report["best_tier_report"]["artifact_count"] == 2
+    assert report["candidate_tier_report"]["artifact_count"] == 2
+    assert report["best_tier_report"]["metrics"]["parse_semantic_rejection"]["rejected"] == 0
+    assert report["candidate_tier_report"]["metrics"]["parse_semantic_rejection"]["rejected"] == 0
+
+
 def test_paired_malformed_case_result_is_unavailable_not_a_manifest_failure():
     cases, best_artifacts, packets = documents()
     cases["cases"][0]["labels"]["activation"] = True
