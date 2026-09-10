@@ -207,6 +207,43 @@ def test_formatting_normalization_is_audited_on_accepted_artifact():
     }]
 
 
+def test_management_count_repair_is_audited_before_identity_validation():
+    artifacts = Artifacts()
+    frozen = packet()
+    run_id = "company-analysis-management-count"
+    frozen_hash = sha256(serialize_packet(frozen).encode()).hexdigest()
+    payload = json.loads(management_output(frozen, run_id))
+    payload["management_credibility"]["ledger"] = [{
+        "quarter": "2026-Q1",
+        "claim_id": "management.promise",
+        "claim": "A milestone was promised.",
+        "expected_timing": "2026-Q1",
+        "observed_outcome": None,
+        "result": "too_vague_to_test",
+        "claim_source_ids": [],
+        "outcome_source_ids": [],
+        "source_ids": [],
+        "notes": [],
+    }]
+    model = Model(lambda prompt: json.dumps(payload).replace(
+        '"placeholder"', json.dumps(frozen_hash)
+    ))
+
+    result = ShadowSpecialistRunner(
+        model, artifacts, specialists=("management_credibility",)
+    ).run(frozen, run_id=run_id)
+
+    assert result.results[0].status == "accepted"
+    coverage = result.results[0].output.management_credibility.coverage
+    assert coverage.eligible_claim_count == 1
+    assert coverage.pending_claim_count == 1
+    assert any(
+        change["reason"] == "management_ledger_count"
+        for change in artifacts.saved[0]["metadata"]["normalizations"]
+    )
+    assert artifacts.validation == [(1, "accepted", None)]
+
+
 def test_genuine_run_identity_mismatch_is_still_rejected():
     artifacts = Artifacts()
     frozen = packet()

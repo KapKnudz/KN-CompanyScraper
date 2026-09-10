@@ -465,17 +465,18 @@ def test_specialist_parser_rejects_nested_closed_enum_values():
         parse_specialist_output(json.dumps(payload))
 
 
-def test_management_coverage_counts_must_match_ledger_rows():
+def test_management_coverage_counts_are_repaired_from_ledger_rows():
     payload = _management_payload()
     payload["management_credibility"]["ledger"] = [
         _management_ledger_row(result="kept", observed_outcome="Margins improved.")
     ]
 
-    with pytest.raises(
-        StockAnalysisValidationError,
-        match="assessed_claim_count must match ledger rows",
-    ):
-        parse_specialist_output(json.dumps(payload))
+    parsed = parse_specialist_output(json.dumps(payload))
+
+    coverage = parsed.management_credibility.coverage
+    assert coverage.eligible_claim_count == 1
+    assert coverage.assessed_claim_count == 1
+    assert coverage.pending_claim_count == 0
 
 
 def test_management_ledger_rejects_blank_claims():

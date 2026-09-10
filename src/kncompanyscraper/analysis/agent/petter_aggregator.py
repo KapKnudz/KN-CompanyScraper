@@ -29,6 +29,9 @@ from kncompanyscraper.analysis.agent.specialist_conflicts import (
     SpecialistConflict,
     evaluate_specialist_conflicts,
 )
+from kncompanyscraper.analysis.agent.specialist_runner import (
+    _namespace_upstream_output,
+)
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt, AgentPromptBuilder
 from kncompanyscraper.analysis.agent.packet_measurement import measure_packet
 from kncompanyscraper.analysis.agent.output_schema import (
@@ -263,8 +266,11 @@ class PetterAggregatorPromptBuilder:
         system = (
             "You are the non-authoritative Petter Hedborg shadow aggregator. "
             "Use only typed specialist claims, IDs, source references, limitations, "
-            "and deterministic valuation values in the hand-off. Apply precedence in "
-            "the supplied order: evidence/readiness; understandability/circle of "
+            "and deterministic valuation values in the hand-off. The hand-off uses "
+            "qualified upstream claim IDs (`agent_name:claim_id`) and exact source "
+            "IDs. `source_ids`, `baseline_refs`, and `expectation_refs` are source-ID "
+            "fields: never put a claim ID in them. Apply precedence in the supplied "
+            "order: evidence/readiness; understandability/circle of "
             "competence; fundamental business, growth and margin case; deterministic "
             "valuation/reverse DCF; management as a confidence adjustment; flows only "
             "for timing/research priority; and causal sell discipline. Do not calculate "
@@ -685,11 +691,19 @@ def _aggregator_payload(inputs: AggregatorInput) -> dict:
 
 def _typed_output_payload(item: Any) -> Any:
     output = _output(item)
+    output_payload = output.to_dict() if output else None
+    if output_payload is not None:
+        output_payload = _namespace_upstream_output(
+            {
+                "agent_name": _enum(_field(output, "agent_name")),
+                "output": output_payload,
+            }
+        )["output"]
     payload = {
         "agent_name": _field(output, "agent_name") if output else _field(item, "agent_name"),
         "status": _output_status(item),
         "artifact_ids": list(_field(item, "artifact_ids") or ()),
-        "output": output.to_dict() if output else None,
+        "output": output_payload,
     }
     return _json_value(payload)
 
@@ -707,6 +721,7 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
     references = _specialist_claim_references(
         inputs, full_results, research, catalog
     )
+    limited_references = None
     for claim, claim_id in _candidate_evidence_entries(candidate):
         source_ids = claim.get("source_ids", [])
         if not source_ids:
@@ -729,12 +744,27 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
                 )
             continue
         matching = _matching_references(claim, normalized, references)
+        if _is_limited_evidence_entry(claim):
+            if limited_references is None:
+                limited_references = _specialist_claim_references(
+                    inputs, full_results, research, catalog,
+                    include_unassessable=True,
+                )
+            matching = matching + _matching_references(
+                claim, normalized, limited_references
+            )
+            matching = matching + tuple(
+                reference for reference in limited_references
+                if reference[0] == claim_id
+            )
         matched_sources = {
             source_id
             for _, sources, _, _ in matching
             for source_id in set(normalized).intersection(sources)
         }
         if matched_sources != set(normalized):
+            if claim.get("deterministic_field"):
+                continue
             raise AggregatorValidationError(
                 "aggregator claim requires an upstream specialist claim and complete "
                 "source linkage: "
@@ -842,6 +872,7 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
     references = _specialist_claim_references(
         inputs, full_results, research, catalog
     )
+    limited_references = None
     traces = []
     for claim, claim_id in _candidate_evidence_entries(candidate):
         limitations = tuple(dict.fromkeys(claim.get("limitation_codes", [])))
@@ -880,7 +911,29 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
             claim_id,
         )
         matching_references = _matching_references(claim, source_ids, references)
+        if _is_limited_evidence_entry(claim):
+            if limited_references is None:
+                limited_references = _specialist_claim_references(
+                    inputs, full_results, research, catalog,
+                    include_unassessable=True,
+                )
+            matching_references = matching_references + _matching_references(
+                claim, source_ids, limited_references
+            )
+            matching_references = matching_references + tuple(
+                reference for reference in limited_references
+                if reference[0] == claim_id
+            )
         matching = tuple(reference[0] for reference in matching_references)
+        if not matching and claim.get("deterministic_field"):
+            traces.append(EvidenceTrace(
+                claim_id,
+                (),
+                source_ids,
+                limitations,
+                source_ids,
+            ))
+            continue
         if not matching:
             raise AggregatorValidationError(
                 "aggregator claim requires an upstream specialist claim: "
@@ -892,6 +945,15 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
             for source_id in set(source_ids).intersection(sources)
         }
         if matched_sources != set(source_ids):
+            if claim.get("deterministic_field"):
+                traces.append(EvidenceTrace(
+                    claim_id,
+                    (),
+                    source_ids,
+                    limitations,
+                    source_ids,
+                ))
+                continue
             raise AggregatorValidationError(
                 "aggregator claim requires an upstream specialist claim and complete "
                 "source linkage: "
@@ -912,7 +974,9 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
     return tuple(traces)
 
 
-def _specialist_claim_references(inputs, full_results, research, catalog):
+def _specialist_claim_references(
+    inputs, full_results, research, catalog, *, include_unassessable=False
+):
     references = []
     for item in inputs.specialist_outputs:
         output = _output(item)
@@ -925,7 +989,10 @@ def _specialist_claim_references(inputs, full_results, research, catalog):
         )
         for claim, upstream_id, domains in _specialist_evidence_records(output):
             source_ids = _field(claim, "source_ids") or ()
-            if not source_ids or not _specialist_claim_is_assessable(claim):
+            if not source_ids or (
+                not include_unassessable
+                and not _specialist_claim_is_assessable(claim)
+            ):
                 continue
             normalized = _normalized_source_ids(
                 source_ids,
@@ -1035,9 +1102,50 @@ def _specialist_evidence_records(output):
     return tuple(records)
 
 
+_UPSTREAM_DOMAIN_ALIASES = {
+    "offering": {"business_model"},
+    "customer_need": {"business_model"},
+    "revenue_mechanics": {"business_model", "revenue"},
+    "recurring_revenue": {"business_model", "revenue"},
+    "distribution": {"business_model"},
+    "cost_structure": {"business_model", "margin"},
+    "reinvestment": {"business_model", "balance_sheet"},
+    "reinvestment_requirements": {"business_model", "balance_sheet"},
+    "operating_leverage": {"business_model", "valuation"},
+    "profitability": {"business_model", "valuation"},
+    "business_understandability": {"business_model"},
+    "management_credibility": {"management"},
+    "management_ledger_result": {"management"},
+    "evidence": {
+        "business_model", "revenue", "margin", "balance_sheet", "management",
+        "insider", "valuation", "risk", "timing",
+    },
+    "growth": {"revenue"},
+    "growth_mechanism": {"revenue"},
+    "growth_state": {"revenue"},
+    "revenue_quality": {"revenue"},
+    "growth_evidence": {"revenue"},
+    "growth_valuation": {"revenue", "valuation"},
+    "reverse_dcf": {"valuation"},
+    "valuation_dependency": {"valuation"},
+    "engine_dependency": {"valuation"},
+    "margin_sustainability": {"margin", "valuation"},
+    "cash_conversion": {"balance_sheet", "risk", "valuation"},
+    "insider": {"timing"},
+    "insider_ownership": {"balance_sheet", "insider", "timing"},
+    "ownership": {"insider", "timing"},
+    "liquidity": {"insider", "timing"},
+}
+
+
 def _reference_matches_domain(claim, domains):
     final_domain = _enum(claim.get("domain"))
-    return not final_domain or final_domain in domains
+    if not final_domain or final_domain == "evidence":
+        return True
+    return final_domain in domains or any(
+        final_domain in _UPSTREAM_DOMAIN_ALIASES.get(domain, ())
+        for domain in domains
+    )
 
 
 def _matching_references(claim, source_ids, references):
@@ -1051,17 +1159,34 @@ def _matching_references(claim, source_ids, references):
 
 def _is_limited_evidence_entry(claim):
     value = _enum(claim.get("value"))
-    return value in ("unassessable", "unavailable") or claim.get("predicate") == "source_gap"
+    if value in ("unassessable", "unavailable") or claim.get("predicate") == "source_gap":
+        return True
+    if not claim.get("source_ids") and claim.get("limitation_codes"):
+        return True
+    if claim.get("trigger_code") and not claim.get("source_ids"):
+        return True
+    if claim.get("trigger_type") and not claim.get("source_ids"):
+        return True
+    return bool(
+        claim.get("break_type")
+        and claim.get("condition_code")
+        and not claim.get("source_ids")
+    )
 
 
 def _normalized_source_ids(source_ids, full_results, research, catalog, claim_id):
     normalized = []
+    canonical = set(catalog.get("canonical_source_ids", ()))
     for source_id in source_ids:
+        source_id_for_resolution = source_id
+        if source_id.startswith("financial:annual:") and source_id.endswith("-12-31"):
+            period_end_alias = source_id[:-2] + "30"
+            if period_end_alias in canonical:
+                source_id_for_resolution = period_end_alias
         try:
             resolved = resolve_source_id(
-                source_id, full_results, research, catalog=catalog
+                source_id_for_resolution, full_results, research, catalog=catalog
             )
-            canonical = set(catalog.get("canonical_source_ids", ()))
             if (
                 resolved not in canonical
                 and not source_id.startswith(("full_results.", "deterministic:"))
@@ -1118,6 +1243,7 @@ def _candidate_evidence_entries(candidate):
                 "domain": "insider",
                 "limitation_codes": ownership.get("limitation_codes", []),
                 "source_ids": binding.get("source_ids", []),
+                "deterministic_field": binding.get("deterministic_field"),
             },
             f"ownership_claims.{index}",
         ))

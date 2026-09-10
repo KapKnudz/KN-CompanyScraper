@@ -185,10 +185,86 @@ def inputs(items):
 
 def test_prompt_contains_typed_inputs_and_precedence_without_prose_reports():
     prompt = PetterAggregatorPromptBuilder().build(inputs(bundle()))
-    assert "business.engine" in prompt.user
+    assert "business_model:business.engine" in prompt.user
     assert "evidence_readiness" in prompt.user
     assert "company.engine" not in prompt.user
     assert prompt.schema_name == "petter_aggregator_v3"
+
+
+@pytest.mark.parametrize(
+    ("upstream_domain", "final_domain", "upstream_claim_id"),
+    [
+        ("growth_state", "revenue", "growth_valuation_2"),
+        ("growth_valuation", "valuation", "growth_valuation_7"),
+    ],
+)
+def test_final_claim_traces_exact_growth_claim_and_all_sources(
+    upstream_domain, final_domain, upstream_claim_id
+):
+    items = list(bundle())
+    growth_claim = items[4].output.growth_valuation.claims[0]
+    growth_claim.claim_id = upstream_claim_id
+    growth_claim.domain = upstream_domain
+    growth_claim.source_ids = [SOURCE, SCENARIO_SOURCE]
+    aggregation_inputs = inputs(tuple(items))
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": (
+                "revenue_or_demand_break_1"
+                if final_domain == "revenue"
+                else "valuation_expectations_unsupported"
+            ),
+            "domain": final_domain,
+            "predicate": "assessment",
+            "value": "unsupported",
+            "source_ids": [SOURCE, SCENARIO_SOURCE],
+        }
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].upstream_claim_ids == (
+        f"growth_valuation:{upstream_claim_id}",
+    )
+    assert manifest.evidence_trace[0].source_ids == (SOURCE, SCENARIO_SOURCE)
+
+
+def test_handoff_qualifies_upstream_claim_ids_and_keeps_source_ids_separate():
+    items = list(bundle())
+    growth_claim = items[4].output.growth_valuation.claims[0]
+    growth_claim.claim_id = "growth_valuation_2"
+    growth_claim.source_ids = [SOURCE, SCENARIO_SOURCE]
+
+    prompt = PetterAggregatorPromptBuilder().build(inputs(tuple(items)))
+
+    assert "growth_valuation:growth_valuation_2" in prompt.user
+    assert SOURCE in prompt.user
+    assert SCENARIO_SOURCE in prompt.user
+    assert "are source-ID fields: never put a claim ID in them" in prompt.system
+
+
+def test_source_less_future_break_test_is_audited_without_fabricated_linkage():
+    aggregation_inputs = inputs(bundle())
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "thesis_break_tests": [{
+            "break_type": "revenue_or_demand",
+            "condition_code": "demand_loss",
+            "observable_metric_code": "revenue",
+            "threshold_code": "declines",
+            "response": "reassess",
+            "source_ids": [],
+            "limitation_codes": [],
+        }]
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].source_ids == ()
+    assert manifest.evidence_trace[0].upstream_claim_ids == ()
 
 
 def test_activation_is_blocked_by_missing_inputs_and_deterministic_hurdle():
