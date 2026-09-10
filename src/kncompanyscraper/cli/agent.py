@@ -342,6 +342,10 @@ def _cmd_run_shadow_analysis(args):
     )
     for run in runs:
         print(f"{run.ticker}: {run.status} ({len(run.artifact_ids)} persisted artifacts)")
+    failed_runs = [run for run in runs if run.status != "accepted"]
+    if failed_runs:
+        failed = ", ".join(run.ticker for run in failed_runs)
+        raise SystemExit(f"Shadow analysis failed for: {failed}")
     print(f"Shadow artifact bundle written to {args.output}")
 
 

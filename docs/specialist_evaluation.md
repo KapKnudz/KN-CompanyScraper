@@ -21,7 +21,8 @@ python -m kncompanyscraper.main run-shadow-analysis \
 
 `forward-scenario-results.json` is a JSON object keyed by company ID. Each value
 is a validated `forward_scenario_analysis` object from the current deterministic
-scenario policy; available results must contain the three bear/base/bull bands.
+scenario policy with a `packet_hash` matching the frozen packet; available results
+must contain the three bear/base/bull bands.
 
 The command prints a bounded call plan before launching. Without
 `--allow-model-calls` it performs no model execution. The bundle can be passed

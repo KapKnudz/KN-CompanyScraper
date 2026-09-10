@@ -17,6 +17,7 @@ from kncompanyscraper.analysis.agent.specialist_runner import (
 from kncompanyscraper.analysis.policy_versions import FORWARD_SCENARIO_POLICY_VERSION
 
 _SCENARIO_CASES = {"bear", "base", "bull"}
+_SCENARIO_HORIZONS = {24, 36, 48}
 _SCENARIO_BAND_FIELDS = (
     "case",
     "horizon_months",
@@ -102,22 +103,34 @@ def validate_frozen_packets(packets: list[Mapping]) -> list[Mapping]:
 def validate_frozen_scenario_results(
     packets: list[Mapping], scenario_results: Mapping
 ) -> dict[str, Mapping]:
-    validate_frozen_packets(packets)
+    packet_list = validate_frozen_packets(packets)
     if not isinstance(scenario_results, Mapping):
         raise ValueError("scenario results must be a company_id map")
     expected_ids = {str(_packet_value(packet, "company_id")) for packet in packets}
     if set(scenario_results) != expected_ids:
         raise ValueError("scenario results must bind exactly to the frozen packets")
     valid_statuses = {"available", "insufficient_evidence", "method_not_supported"}
+    packet_hashes = {
+        str(_packet_value(packet, "company_id")): sha256(
+            serialize_packet(packet).encode("utf-8")
+        ).hexdigest()
+        for packet in packet_list
+    }
+    validated = {}
     for company_id, scenario in scenario_results.items():
         if not isinstance(scenario, Mapping):
             raise ValueError(f"scenario result for company {company_id} is invalid")
+        if scenario.get("packet_hash") != packet_hashes[company_id]:
+            raise ValueError(f"scenario result for company {company_id} is not bound to its packet")
         if scenario.get("policy_version") != FORWARD_SCENARIO_POLICY_VERSION:
             raise ValueError(f"scenario result for company {company_id} has an invalid policy")
         status = scenario.get("status")
         if status not in valid_statuses:
             raise ValueError(f"scenario result for company {company_id} has an invalid status")
         if status != "available":
+            validated[company_id] = {
+                key: value for key, value in scenario.items() if key != "packet_hash"
+            }
             continue
         bands = scenario.get("bands")
         if not isinstance(bands, list) or len(bands) != len(_SCENARIO_CASES):
@@ -133,7 +146,7 @@ def validate_frozen_scenario_results(
             ):
                 raise ValueError(f"scenario result for company {company_id} has incomplete bands")
             horizon = band["horizon_months"]
-            if not isinstance(horizon, int) or isinstance(horizon, bool) or horizon <= 0:
+            if horizon not in _SCENARIO_HORIZONS:
                 raise ValueError(f"scenario result for company {company_id} has invalid horizons")
             horizons.add(horizon)
             if any(
@@ -143,9 +156,32 @@ def validate_frozen_scenario_results(
                 for field in _SCENARIO_BAND_FIELDS[2:]
             ):
                 raise ValueError(f"scenario result for company {company_id} has invalid values")
+            if (
+                band["low_price"] <= 0
+                or band["high_price"] <= 0
+                or band["low_holding_value"] <= 0
+                or band["high_holding_value"] <= 0
+            ):
+                raise ValueError(f"scenario result for company {company_id} has non-positive values")
+            if band["low_price"] > band["high_price"]:
+                raise ValueError(f"scenario result for company {company_id} has an inverted price range")
         if len(horizons) != 1:
             raise ValueError(f"scenario result for company {company_id} has inconsistent horizons")
-    return dict(scenario_results)
+        by_case = {band["case"]: band for band in bands}
+        if by_case["bear"]["high_price"] > by_case["base"]["low_price"]:
+            raise ValueError(f"scenario result for company {company_id} has overlapping bear/base prices")
+        if by_case["base"]["high_price"] > by_case["bull"]["low_price"]:
+            raise ValueError(f"scenario result for company {company_id} has overlapping base/bull prices")
+        if (
+            by_case["base"]["high_annualized_return"]
+            - by_case["base"]["low_annualized_return"]
+            > 0.15
+        ):
+            raise ValueError(f"scenario result for company {company_id} has an excessive base spread")
+        validated[company_id] = {
+            key: value for key, value in scenario.items() if key != "packet_hash"
+        }
+    return validated
 
 
 class ShadowIntegrationRunner:

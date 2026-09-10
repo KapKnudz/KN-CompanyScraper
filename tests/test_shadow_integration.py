@@ -1,4 +1,5 @@
 import copy
+from hashlib import sha256
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from kncompanyscraper.analysis.agent.shadow_integration import (
     ShadowOptInRequired,
     validate_frozen_scenario_results,
 )
+from kncompanyscraper.analysis.agent.agent_packet import serialize_packet
 from kncompanyscraper.analysis.policy_versions import FORWARD_SCENARIO_POLICY_VERSION
 from kncompanyscraper.cli.agent import _cmd_run_shadow_analysis
 
@@ -90,16 +92,24 @@ def scenario_result():
             {
                 "case": case,
                 "horizon_months": 36,
-                "low_price": 10.0,
-                "high_price": 12.0,
-                "low_holding_value": 10.0,
-                "high_holding_value": 12.0,
+                "low_price": {"bear": 5.0, "base": 10.0, "bull": 15.0}[case],
+                "high_price": {"bear": 7.0, "base": 12.0, "bull": 17.0}[case],
+                "low_holding_value": {"bear": 5.0, "base": 10.0, "bull": 15.0}[case],
+                "high_holding_value": {"bear": 7.0, "base": 12.0, "bull": 17.0}[case],
                 "low_annualized_return": 0.1,
                 "high_annualized_return": 0.2,
             }
             for case in ("bear", "base", "bull")
         ],
     }
+
+
+def bound_scenario_result(packet_value):
+    scenario = scenario_result()
+    scenario["packet_hash"] = sha256(
+        serialize_packet(packet_value).encode("utf-8")
+    ).hexdigest()
+    return scenario
 
 
 def test_complete_shadow_sequence_is_opt_in_and_keeps_frozen_identity():
@@ -165,8 +175,9 @@ def test_shadow_cli_rejects_non_pilot_packet_count(tmp_path):
 
 
 def test_frozen_scenario_results_require_current_validated_bindings():
-    scenario = scenario_result()
-    assert validate_frozen_scenario_results([packet()], {"7": scenario}) == {"7": scenario}
+    scenario = bound_scenario_result(packet())
+    expected = {"7": {key: value for key, value in scenario.items() if key != "packet_hash"}}
+    assert validate_frozen_scenario_results([packet()], {"7": scenario}) == expected
 
     with pytest.raises(ValueError, match="bind exactly"):
         validate_frozen_scenario_results([packet()], {})
@@ -175,6 +186,82 @@ def test_frozen_scenario_results_require_current_validated_bindings():
     malformed["bands"][1].pop("low_price")
     with pytest.raises(ValueError, match="incomplete bands"):
         validate_frozen_scenario_results([packet()], {"7": malformed})
+
+    stale = copy.deepcopy(scenario)
+    stale["packet_hash"] = "0" * 64
+    with pytest.raises(ValueError, match="bound to its packet"):
+        validate_frozen_scenario_results([packet()], {"7": stale})
+
+
+def test_shadow_cli_writes_diagnostic_bundle_and_fails_on_failed_run(tmp_path, monkeypatch):
+    packets = []
+    for company_id in (7, 8, 9):
+        item = copy.deepcopy(packet())
+        item.update(company_id=company_id, ticker=f"SYN{company_id}")
+        packets.append(item)
+    packets_path = tmp_path / "packets.json"
+    packets_path.write_text(json.dumps({"packets": packets}))
+    scenario_path = tmp_path / "scenarios.json"
+    scenario_path.write_text(
+        json.dumps(
+            {
+                str(item["company_id"]): bound_scenario_result(item)
+                for item in packets
+            }
+        )
+    )
+
+    import kncompanyscraper.composition as composition
+    import kncompanyscraper.repositories.analysis_repository as analysis_repository
+    import kncompanyscraper.analysis.agent.shadow_integration as shadow_integration
+
+    class FailedRun:
+        def __init__(self, ticker):
+            self.ticker = ticker
+            self.status = "failed"
+            self.artifact_ids = ()
+
+    class FailedRunner:
+        @staticmethod
+        def expected_work_summary(company_count):
+            return {
+                "company_count": company_count,
+                "minimum_model_calls": 1,
+                "maximum_model_calls": 1,
+            }
+
+        def __init__(self, specialist_runner, aggregator_runner):
+            pass
+
+        def run(self, packet_value, **kwargs):
+            return FailedRun(packet_value["ticker"])
+
+    monkeypatch.setattr(shadow_integration, "ShadowIntegrationRunner", FailedRunner)
+    monkeypatch.setattr(
+        shadow_integration,
+        "build_shadow_artifact_bundle",
+        lambda repository, packet_values, runs: {"runs": [run.status for run in runs]},
+    )
+    monkeypatch.setattr(composition, "build_agent_model_adapter", lambda *args: object())
+    monkeypatch.setattr(composition, "build_shadow_specialist_runner", lambda *args: object())
+    monkeypatch.setattr(composition, "build_shadow_aggregator_runner", lambda *args: object())
+    monkeypatch.setattr(analysis_repository, "AnalysisRepository", lambda: object())
+
+    output_path = tmp_path / "shadow.json"
+    with pytest.raises(SystemExit, match="Shadow analysis failed"):
+        _cmd_run_shadow_analysis(
+            SimpleNamespace(
+                packets=packets_path,
+                scenario_results=scenario_path,
+                output=output_path,
+                provider="local",
+                model=None,
+                reasoning_effort=None,
+                run_id_prefix="shadow-pilot",
+                allow_model_calls=True,
+            )
+        )
+    assert json.loads(output_path.read_text()) == {"runs": ["failed", "failed", "failed"]}
 
 
 def test_pilot_manifest_requires_three_distinct_labeled_packet_bindings():
