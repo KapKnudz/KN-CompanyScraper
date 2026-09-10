@@ -764,6 +764,7 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
                 reference for reference in limited_references
                 if reference[0] == claim_id
             )
+            matching = _deduplicate_references(matching)
         matched_sources = {
             source_id
             for _, sources, _, _ in matching
@@ -931,6 +932,7 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
                 reference for reference in limited_references
                 if reference[0] == claim_id
             )
+            matching_references = _deduplicate_references(matching_references)
         matching = tuple(reference[0] for reference in matching_references)
         if not matching:
             raise AggregatorValidationError(
@@ -1143,6 +1145,24 @@ def _matching_references(claim, source_ids, references):
         for reference in references
         if set(source_ids).intersection(reference[1])
         and _reference_matches_domain(claim, reference[3])
+    )
+
+
+def _deduplicate_references(references):
+    merged = {}
+    for upstream_id, sources, limitations, domains in references:
+        if upstream_id not in merged:
+            merged[upstream_id] = [
+                upstream_id, set(sources), tuple(limitations), set(domains)
+            ]
+            continue
+        current = merged[upstream_id]
+        current[1].update(sources)
+        current[2] = tuple(dict.fromkeys((*current[2], *limitations)))
+        current[3].update(domains)
+    return tuple(
+        (upstream_id, sources, limitations, domains)
+        for upstream_id, sources, limitations, domains in merged.values()
     )
 
 

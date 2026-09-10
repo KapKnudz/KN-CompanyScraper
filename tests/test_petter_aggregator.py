@@ -598,6 +598,27 @@ def test_unassessable_sell_test_cannot_support_final_claim():
         validate_aggregator_output(candidate, inputs(tuple(items)))
 
 
+def test_limited_claim_trace_deduplicates_upstream_claim_ids():
+    aggregation_inputs = inputs(bundle())
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "limited_support",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": "unassessable",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].upstream_claim_ids == (
+        "business_model:business.engine",
+    )
+
+
 def test_top_level_ownership_claim_is_traced():
     items = list(bundle())
     items[3].output.insider_ownership.event_claims = [
