@@ -141,6 +141,65 @@ def test_triggered_price_only_sell_condition_is_rejected():
         parse_specialist_output(json.dumps(payload))
 
 
+@pytest.mark.parametrize(
+    ("raw_claim_id", "normalized_claim_id"),
+    [("BM-1", "bm_1"), ("BM_1", "bm_1"), ("GV-1", "gv_1"), ("IOC-1", "ioc_1")],
+)
+def test_specialist_normalizes_observed_claim_id_formatting(
+    raw_claim_id, normalized_claim_id
+):
+    payload = _management_payload()
+    payload["claims"] = [_claim(claim_id=raw_claim_id)]
+
+    parsed = parse_specialist_output(json.dumps(payload))
+
+    assert parsed.claims[0].claim_id == normalized_claim_id
+
+
+def test_specialist_normalizes_coverage_tier_formatting():
+    payload = _management_payload(quarters=8, confidence_cap="high")
+    payload["management_credibility"]["coverage"]["coverage_tier"] = "FULL-COVERAGE"
+
+    parsed = parse_specialist_output(json.dumps(payload))
+
+    assert parsed.management_credibility.coverage.coverage_tier.value == "full_coverage"
+
+
+def test_specialist_normalizes_management_quarter_formatting():
+    payload = _management_payload()
+    row = _management_ledger_row(result="kept", observed_outcome="Improved.")
+    payload["management_credibility"]["ledger"] = [row]
+    payload["management_credibility"]["coverage"].update(
+        eligible_claim_count=1, assessed_claim_count=1
+    )
+
+    parsed = parse_specialist_output(json.dumps(payload).replace("2026-Q1", "2026-03-31"))
+
+    assert parsed.management_credibility.ledger[0].quarter == "2026-Q1"
+    underscored = parse_specialist_output(
+        json.dumps(payload).replace("2026-Q1", "2026_q1")
+    )
+    assert underscored.management_credibility.ledger[0].quarter == "2026-Q1"
+
+
+def test_specialist_rejects_ambiguous_claim_id_normalization():
+    payload = _management_payload()
+    payload["claims"] = [_claim(claim_id="BM-1"), _claim(claim_id="bm_1")]
+
+    with pytest.raises(
+        StockAnalysisValidationError, match="normalization collision"
+    ):
+        parse_specialist_output(json.dumps(payload))
+
+
+def test_specialist_rejects_non_format_claim_id_change():
+    payload = _management_payload()
+    payload["claims"] = [_claim(claim_id="BM/1")]
+
+    with pytest.raises(StockAnalysisValidationError, match="code identifier"):
+        parse_specialist_output(json.dumps(payload))
+
+
 def test_valid_specialist_output_parses_to_typed_objects():
     parsed = parse_specialist_output(json.dumps(_management_payload()))
 

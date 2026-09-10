@@ -37,7 +37,7 @@ def packet():
     )
 
 
-def management_output(packet, run_id, *, valid=True):
+def management_output(packet, run_id, *, valid=True, claim_id=None):
     return json.dumps(
         {
             "schema_version": "specialist-output-v1",
@@ -49,7 +49,20 @@ def management_output(packet, run_id, *, valid=True):
             "status": "complete",
             "confidence": "low",
             "confidence_cap": "low",
-            "claims": [],
+            "claims": (
+                []
+                if claim_id is None
+                else [{
+                    "claim_id": claim_id,
+                    "domain": "management",
+                    "predicate": "assessment",
+                    "value": None,
+                    "direction": "unassessable",
+                    "source_ids": [],
+                    "limitation_codes": [],
+                    "depends_on_claim_ids": [],
+                }]
+            ),
             "missing_information": [],
             "packet_hash": "placeholder",
             "management_credibility": {
@@ -167,6 +180,51 @@ def test_prompt_builder_does_not_select_second_wave_sell_conditions():
 
     with pytest.raises(ValueError, match="no first-wave specialist prompt"):
         SpecialistPromptBuilder().build(packet(), SpecialistAgentName.SELL_CONDITIONS)
+
+
+def test_formatting_normalization_is_audited_on_accepted_artifact():
+    artifacts = Artifacts()
+    frozen = packet()
+    run_id = "company-analysis-formatting"
+    frozen_hash = sha256(serialize_packet(frozen).encode()).hexdigest()
+    model = Model(
+        lambda prompt: management_output(
+            frozen, run_id, claim_id="BM-1"
+        ).replace('"placeholder"', json.dumps(frozen_hash))
+    )
+
+    result = ShadowSpecialistRunner(
+        model, artifacts, specialists=("management_credibility",)
+    ).run(frozen, run_id=run_id)
+
+    assert result.results[0].status == "accepted"
+    assert result.results[0].output.claims[0].claim_id == "bm_1"
+    assert artifacts.saved[0]["metadata"]["normalizations"] == [{
+        "path": "$.claims[0].claim_id",
+        "from": "BM-1",
+        "to": "bm_1",
+        "reason": "claim_id_format",
+    }]
+
+
+def test_genuine_run_identity_mismatch_is_still_rejected():
+    artifacts = Artifacts()
+    frozen = packet()
+    run_id = "company-analysis-identity"
+    frozen_hash = sha256(serialize_packet(frozen).encode()).hexdigest()
+    model = Model(
+        lambda prompt: management_output(
+            frozen, run_id, valid=False
+        ).replace('"placeholder"', json.dumps(frozen_hash))
+    )
+
+    result = ShadowSpecialistRunner(
+        model, artifacts, specialists=("management_credibility",)
+    ).run(frozen, run_id=run_id)
+
+    assert result.results[0].status == "failed"
+    assert "run_id does not match shadow run" in result.results[0].validation_errors[-1]
+    assert artifacts.validation[-1][1] == "rejected"
 
 
 def test_parse_failure_is_recorded_and_does_not_raise():
