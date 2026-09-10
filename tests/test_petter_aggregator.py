@@ -422,6 +422,27 @@ def test_source_less_limited_code_cannot_support_value_claim():
         validate_aggregator_output(candidate, inputs(bundle()))
 
 
+def test_source_less_null_value_is_a_typed_absence():
+    aggregation_inputs = inputs(bundle())
+    candidate = make_candidate()
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "unavailable_value",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": None,
+            "source_ids": [],
+            "limitation_codes": [],
+        }
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].source_ids == ()
+    assert manifest.evidence_trace[0].upstream_claim_ids == ()
+
+
 def test_financial_annual_source_ids_must_match_the_packet_exactly():
     p = packet()
     p.research_evidence["documents"].append(

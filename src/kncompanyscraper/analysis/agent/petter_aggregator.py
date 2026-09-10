@@ -1148,6 +1148,8 @@ def _matching_references(claim, source_ids, references):
 
 def _is_limited_evidence_entry(claim):
     value = _enum(claim.get("value"))
+    if "value" in claim and value is None:
+        return True
     if value in ("unassessable", "unavailable") or claim.get("predicate") == "source_gap":
         return True
     if claim.get("trigger_code") and not claim.get("source_ids"):
