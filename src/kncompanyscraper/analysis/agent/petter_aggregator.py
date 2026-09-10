@@ -686,8 +686,10 @@ def _aggregator_payload(inputs: AggregatorInput) -> dict:
         "deterministic_scenario_results": _json_value(inputs.deterministic_scenario_results),
         "reverse_dcf_results": _json_value(inputs.reverse_dcf_results),
         "conflict_records": [
-            item.to_dict() if hasattr(item, "to_dict") else _json_value(item)
-            for item in inputs.conflict_records
+            conflict
+            for conflict in _namespace_conflict_records(
+                inputs.conflict_records, inputs
+            )
         ],
         "precedence": list(PRECEDENCE_APPLIED),
         "sell_condition_types": list(THESIS_BREAK_TYPES),
@@ -1320,7 +1322,8 @@ def _is_deterministic_source(source_id, resolved):
 def _effective_conflicts(inputs: AggregatorInput, candidate: StockAnalysisResult):
     outputs = [output for item in inputs.specialist_outputs if (output := _output(item))]
     computed = evaluate_specialist_conflicts(outputs, final_direction=candidate.verdict)
-    existing = list(inputs.conflict_records)
+    existing = list(_namespace_conflict_records(inputs.conflict_records, inputs))
+    computed = list(_namespace_conflict_records(computed, inputs))
     keys = {
         (_field(item, "rule_id"), tuple(_field(item, "trigger_claim_ids") or ()))
         for item in existing
@@ -1329,6 +1332,57 @@ def _effective_conflicts(inputs: AggregatorInput, candidate: StockAnalysisResult
         item for item in computed
         if (_field(item, "rule_id"), tuple(_field(item, "trigger_claim_ids") or ())) not in keys
     ])
+
+
+def _namespace_conflict_records(conflicts, inputs):
+    claim_ids = _upstream_claim_id_index(inputs)
+    return tuple(
+        {
+            **(
+                conflict.to_dict()
+                if hasattr(conflict, "to_dict")
+                else _json_value(conflict)
+            ),
+            "trigger_claim_ids": [
+                claim_ids.get(claim_id, claim_id)
+                for claim_id in (_field(conflict, "trigger_claim_ids") or ())
+            ],
+        }
+        for conflict in conflicts
+    )
+
+
+def _upstream_claim_id_index(inputs):
+    result = {}
+    for item in inputs.specialist_outputs:
+        output = _output(item)
+        if output is None:
+            continue
+        agent = _enum(_field(output, "agent_name"))
+        if not agent:
+            continue
+        for claim, _, _ in _specialist_evidence_records(output):
+            claim_id = _field(claim, "claim_id")
+            if claim_id:
+                qualified = (
+                    claim_id
+                    if str(claim_id).startswith(f"{agent}:")
+                    else f"{agent}:{claim_id}"
+                )
+                result[claim_id] = qualified
+                result[qualified] = qualified
+        sell = _field(output, "sell_conditions")
+        for assessment in (_field(sell, "tests") or ()):
+            for claim_id in (_field(assessment, "claim_ids") or ()):
+                qualified = f"{agent}:{claim_id}"
+                result[claim_id] = qualified
+                result[qualified] = qualified
+        for blocker in (_field(sell, "activation_blockers") or ()):
+            for claim_id in (_field(blocker, "claim_ids") or ()):
+                qualified = f"{agent}:{claim_id}"
+                result[claim_id] = qualified
+                result[qualified] = qualified
+    return result
 
 
 def _outputs_by_name(items):

@@ -35,6 +35,7 @@ from kncompanyscraper.analysis.agent.petter_aggregator import (
     _validate_with_boundary,
 )
 from kncompanyscraper.analysis.agent.output_schema import StockAnalysisResult
+from kncompanyscraper.analysis.agent.specialist_conflicts import SpecialistConflict
 
 
 SOURCE = "financial:fixture"
@@ -173,7 +174,7 @@ def bundle(*, management_cap="high", business_circle="inside", sell_break=False)
     return tuple(SimpleNamespace(output=item, agent_name=item.agent_name.value, status="accepted", artifact_ids=(1,)) for item in items)
 
 
-def inputs(items, p=None):
+def inputs(items, p=None, conflict_records=()):
     p = p or packet()
     packet_hash = sha256(serialize_packet(p).encode()).hexdigest()
     for item in items:
@@ -189,6 +190,7 @@ def inputs(items, p=None):
         reverse_dcf_results={
             "status": "available", "required_return": {"required_return": 0.10}
         },
+        conflict_records=tuple(conflict_records),
     )
 
 
@@ -198,6 +200,37 @@ def test_prompt_contains_typed_inputs_and_precedence_without_prose_reports():
     assert "evidence_readiness" in prompt.user
     assert "company.engine" not in prompt.user
     assert prompt.schema_name == "petter_aggregator_v3"
+
+
+def test_conflict_claim_ids_are_qualified_in_handoff_and_manifest():
+    items = list(bundle())
+    items[2].output.claims = [claim("margin_claim", "margin")]
+    items[-1].output.sell_conditions.tests[0].claim_ids = ["sell.margin"]
+    conflict = SpecialistConflict(
+        rule_id="margin_vs_sell_condition",
+        severity="high",
+        trigger_fields=("margin.margin_state",),
+        trigger_claim_ids=("margin_claim", "sell.margin"),
+        explanation="margin break",
+        source_ids=(SOURCE,),
+        action="block_activation",
+    )
+    aggregation_inputs = inputs(tuple(items), conflict_records=(conflict,))
+
+    handoff = aggregation_inputs.to_dict()
+    assert handoff["conflict_records"][0]["trigger_claim_ids"] == [
+        "margin:margin_claim",
+        "sell_conditions:sell.margin",
+    ]
+
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {}
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+    assert manifest.must_surface_conflicts[0]["trigger_claim_ids"] == [
+        "margin:margin_claim",
+        "sell_conditions:sell.margin",
+    ]
 
 
 @pytest.mark.parametrize(
