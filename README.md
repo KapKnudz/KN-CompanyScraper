@@ -373,7 +373,8 @@ operator path. It prints a bounded model-call plan and refuses to execute unless
 
 ```
 python -m kncompanyscraper.main run-shadow-analysis \
-  --packets frozen-packets.json --output shadow-artifacts.json \
+  --packets frozen-packets.json --scenario-results forward-scenario-results.json \
+  --output shadow-artifacts.json \
   --allow-model-calls
 ```
 

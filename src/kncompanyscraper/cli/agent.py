@@ -145,6 +145,12 @@ def register(subparsers):
         help="Run the complete opt-in shadow graph for frozen packet JSON",
     )
     shadow_parser.add_argument("--packets", required=True, type=Path)
+    shadow_parser.add_argument(
+        "--scenario-results",
+        required=True,
+        type=Path,
+        help="Validated forward-scenario results keyed by frozen company_id",
+    )
     shadow_parser.add_argument("--output", required=True, type=Path)
     shadow_parser.add_argument("--provider", choices=MODEL_PROVIDERS, default="local")
     shadow_parser.add_argument("--model")
@@ -275,6 +281,7 @@ def _cmd_run_shadow_analysis(args):
     from kncompanyscraper.analysis.agent.shadow_integration import (
         ShadowIntegrationRunner,
         build_shadow_artifact_bundle,
+        validate_frozen_scenario_results,
         validate_frozen_packets,
     )
     from kncompanyscraper.composition import (
@@ -296,6 +303,11 @@ def _cmd_run_shadow_analysis(args):
         raise SystemExit(str(exc)) from exc
     if len(packets) != 3:
         raise SystemExit("--packets must contain exactly three packets for the shadow pilot")
+    scenario_results = json.loads(args.scenario_results.read_text(encoding="utf-8"))
+    try:
+        scenario_results = validate_frozen_scenario_results(packets, scenario_results)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     summary = ShadowIntegrationRunner.expected_work_summary(len(packets))
     print(
         f"Shadow work plan (bounded): {summary['company_count']} companies, "
@@ -320,6 +332,7 @@ def _cmd_run_shadow_analysis(args):
             runner.run(
                 packet,
                 run_id=f"{args.run_id_prefix}-{company_id}",
+                deterministic_scenario_results=scenario_results[str(company_id)],
                 allow_model_calls=True,
             )
         )

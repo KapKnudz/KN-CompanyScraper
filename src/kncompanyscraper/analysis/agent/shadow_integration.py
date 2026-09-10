@@ -13,6 +13,7 @@ from kncompanyscraper.analysis.agent.specialist_runner import (
     FIRST_WAVE_SPECIALISTS,
     ShadowSpecialistRun,
 )
+from kncompanyscraper.analysis.policy_versions import FORWARD_SCENARIO_POLICY_VERSION
 
 SHADOW_BUNDLE_SCHEMA_VERSION = "shadow-analysis-bundle-v1"
 SHADOW_SEQUENCE = (
@@ -83,6 +84,32 @@ def validate_frozen_packets(packets: list[Mapping]) -> list[Mapping]:
             raise ValueError(f"duplicate frozen packet company_id: {company_id}")
         seen.add(company_id)
     return packets
+
+
+def validate_frozen_scenario_results(
+    packets: list[Mapping], scenario_results: Mapping
+) -> dict[str, Mapping]:
+    validate_frozen_packets(packets)
+    if not isinstance(scenario_results, Mapping):
+        raise ValueError("scenario results must be a company_id map")
+    expected_ids = {str(_packet_value(packet, "company_id")) for packet in packets}
+    if set(scenario_results) != expected_ids:
+        raise ValueError("scenario results must bind exactly to the frozen packets")
+    valid_statuses = {"available", "insufficient_evidence", "method_not_supported"}
+    for company_id, scenario in scenario_results.items():
+        if not isinstance(scenario, Mapping):
+            raise ValueError(f"scenario result for company {company_id} is invalid")
+        if scenario.get("policy_version") != FORWARD_SCENARIO_POLICY_VERSION:
+            raise ValueError(f"scenario result for company {company_id} has an invalid policy")
+        status = scenario.get("status")
+        if status not in valid_statuses:
+            raise ValueError(f"scenario result for company {company_id} has an invalid status")
+        if status == "available" and (
+            not isinstance(scenario.get("bands"), list)
+            or len(scenario["bands"]) != 3
+        ):
+            raise ValueError(f"scenario result for company {company_id} is incomplete")
+    return dict(scenario_results)
 
 
 class ShadowIntegrationRunner:

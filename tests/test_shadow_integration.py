@@ -12,7 +12,9 @@ from kncompanyscraper.analysis.agent.pilot_manifest import (
 from kncompanyscraper.analysis.agent.shadow_integration import (
     ShadowIntegrationRunner,
     ShadowOptInRequired,
+    validate_frozen_scenario_results,
 )
+from kncompanyscraper.analysis.policy_versions import FORWARD_SCENARIO_POLICY_VERSION
 from kncompanyscraper.cli.agent import _cmd_run_shadow_analysis
 
 
@@ -140,6 +142,18 @@ def test_shadow_cli_rejects_non_pilot_packet_count(tmp_path):
                 allow_model_calls=True,
             )
         )
+
+
+def test_frozen_scenario_results_require_current_validated_bindings():
+    scenario = {
+        "status": "available",
+        "policy_version": FORWARD_SCENARIO_POLICY_VERSION,
+        "bands": [{"case": case} for case in ("bear", "base", "bull")],
+    }
+    assert validate_frozen_scenario_results([packet()], {"7": scenario}) == {"7": scenario}
+
+    with pytest.raises(ValueError, match="bind exactly"):
+        validate_frozen_scenario_results([packet()], {})
 
 
 def test_pilot_manifest_requires_three_distinct_labeled_packet_bindings():

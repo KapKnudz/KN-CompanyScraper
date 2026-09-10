@@ -6,7 +6,7 @@ stored specialist artifacts; it does not run models or change production verdict
 ## Complete shadow run
 
 For a frozen packet JSON document, the supported opt-in path runs the first-wave
-specialists, uses the packet's deterministic forward-scenario/reverse-DCF inputs,
+specialists, uses validated forward-scenario results and the packet's deterministic reverse-DCF inputs,
 runs sell conditions and deterministic conflicts, and then runs the Petter
 aggregator. It persists raw specialist, raw aggregator, and validated aggregator
 artifacts in the existing raw-analysis store, and writes a bundle made from those
@@ -14,9 +14,14 @@ stored records:
 
 ```sh
 python -m kncompanyscraper.main run-shadow-analysis \
-  --packets frozen-packets.json --output shadow-artifacts.json \
+  --packets frozen-packets.json --scenario-results forward-scenario-results.json \
+  --output shadow-artifacts.json \
   --allow-model-calls
 ```
+
+`forward-scenario-results.json` is a JSON object keyed by company ID. Each value
+is a validated `forward_scenario_analysis` object from the current deterministic
+scenario policy; available results must contain the three bear/base/bull bands.
 
 The command prints a bounded call plan before launching. Without
 `--allow-model-calls` it performs no model execution. The bundle can be passed
