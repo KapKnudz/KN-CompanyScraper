@@ -65,7 +65,7 @@ are human-authored and are never inferred from an artifact:
 
 Missing labels are reported as skipped or unavailable, never as passes. The fixture
 `tests/fixtures/specialist_evaluation/cases.json` is deliberately synthetic and is
-not the trusted 12–20 company benchmark.
+not evidence for the three-company pilot or a larger trusted cohort.
 
 ## Run comparison
 
