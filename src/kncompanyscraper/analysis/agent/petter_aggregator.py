@@ -32,6 +32,11 @@ from kncompanyscraper.analysis.agent.specialist_conflicts import (
 from kncompanyscraper.analysis.agent.specialist_runner import (
     _namespace_upstream_output,
 )
+from kncompanyscraper.analysis.agent.conclusion_contract import (
+    ownership_field,
+    ownership_source_ids_for_measure,
+    packet_value,
+)
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt, AgentPromptBuilder
 from kncompanyscraper.analysis.agent.packet_measurement import measure_packet
 from kncompanyscraper.analysis.agent.output_schema import (
@@ -723,6 +728,8 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
     )
     limited_references = None
     for claim, claim_id in _candidate_evidence_entries(candidate):
+        if claim.get("__ownership_claim__"):
+            _validate_ownership_binding(claim, research, claim_id)
         source_ids = claim.get("source_ids", [])
         if not source_ids:
             if _is_limited_evidence_entry(claim):
@@ -763,8 +770,6 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
             for source_id in set(normalized).intersection(sources)
         }
         if matched_sources != set(normalized):
-            if claim.get("deterministic_field"):
-                continue
             raise AggregatorValidationError(
                 "aggregator claim requires an upstream specialist claim and complete "
                 "source linkage: "
@@ -876,6 +881,8 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
     traces = []
     for claim, claim_id in _candidate_evidence_entries(candidate):
         limitations = tuple(dict.fromkeys(claim.get("limitation_codes", [])))
+        if claim.get("__ownership_claim__"):
+            _validate_ownership_binding(claim, research, claim_id)
         if not claim.get("source_ids") and _is_limited_evidence_entry(claim):
             traces.append(EvidenceTrace(claim_id, (), (), limitations))
             continue
@@ -925,15 +932,6 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
                 if reference[0] == claim_id
             )
         matching = tuple(reference[0] for reference in matching_references)
-        if not matching and claim.get("deterministic_field"):
-            traces.append(EvidenceTrace(
-                claim_id,
-                (),
-                source_ids,
-                limitations,
-                source_ids,
-            ))
-            continue
         if not matching:
             raise AggregatorValidationError(
                 "aggregator claim requires an upstream specialist claim: "
@@ -945,15 +943,6 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
             for source_id in set(source_ids).intersection(sources)
         }
         if matched_sources != set(source_ids):
-            if claim.get("deterministic_field"):
-                traces.append(EvidenceTrace(
-                    claim_id,
-                    (),
-                    source_ids,
-                    limitations,
-                    source_ids,
-                ))
-                continue
             raise AggregatorValidationError(
                 "aggregator claim requires an upstream specialist claim and complete "
                 "source linkage: "
@@ -1161,8 +1150,6 @@ def _is_limited_evidence_entry(claim):
     value = _enum(claim.get("value"))
     if value in ("unassessable", "unavailable") or claim.get("predicate") == "source_gap":
         return True
-    if not claim.get("source_ids") and claim.get("limitation_codes"):
-        return True
     if claim.get("trigger_code") and not claim.get("source_ids"):
         return True
     if claim.get("trigger_type") and not claim.get("source_ids"):
@@ -1172,6 +1159,46 @@ def _is_limited_evidence_entry(claim):
         and claim.get("condition_code")
         and not claim.get("source_ids")
     )
+
+
+def _validate_ownership_binding(claim, research, claim_id):
+    try:
+        field = ownership_field(claim["measure"])
+    except (KeyError, ValueError) as exc:
+        raise AggregatorValidationError(
+            f"aggregator ownership claim has invalid measure: {claim_id}"
+        ) from exc
+    if (
+        claim.get("claim_kind") != field.claim_kind
+        or claim.get("subject_role") != field.subject_role
+        or claim.get("deterministic_field") != field.deterministic_field
+        or claim.get("asserted_unit") != field.asserted_unit
+    ):
+        raise AggregatorValidationError(
+            "aggregator ownership claim does not match the canonical packet binding: "
+            + claim_id
+        )
+    ownership = research.get("ownership_liquidity") or {}
+    expected = packet_value(
+        {"research_evidence": {"ownership_liquidity": ownership}}, field
+    )
+    if expected is None:
+        raise AggregatorValidationError(
+            "aggregator ownership claim has no supplied deterministic value: "
+            + claim_id
+        )
+    asserted = claim.get("asserted_value")
+    if isinstance(expected, bool) != isinstance(asserted, bool) or asserted != expected:
+        raise AggregatorValidationError(
+            "aggregator ownership claim does not equal the supplied packet value: "
+            + claim_id
+        )
+    expected_sources = ownership_source_ids_for_measure(ownership, claim["measure"])
+    if tuple(claim.get("source_ids", ())) != expected_sources:
+        raise AggregatorValidationError(
+            "aggregator ownership claim does not use the exact packet source set: "
+            + claim_id
+        )
 
 
 def _normalized_source_ids(source_ids, full_results, research, catalog, claim_id):
@@ -1244,6 +1271,12 @@ def _candidate_evidence_entries(candidate):
                 "limitation_codes": ownership.get("limitation_codes", []),
                 "source_ids": binding.get("source_ids", []),
                 "deterministic_field": binding.get("deterministic_field"),
+                "__ownership_claim__": "binding" in ownership,
+                "claim_kind": ownership.get("claim_kind"),
+                "subject_role": ownership.get("subject_role"),
+                "measure": ownership.get("measure"),
+                "asserted_value": binding.get("asserted_value"),
+                "asserted_unit": binding.get("asserted_unit"),
             },
             f"ownership_claims.{index}",
         ))

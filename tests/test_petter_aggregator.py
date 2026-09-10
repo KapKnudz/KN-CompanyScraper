@@ -67,6 +67,15 @@ def packet():
                 {"source_id": SELL_SOURCE},
                 {"source_id": OWNERSHIP_SOURCE},
             ],
+            "ownership_liquidity": {
+                "source_ids": [OWNERSHIP_SOURCE],
+                "flow_signals": {
+                    "buybacks": {"latest_event_date": "2026-08-16"}
+                },
+                "source_ids_by_measure": {
+                    "latest_event_date": [OWNERSHIP_SOURCE]
+                },
+            },
         },
     )
 
@@ -396,6 +405,23 @@ def test_final_claim_requires_upstream_specialist_linkage():
         validate_aggregator_output(candidate, inputs(bundle()))
 
 
+def test_source_less_limited_code_cannot_support_value_claim():
+    candidate = make_candidate()
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "limited_support",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": [],
+            "limitation_codes": ["missing_history"],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="requires source_ids"):
+        validate_aggregator_output(candidate, inputs(bundle()))
+
+
 def test_expectation_and_baseline_references_are_traced():
     aggregation_inputs = inputs(bundle())
     candidate = make_candidate()
@@ -550,6 +576,78 @@ def test_top_level_ownership_claim_is_traced():
     manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
 
     assert manifest.evidence_trace[0].upstream_claim_ids == ("insider_ownership:insider.event",)
+
+
+def test_ownership_binding_cannot_bypass_packet_value_or_specialist_linkage():
+    candidate = make_candidate()
+    candidate.structured_conclusions = {}
+    candidate.ownership_claims = [
+        OwnershipClaim(
+            claim_kind="buyback",
+            subject_role="company",
+            measure="latest_event_date",
+            binding=OwnershipBinding(
+                source_ids=[OWNERSHIP_SOURCE],
+                deterministic_field=(
+                    "research_evidence.ownership_liquidity.flow_signals.buybacks."
+                    "latest_event_date"
+                ),
+                asserted_value="2026-08-15",
+                asserted_unit="date",
+            ),
+        )
+    ]
+
+    with pytest.raises(AggregatorValidationError, match="supplied packet value"):
+        validate_aggregator_output(candidate, inputs(bundle()))
+
+
+def test_ownership_binding_must_use_exact_packet_source_set():
+    candidate = make_candidate()
+    candidate.structured_conclusions = {}
+    candidate.ownership_claims = [
+        OwnershipClaim(
+            claim_kind="buyback",
+            subject_role="company",
+            measure="latest_event_date",
+            binding=OwnershipBinding(
+                source_ids=[SOURCE],
+                deterministic_field=(
+                    "research_evidence.ownership_liquidity.flow_signals.buybacks."
+                    "latest_event_date"
+                ),
+                asserted_value="2026-08-16",
+                asserted_unit="date",
+            ),
+        )
+    ]
+
+    with pytest.raises(AggregatorValidationError, match="exact packet source set"):
+        validate_aggregator_output(candidate, inputs(bundle()))
+
+
+def test_valid_ownership_binding_still_requires_specialist_linkage():
+    candidate = make_candidate()
+    candidate.structured_conclusions = {}
+    candidate.ownership_claims = [
+        OwnershipClaim(
+            claim_kind="buyback",
+            subject_role="company",
+            measure="latest_event_date",
+            binding=OwnershipBinding(
+                source_ids=[OWNERSHIP_SOURCE],
+                deterministic_field=(
+                    "research_evidence.ownership_liquidity.flow_signals.buybacks."
+                    "latest_event_date"
+                ),
+                asserted_value="2026-08-16",
+                asserted_unit="date",
+            ),
+        )
+    ]
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, inputs(bundle()))
 
 
 def test_source_empty_unassessable_claim_remains_limited():
