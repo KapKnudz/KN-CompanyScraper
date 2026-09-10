@@ -173,8 +173,8 @@ def bundle(*, management_cap="high", business_circle="inside", sell_break=False)
     return tuple(SimpleNamespace(output=item, agent_name=item.agent_name.value, status="accepted", artifact_ids=(1,)) for item in items)
 
 
-def inputs(items):
-    p = packet()
+def inputs(items, p=None):
+    p = p or packet()
     packet_hash = sha256(serialize_packet(p).encode()).hexdigest()
     for item in items:
         item.output.packet_hash = packet_hash
@@ -420,6 +420,31 @@ def test_source_less_limited_code_cannot_support_value_claim():
 
     with pytest.raises(AggregatorValidationError, match="requires source_ids"):
         validate_aggregator_output(candidate, inputs(bundle()))
+
+
+def test_financial_annual_source_ids_must_match_the_packet_exactly():
+    p = packet()
+    p.research_evidence["documents"].append(
+        {"source_id": "financial:annual:2025-12-30"}
+    )
+    items = list(bundle())
+    items[0].output.business_model.claims[0].source_ids = [
+        "financial:annual:2025-12-30"
+    ]
+    aggregation_inputs = inputs(tuple(items), p)
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "annual_period_claim",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": ["financial:annual:2025-12-31"],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="unknown source ID"):
+        validate_aggregator_output(candidate, aggregation_inputs)
 
 
 def test_expectation_and_baseline_references_are_traced():

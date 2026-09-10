@@ -1205,14 +1205,9 @@ def _normalized_source_ids(source_ids, full_results, research, catalog, claim_id
     normalized = []
     canonical = set(catalog.get("canonical_source_ids", ()))
     for source_id in source_ids:
-        source_id_for_resolution = source_id
-        if source_id.startswith("financial:annual:") and source_id.endswith("-12-31"):
-            period_end_alias = source_id[:-2] + "30"
-            if period_end_alias in canonical:
-                source_id_for_resolution = period_end_alias
         try:
             resolved = resolve_source_id(
-                source_id_for_resolution, full_results, research, catalog=catalog
+                source_id, full_results, research, catalog=catalog
             )
             if (
                 resolved not in canonical
