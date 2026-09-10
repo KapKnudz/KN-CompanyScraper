@@ -233,6 +233,26 @@ def test_conflict_claim_ids_are_qualified_in_handoff_and_manifest():
     ]
 
 
+def test_conflict_local_id_collisions_are_rejected():
+    items = list(bundle())
+    items[0].output.business_model.claims = [claim("engine", "business_model")]
+    items[2].output.claims = [claim("engine", "margin")]
+    items[2].output.margin.margin_state = "stalled"
+    items[2].output.margin.margin_dependency = "primary"
+    sell_test = items[-1].output.sell_conditions.tests[0]
+    sell_test.break_type = "margin_or_execution"
+    sell_test.current_break_status = "triggered"
+    sell_test.source_ids = [SOURCE]
+    sell_test.claim_ids = ["margin:engine"]
+    conflicts = evaluate_specialist_conflicts(
+        [item.output for item in items], final_direction="watch"
+    )
+    aggregation_inputs = inputs(tuple(items), conflict_records=conflicts)
+
+    with pytest.raises(AggregatorValidationError, match="ambiguous"):
+        aggregation_inputs.to_dict()
+
+
 @pytest.mark.parametrize(
     ("upstream_domain", "final_domain", "upstream_claim_id"),
     [

@@ -1348,7 +1348,7 @@ def _namespace_conflict_records(conflicts, inputs):
             )
         }
         trigger_claim_ids = [
-            claim_ids.get(claim_id, claim_id)
+            _resolve_conflict_claim_id(claim_id, claim_ids)
             for claim_id in (_field(conflict, "trigger_claim_ids") or ())
         ]
         data["trigger_claim_ids"] = list(dict.fromkeys(trigger_claim_ids))
@@ -1368,29 +1368,46 @@ def _upstream_claim_id_index(inputs):
         for claim, _, _ in _specialist_evidence_records(output):
             claim_id = _field(claim, "claim_id")
             if claim_id:
-                qualified = _qualify_conflict_claim_id(claim_id, agent, result)
-                result.setdefault(claim_id, qualified)
-                result.setdefault(qualified, qualified)
+                qualified = _qualify_conflict_claim_id(claim_id, agent)
+                result.setdefault(claim_id, set()).add(qualified)
+                result.setdefault(qualified, set()).add(qualified)
         sell = _field(output, "sell_conditions")
         for assessment in (_field(sell, "tests") or ()):
             for claim_id in (_field(assessment, "claim_ids") or ()):
-                qualified = _qualify_conflict_claim_id(claim_id, agent, result)
-                result.setdefault(claim_id, qualified)
-                result.setdefault(qualified, qualified)
+                qualified = _qualify_conflict_claim_id(claim_id, agent)
+                result.setdefault(claim_id, set()).add(qualified)
+                result.setdefault(qualified, set()).add(qualified)
         for blocker in (_field(sell, "activation_blockers") or ()):
             for claim_id in (_field(blocker, "claim_ids") or ()):
-                qualified = _qualify_conflict_claim_id(claim_id, agent, result)
-                result.setdefault(claim_id, qualified)
-                result.setdefault(qualified, qualified)
+                qualified = _qualify_conflict_claim_id(claim_id, agent)
+                result.setdefault(claim_id, set()).add(qualified)
+                result.setdefault(qualified, set()).add(qualified)
     return result
 
 
-def _qualify_conflict_claim_id(claim_id, agent, known_ids):
-    if claim_id in known_ids:
-        return known_ids[claim_id]
-    if ":" in str(claim_id):
+def _qualify_conflict_claim_id(claim_id, agent):
+    if _is_qualified_claim_id(claim_id):
         return claim_id
     return f"{agent}:{claim_id}"
+
+
+def _resolve_conflict_claim_id(claim_id, known_ids):
+    candidates = known_ids.get(claim_id, ())
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    if len(candidates) > 1:
+        raise AggregatorValidationError(
+            "ambiguous unqualified conflict trigger claim ID: " + str(claim_id)
+        )
+    if _is_qualified_claim_id(claim_id):
+        return claim_id
+    raise AggregatorValidationError(
+        "unresolved unqualified conflict trigger claim ID: " + str(claim_id)
+    )
+
+
+def _is_qualified_claim_id(claim_id):
+    return str(claim_id).split(":", 1)[0] in ALL_SPECIALIST_NAMES
 
 
 def _outputs_by_name(items):
