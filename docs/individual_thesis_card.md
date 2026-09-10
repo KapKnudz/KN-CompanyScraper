@@ -174,5 +174,9 @@ The local boundary rejects:
 - inconsistent timing and case horizons;
 - model-authored fair values, expected returns, or downside estimates.
 
+Formatting-only repairs preserve already-valid lowercase hyphenated
+`limitation_codes`; ambiguous repairs remain rejected and are recorded in raw
+artifact metadata when persisted.
+
 Insufficient evidence remains visible through `unassessable`, limitations,
 missing-information fields, and the deterministic confidence cap.

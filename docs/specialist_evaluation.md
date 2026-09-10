@@ -19,6 +19,15 @@ python -m kncompanyscraper.main run-shadow-analysis \
   --allow-model-calls
 ```
 
+Each specialist response must copy the requested `run_id` and frozen-packet
+`packet_hash` exactly. The specialist boundary validates source IDs in all
+`*_source_ids` fields against that packet and rejects unknown references,
+including when reusing stored artifacts. Formatting-only repairs such as
+lowercase claim IDs, canonical coverage tiers, and valid management period-end
+dates are applied deterministically; accepted raw artifacts record those
+repairs in `metadata.normalizations`. Genuine identity mismatches, ambiguous
+claim-ID repairs, invalid dates, and unknown source IDs remain rejected.
+
 `forward-scenario-results.json` is a JSON object keyed by company ID. Each value
 is a validated `forward_scenario_analysis` object from the current deterministic
 scenario policy with a `packet_hash` matching the frozen packet; available results
