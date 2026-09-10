@@ -610,9 +610,12 @@ class StockAnalysisResult:
     citations: list[EvidenceCitation] = field(default_factory=list)
     # v3 authoritative input graph. Legacy display fields are projections only.
     structured_conclusions: StructuredConclusions | None = None
+    packet_hash: str | None = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict:
         data = asdict(self)
+        if self.packet_hash is None:
+            data.pop("packet_hash", None)
         if self.thesis_card_version == "individual-thesis-card-v3-structured-conclusions":
             for field_name in V3_PROJECTION_FIELDS:
                 data.pop(field_name, None)

@@ -242,6 +242,15 @@ def test_numeric_valuation_claim_is_rejected_with_generic_identifiers():
         validate_aggregator_output(candidate, inputs(bundle()))
 
 
+def test_candidate_packet_hash_must_match_frozen_packet():
+    candidate = StockAnalysisResult(
+        42, "TEST", "Test", "watch", "medium", "", packet_hash="wrong"
+    )
+
+    with pytest.raises(AggregatorValidationError, match="identity"):
+        validate_aggregator_output(candidate, inputs(bundle()))
+
+
 def test_numeric_valuation_domain_variant_is_rejected():
     candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
     candidate.structured_conclusions = {

@@ -183,6 +183,7 @@ def test_aggregator_case_artifact_is_consumed_by_evaluation_boundary():
                     "candidate": {
                         "company_id": case["company_id"],
                         "ticker": case["ticker"],
+                        "packet_hash": case["packet_hash"],
                         "verdict": "watch",
                     },
                     "manifest": {

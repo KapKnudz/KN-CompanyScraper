@@ -279,7 +279,7 @@ class PetterAggregatorPromptBuilder:
             policy_name=self.POLICY_NAME,
             policy_version=self.POLICY_VERSION,
             policy_sha256=sha256(self.POLICY_VERSION.encode()).hexdigest(),
-            output_schema=v3_qualitative_stock_analysis_json_schema(),
+            output_schema=_aggregator_output_schema(),
             schema_name="petter_aggregator_v3",
             packet_measurement=asdict(measure_packet(inputs.packet, pretty=False)),
             contract_version=self.CONTRACT_VERSION,
@@ -352,7 +352,7 @@ class ShadowPetterAggregatorRunner:
             if raw_id is not None:
                 raw_ids.append(raw_id)
             try:
-                candidate = parse_qualitative_stock_analysis_result(raw)
+                candidate = _parse_aggregator_candidate(raw, inputs.packet_hash)
                 candidate, decision = validate_aggregator_output(candidate, inputs)
                 if self.execution_boundary is not None:
                     candidate = _validate_with_boundary(candidate, inputs, self.execution_boundary)
@@ -427,8 +427,9 @@ class ShadowPetterAggregatorRunner:
                 continue
             try:
                 payload = json.loads(artifact["content"])
-                candidate = parse_qualitative_stock_analysis_result(
-                    json.dumps(payload["candidate"], ensure_ascii=False)
+                candidate = _parse_aggregator_candidate(
+                    json.dumps(payload["candidate"], ensure_ascii=False),
+                    inputs.packet_hash,
                 )
                 manifest = payload["manifest"]
                 if (
@@ -454,6 +455,10 @@ def validate_aggregator_output(
     if (
         candidate.company_id != inputs.company_id
         or candidate.ticker != _packet_value(inputs.packet, "ticker")
+        or (
+            candidate.packet_hash is not None
+            and candidate.packet_hash != inputs.packet_hash
+        )
     ):
         raise AggregatorValidationError(
             "aggregator candidate identity does not match frozen packet"
@@ -461,6 +466,31 @@ def validate_aggregator_output(
     _validate_no_model_arithmetic(candidate, inputs)
     _validate_aggregator_sources(candidate, inputs)
     return enforce_aggregation_constraints(candidate, inputs)
+
+
+def _aggregator_output_schema() -> dict:
+    schema = v3_qualitative_stock_analysis_json_schema()
+    schema["properties"]["packet_hash"] = {"type": "string"}
+    schema["required"].append("packet_hash")
+    return schema
+
+
+def _parse_aggregator_candidate(raw_response: str, packet_hash: str) -> StockAnalysisResult:
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError:
+        return parse_qualitative_stock_analysis_result(raw_response)
+    if not isinstance(payload, Mapping) or payload.get("packet_hash") != packet_hash:
+        raise AggregatorValidationError(
+            "aggregator candidate packet_hash does not match frozen packet"
+        )
+    payload = dict(payload)
+    payload.pop("packet_hash")
+    candidate = parse_qualitative_stock_analysis_result(
+        json.dumps(payload, ensure_ascii=False)
+    )
+    candidate.packet_hash = packet_hash
+    return candidate
 
 
 def enforce_aggregation_constraints(

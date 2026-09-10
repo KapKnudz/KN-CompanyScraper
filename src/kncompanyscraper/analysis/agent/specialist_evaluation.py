@@ -373,6 +373,7 @@ def _parse_case_level_result(record: Mapping, case: Mapping) -> tuple[dict | Non
         if (
             candidate.get("company_id") != case["company_id"]
             or candidate.get("ticker") != case["ticker"]
+            or candidate.get("packet_hash") != case["packet_hash"]
             or candidate.get("verdict") not in _FINAL_VERDICTS
         ):
             return None, "validated aggregator candidate identity or verdict is invalid"
