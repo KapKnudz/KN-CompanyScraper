@@ -82,6 +82,26 @@ def packet():
     }
 
 
+def scenario_result():
+    return {
+        "status": "available",
+        "policy_version": FORWARD_SCENARIO_POLICY_VERSION,
+        "bands": [
+            {
+                "case": case,
+                "horizon_months": 36,
+                "low_price": 10.0,
+                "high_price": 12.0,
+                "low_holding_value": 10.0,
+                "high_holding_value": 12.0,
+                "low_annualized_return": 0.1,
+                "high_annualized_return": 0.2,
+            }
+            for case in ("bear", "base", "bull")
+        ],
+    }
+
+
 def test_complete_shadow_sequence_is_opt_in_and_keeps_frozen_identity():
     specialists = SpecialistSpy(ShadowResult())
     aggregator = AggregatorSpy()
@@ -145,15 +165,16 @@ def test_shadow_cli_rejects_non_pilot_packet_count(tmp_path):
 
 
 def test_frozen_scenario_results_require_current_validated_bindings():
-    scenario = {
-        "status": "available",
-        "policy_version": FORWARD_SCENARIO_POLICY_VERSION,
-        "bands": [{"case": case} for case in ("bear", "base", "bull")],
-    }
+    scenario = scenario_result()
     assert validate_frozen_scenario_results([packet()], {"7": scenario}) == {"7": scenario}
 
     with pytest.raises(ValueError, match="bind exactly"):
         validate_frozen_scenario_results([packet()], {})
+
+    malformed = copy.deepcopy(scenario)
+    malformed["bands"][1].pop("low_price")
+    with pytest.raises(ValueError, match="incomplete bands"):
+        validate_frozen_scenario_results([packet()], {"7": malformed})
 
 
 def test_pilot_manifest_requires_three_distinct_labeled_packet_bindings():

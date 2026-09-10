@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 import json
+from math import isfinite
 from typing import Any, Mapping
 
 from kncompanyscraper.analysis.agent.agent_packet import serialize_packet
@@ -14,6 +15,18 @@ from kncompanyscraper.analysis.agent.specialist_runner import (
     ShadowSpecialistRun,
 )
 from kncompanyscraper.analysis.policy_versions import FORWARD_SCENARIO_POLICY_VERSION
+
+_SCENARIO_CASES = {"bear", "base", "bull"}
+_SCENARIO_BAND_FIELDS = (
+    "case",
+    "horizon_months",
+    "low_price",
+    "high_price",
+    "low_holding_value",
+    "high_holding_value",
+    "low_annualized_return",
+    "high_annualized_return",
+)
 
 SHADOW_BUNDLE_SCHEMA_VERSION = "shadow-analysis-bundle-v1"
 SHADOW_SEQUENCE = (
@@ -104,11 +117,34 @@ def validate_frozen_scenario_results(
         status = scenario.get("status")
         if status not in valid_statuses:
             raise ValueError(f"scenario result for company {company_id} has an invalid status")
-        if status == "available" and (
-            not isinstance(scenario.get("bands"), list)
-            or len(scenario["bands"]) != 3
-        ):
+        if status != "available":
+            continue
+        bands = scenario.get("bands")
+        if not isinstance(bands, list) or len(bands) != len(_SCENARIO_CASES):
             raise ValueError(f"scenario result for company {company_id} is incomplete")
+        if {
+            band.get("case") for band in bands if isinstance(band, Mapping)
+        } != _SCENARIO_CASES:
+            raise ValueError(f"scenario result for company {company_id} has invalid cases")
+        horizons = set()
+        for band in bands:
+            if not isinstance(band, Mapping) or any(
+                field not in band for field in _SCENARIO_BAND_FIELDS
+            ):
+                raise ValueError(f"scenario result for company {company_id} has incomplete bands")
+            horizon = band["horizon_months"]
+            if not isinstance(horizon, int) or isinstance(horizon, bool) or horizon <= 0:
+                raise ValueError(f"scenario result for company {company_id} has invalid horizons")
+            horizons.add(horizon)
+            if any(
+                isinstance(band[field], bool)
+                or not isinstance(band[field], (int, float))
+                or not isfinite(band[field])
+                for field in _SCENARIO_BAND_FIELDS[2:]
+            ):
+                raise ValueError(f"scenario result for company {company_id} has invalid values")
+        if len(horizons) != 1:
+            raise ValueError(f"scenario result for company {company_id} has inconsistent horizons")
     return dict(scenario_results)
 
 
