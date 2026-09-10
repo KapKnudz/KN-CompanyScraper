@@ -773,9 +773,13 @@ def _validate_with_boundary(candidate, inputs, boundary):
         name=packet.get("name", packet["ticker"]), full_results=packet.get("full_results", {}),
         research_evidence=packet.get("research_evidence", {}),
     )
-    return boundary.validate_qualitative_response(
-        json.dumps(candidate.to_dict(), ensure_ascii=False), candidate_model
+    candidate_payload = candidate.to_dict()
+    packet_hash = candidate_payload.pop("packet_hash", None)
+    validated = boundary.validate_qualitative_response(
+        json.dumps(candidate_payload, ensure_ascii=False), candidate_model
     )
+    validated.packet_hash = packet_hash
+    return validated
 
 
 def _apply_confidence_cap(candidate: StockAnalysisResult, outputs: dict) -> StockAnalysisResult:

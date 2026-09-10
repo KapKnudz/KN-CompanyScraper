@@ -1,3 +1,4 @@
+import json
 from hashlib import sha256
 from types import SimpleNamespace
 
@@ -31,6 +32,7 @@ from kncompanyscraper.analysis.agent.petter_aggregator import (
     build_aggregation_manifest,
     enforce_aggregation_constraints,
     validate_aggregator_output,
+    _validate_with_boundary,
 )
 from kncompanyscraper.analysis.agent.output_schema import StockAnalysisResult
 
@@ -249,6 +251,28 @@ def test_candidate_packet_hash_must_match_frozen_packet():
 
     with pytest.raises(AggregatorValidationError, match="identity"):
         validate_aggregator_output(candidate, inputs(bundle()))
+
+
+def test_execution_boundary_round_trip_preserves_candidate_packet_hash():
+    aggregation_inputs = inputs(bundle())
+    candidate = StockAnalysisResult(
+        42,
+        "TEST",
+        "Test",
+        "watch",
+        "medium",
+        "",
+        packet_hash=aggregation_inputs.packet_hash,
+    )
+
+    class BoundarySpy:
+        def validate_qualitative_response(self, raw_response, candidate_model):
+            assert "packet_hash" not in json.loads(raw_response)
+            return StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+
+    validated = _validate_with_boundary(candidate, aggregation_inputs, BoundarySpy())
+
+    assert validated.packet_hash == aggregation_inputs.packet_hash
 
 
 def test_numeric_valuation_domain_variant_is_rejected():
