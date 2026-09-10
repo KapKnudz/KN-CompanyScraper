@@ -143,9 +143,15 @@ def _normalize_qualitative_formatting(raw_response: str) -> tuple[str, list[dict
                     if not isinstance(code, str):
                         normalized_codes.append(code)
                         continue
+                    stripped = code.strip()
                     normalized = (
-                        code.strip().casefold().replace("-", "_")
-                        .replace(".", "_").replace(" ", "_")
+                        stripped
+                        if _STRUCTURED_CLAIM_ID.fullmatch(stripped)
+                        and stripped == stripped.casefold()
+                        else stripped.casefold()
+                        .replace("-", "_")
+                        .replace(".", "_")
+                        .replace(" ", "_")
                     )
                     previous = seen.get(normalized)
                     if previous is not None and previous != code:
@@ -439,7 +445,13 @@ def _normalize_specialist_formatting(raw_response: str) -> tuple[str, list[dict]
     def normalize_claim_id(value, path, *, definition=False):
         if not isinstance(value, str):
             return value
-        normalized = value.strip().casefold().replace("-", "_")
+        stripped = value.strip()
+        normalized = (
+            stripped
+            if _SPECIALIST_CLAIM_ID.fullmatch(stripped)
+            and stripped == stripped.casefold()
+            else stripped.casefold().replace("-", "_")
+        )
         if definition and _SPECIALIST_CLAIM_ID.fullmatch(normalized):
             previous = defined_ids.get(normalized)
             if previous is not None and previous[0] != value:

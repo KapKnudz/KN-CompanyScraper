@@ -156,6 +156,15 @@ def test_specialist_normalizes_observed_claim_id_formatting(
     assert parsed.claims[0].claim_id == normalized_claim_id
 
 
+def test_specialist_preserves_distinct_valid_hyphenated_claim_ids():
+    payload = _management_payload()
+    payload["claims"] = [_claim(claim_id="foo-bar"), _claim(claim_id="foo_bar")]
+
+    parsed = parse_specialist_output(json.dumps(payload))
+
+    assert [claim.claim_id for claim in parsed.claims] == ["foo-bar", "foo_bar"]
+
+
 def test_specialist_normalizes_coverage_tier_formatting():
     payload = _management_payload(quarters=8, confidence_cap="high")
     payload["management_credibility"]["coverage"]["coverage_tier"] = "FULL-COVERAGE"
