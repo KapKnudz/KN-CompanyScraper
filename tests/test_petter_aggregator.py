@@ -652,6 +652,25 @@ def test_limited_claim_trace_deduplicates_upstream_claim_ids():
     )
 
 
+def test_limited_exact_claim_id_still_requires_matching_domain():
+    items = list(bundle())
+    items[2].output.claims = [claim("margin_claim", "margin")]
+    aggregation_inputs = inputs(tuple(items))
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "margin:margin_claim",
+            "domain": "balance_sheet",
+            "predicate": "assessment",
+            "value": "unassessable",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, aggregation_inputs)
+
+
 def test_top_level_ownership_claim_is_traced():
     items = list(bundle())
     items[3].output.insider_ownership.event_claims = [

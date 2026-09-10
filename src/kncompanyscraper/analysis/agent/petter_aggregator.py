@@ -765,6 +765,7 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
             matching = matching + tuple(
                 reference for reference in limited_references
                 if reference[0] == claim_id
+                and _reference_matches_domain(claim, reference[3])
             )
             matching = _deduplicate_references(matching)
         matched_sources = {
@@ -933,6 +934,7 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
             matching_references = matching_references + tuple(
                 reference for reference in limited_references
                 if reference[0] == claim_id
+                and _reference_matches_domain(claim, reference[3])
             )
             matching_references = _deduplicate_references(matching_references)
         matching = tuple(reference[0] for reference in matching_references)
