@@ -109,8 +109,9 @@ def test_complete_shadow_sequence_is_opt_in_and_keeps_frozen_identity():
 
 def test_shadow_plan_is_bounded():
     summary = ShadowIntegrationRunner.expected_work_summary(3)
-    assert summary["minimum_model_calls"] == 21
+    assert summary["minimum_model_calls"] == 18
     assert summary["maximum_model_calls"] == 42
+    assert "bounds" in summary["note"]
 
 
 def test_shadow_rejects_mixed_packet_identity_before_execution():

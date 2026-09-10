@@ -298,7 +298,7 @@ def _cmd_run_shadow_analysis(args):
         raise SystemExit("--packets must contain exactly three packets for the shadow pilot")
     summary = ShadowIntegrationRunner.expected_work_summary(len(packets))
     print(
-        f"Shadow work plan: {summary['company_count']} companies, "
+        f"Shadow work plan (bounded): {summary['company_count']} companies, "
         f"{summary['minimum_model_calls']}-{summary['maximum_model_calls']} model calls"
     )
     if not args.allow_model_calls:

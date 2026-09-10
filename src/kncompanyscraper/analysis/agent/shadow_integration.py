@@ -99,9 +99,9 @@ class ShadowIntegrationRunner:
         return {
             "company_count": company_count,
             "stages_per_company": list(SHADOW_SEQUENCE),
-            "minimum_model_calls": (FIRST_WAVE_CALLS + 2) * company_count,
+            "minimum_model_calls": (FIRST_WAVE_CALLS + 1) * company_count,
             "maximum_model_calls": MAX_MODEL_CALLS_PER_COMPANY * company_count,
-            "note": "Each model stage may make one repair call; deterministic inputs make no model calls.",
+            "note": "Call counts are bounds: sell_conditions may be limited without a model call; each model stage may make one repair call; deterministic inputs make no model calls.",
         }
 
     def run(
