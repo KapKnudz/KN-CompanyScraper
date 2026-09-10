@@ -1,0 +1,36 @@
+{
+  "schema_version": "specialist-three-company-pilot-v1",
+  "purpose": "Operator-filled three-company shadow evaluation pilot. This template contains no company names or investment labels.",
+  "companies": [
+    {
+      "case_id": "",
+      "company_id": null,
+      "ticker": "",
+      "packet_ref": "",
+      "packet_hash": "",
+      "labels_ref": "",
+      "best_run_id": null,
+      "candidate_run_id": null
+    },
+    {
+      "case_id": "",
+      "company_id": null,
+      "ticker": "",
+      "packet_ref": "",
+      "packet_hash": "",
+      "labels_ref": "",
+      "best_run_id": null,
+      "candidate_run_id": null
+    },
+    {
+      "case_id": "",
+      "company_id": null,
+      "ticker": "",
+      "packet_ref": "",
+      "packet_hash": "",
+      "labels_ref": "",
+      "best_run_id": null,
+      "candidate_run_id": null
+    }
+  ]
+}

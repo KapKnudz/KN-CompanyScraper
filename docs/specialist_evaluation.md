@@ -3,6 +3,42 @@
 The specialist path is non-authoritative. This evaluation reads frozen packets and
 stored specialist artifacts; it does not run models or change production verdicts.
 
+## Complete shadow run
+
+For a frozen packet JSON document, the supported opt-in path runs the first-wave
+specialists, uses validated forward-scenario results and the packet's deterministic reverse-DCF inputs,
+runs sell conditions and deterministic conflicts, and then runs the Petter
+aggregator. It persists raw specialist, raw aggregator, and validated aggregator
+artifacts in the existing raw-analysis store, and writes a bundle made from those
+stored records:
+
+```sh
+python -m kncompanyscraper.main run-shadow-analysis \
+  --packets frozen-packets.json --scenario-results forward-scenario-results.json \
+  --output shadow-artifacts.json \
+  --allow-model-calls
+```
+
+`forward-scenario-results.json` is a JSON object keyed by company ID. Each value
+is a validated `forward_scenario_analysis` object from the current deterministic
+scenario policy with a `packet_hash` matching the frozen packet; available results
+must contain the three bear/base/bull bands.
+
+The command prints a bounded call plan before launching. Without
+`--allow-model-calls` it performs no model execution. The bundle can be passed
+directly to `evaluate-specialists` for both inputs; validated aggregator artifacts
+are adapted at their artifact boundary into the case-level verdict metric and are
+not mistaken for specialist outputs:
+
+```sh
+python -m kncompanyscraper.main evaluate-specialists \
+  --cases cases.json --artifacts shadow-artifacts.json \
+  --packets shadow-artifacts.json --output report.json
+```
+
+`--packets` may contain any number of packets, although the initial pilot is
+exactly three.
+
 ## Case format
 
 A labeled file is a JSON object with `schema_version: "specialist-evaluation-cases-v1"`
@@ -18,8 +54,8 @@ are human-authored and are never inferred from an artifact:
   deterministic conflict rules.
 - `final_verdict`: optional case-level verdict from an artifact whose metadata has
   `result_scope: "case"` and whose content is a validated
-  `specialist-case-result-v1` object bound to the case packet hash; otherwise use
-  `"not_applicable"`.
+  `specialist-case-result-v1` object (or a validated aggregator candidate+manifest)
+  bound to the case packet hash; otherwise use `"not_applicable"`.
 - `source_validity`: `all_valid`, `invalid_present`, `unavailable`, or
   `not_applicable`.
 - `activation`: human-labeled boolean or `not_applicable`; reports include full
@@ -29,7 +65,7 @@ are human-authored and are never inferred from an artifact:
 
 Missing labels are reported as skipped or unavailable, never as passes. The fixture
 `tests/fixtures/specialist_evaluation/cases.json` is deliberately synthetic and is
-not the trusted 12–20 company benchmark.
+not evidence for the three-company pilot or a larger trusted cohort.
 
 ## Run comparison
 
@@ -72,9 +108,28 @@ candidate minus best, while the nested reports preserve each run's metadata and
 rejection accounting. Do not combine the two artifact arrays before calling the
 paired entry point.
 
-For the trusted 12–20 company cohort, freeze one reviewed packet per company,
-record its hash in a new case, and have two humans label the claims, management
-rows, source validity, conflict triggers, and any verdict/activation expectations.
+For the first real cohort, copy
+`docs/specialist_evaluation_three_company_pilot.json`, select exactly three
+companies, freeze one reviewed packet per company, and record each packet hash in
+a new case. Have humans assign labels for claims, management rows, source
+validity, conflict triggers, and any verdict/activation expectations; do not
+invent labels or investment ground truth. Run the same frozen three-packet input once per model tier with distinct run
+prefixes (for example `best` and `candidate`), then set `best_run_id` and
+`candidate_run_id` after each tier run. The manifest is intentionally extensible
+by adding companies later, but this pilot validator requires three.
+
+Compare the two persisted bundles without copying or editing their artifacts:
+
+```sh
+python -m kncompanyscraper.main compare-shadow-evaluations \
+  --cases cases.json --best-artifacts best.json \
+  --candidate-artifacts candidate.json --packets frozen-packets.json \
+  --pilot-manifest three-company-pilot.json --output paired-report.json
+```
+
+For a larger trusted cohort, freeze one reviewed packet per company and have two
+humans label the claims, management rows, source validity, conflict triggers,
+and any verdict/activation expectations.
 Do not label from model output and do not invent investment ground truth. Store
 best-tier and candidate-tier artifacts against the same packet hashes, with each
 tier's selected run ID recorded in the manifest, then compare the paired reports

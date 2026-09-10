@@ -140,6 +140,42 @@ def register(subparsers):
     evaluation_parser.add_argument("--output", type=Path)
     evaluation_parser.set_defaults(func=_cmd_evaluate_specialists)
 
+    shadow_parser = subparsers.add_parser(
+        "run-shadow-analysis",
+        help="Run the complete opt-in shadow graph for frozen packet JSON",
+    )
+    shadow_parser.add_argument("--packets", required=True, type=Path)
+    shadow_parser.add_argument(
+        "--scenario-results",
+        required=True,
+        type=Path,
+        help="Validated forward-scenario results keyed by frozen company_id",
+    )
+    shadow_parser.add_argument("--output", required=True, type=Path)
+    shadow_parser.add_argument("--provider", choices=MODEL_PROVIDERS, default="local")
+    shadow_parser.add_argument("--model")
+    shadow_parser.add_argument("--reasoning-effort")
+    shadow_parser.add_argument("--run-id-prefix", default="shadow-pilot")
+    shadow_parser.add_argument(
+        "--allow-model-calls",
+        action="store_true",
+        help="Explicitly authorize the bounded specialist and aggregator model calls",
+    )
+    shadow_parser.set_defaults(func=_cmd_run_shadow_analysis)
+
+    paired_parser = subparsers.add_parser(
+        "compare-shadow-evaluations",
+        help="Compare persisted best-tier and candidate-tier shadow artifacts",
+    )
+    paired_parser.add_argument("--cases", required=True, type=Path)
+    paired_parser.add_argument("--best-artifacts", required=True, type=Path)
+    paired_parser.add_argument("--candidate-artifacts", required=True, type=Path)
+    paired_parser.add_argument("--packets", type=Path)
+    paired_parser.add_argument("--manifest", type=Path)
+    paired_parser.add_argument("--pilot-manifest", type=Path)
+    paired_parser.add_argument("--output", type=Path)
+    paired_parser.set_defaults(func=_cmd_compare_shadow_evaluations)
+
 
 def _cmd_export_agent_prompts(args):
     from kncompanyscraper.analysis.agent.prompt_exporter import AgentPromptExporter
@@ -237,6 +273,118 @@ def _cmd_evaluate_specialists(args):
             encoding="utf-8",
         )
     print(format_evaluation_report(report))
+
+
+def _cmd_run_shadow_analysis(args):
+    import json
+
+    from kncompanyscraper.analysis.agent.shadow_integration import (
+        ShadowIntegrationRunner,
+        build_shadow_artifact_bundle,
+        validate_frozen_scenario_results,
+        validate_frozen_packets,
+    )
+    from kncompanyscraper.composition import (
+        build_agent_model_adapter,
+        build_shadow_aggregator_runner,
+        build_shadow_specialist_runner,
+    )
+    from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
+
+    document = json.loads(args.packets.read_text(encoding="utf-8"))
+    packets = document.get("packets") if isinstance(document, dict) else document
+    if isinstance(packets, dict):
+        packets = list(packets.values())
+    if not isinstance(packets, list) or not packets:
+        raise SystemExit("--packets must contain a non-empty packet list or packet map")
+    try:
+        validate_frozen_packets(packets)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if len(packets) != 3:
+        raise SystemExit("--packets must contain exactly three packets for the shadow pilot")
+    scenario_results = json.loads(args.scenario_results.read_text(encoding="utf-8"))
+    try:
+        scenario_results = validate_frozen_scenario_results(packets, scenario_results)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    summary = ShadowIntegrationRunner.expected_work_summary(len(packets))
+    print(
+        f"Shadow work plan (bounded): {summary['company_count']} companies, "
+        f"{summary['minimum_model_calls']}-{summary['maximum_model_calls']} model calls"
+    )
+    if not args.allow_model_calls:
+        raise SystemExit(
+            "Refusing shadow model execution: repeat with --allow-model-calls"
+        )
+    adapter = build_agent_model_adapter(args.provider, args.model, args.reasoning_effort)
+    repository = AnalysisRepository()
+    runner = ShadowIntegrationRunner(
+        build_shadow_specialist_runner(adapter, repository),
+        build_shadow_aggregator_runner(adapter, repository),
+    )
+    runs = []
+    for packet in packets:
+        company_id = packet.get("company_id")
+        if not isinstance(company_id, int):
+            raise SystemExit("each frozen packet needs an integer company_id")
+        runs.append(
+            runner.run(
+                packet,
+                run_id=f"{args.run_id_prefix}-{company_id}",
+                deterministic_scenario_results=scenario_results[str(company_id)],
+                allow_model_calls=True,
+            )
+        )
+    bundle = build_shadow_artifact_bundle(repository, packets, runs)
+    args.output.write_text(
+        json.dumps(bundle, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    for run in runs:
+        print(f"{run.ticker}: {run.status} ({len(run.artifact_ids)} persisted artifacts)")
+    failed_runs = [run for run in runs if run.status != "accepted"]
+    if failed_runs:
+        failed = ", ".join(run.ticker for run in failed_runs)
+        raise SystemExit(f"Shadow analysis failed for: {failed}")
+    print(f"Shadow artifact bundle written to {args.output}")
+
+
+def _cmd_compare_shadow_evaluations(args):
+    import json
+
+    from kncompanyscraper.analysis.agent.specialist_evaluation import (
+        compare_paired_specialist_evaluations,
+        format_evaluation_report,
+    )
+    from kncompanyscraper.analysis.agent.pilot_manifest import (
+        build_evaluation_manifest,
+    )
+
+    cases = json.loads(args.cases.read_text(encoding="utf-8"))
+    best = json.loads(args.best_artifacts.read_text(encoding="utf-8"))
+    candidate = json.loads(args.candidate_artifacts.read_text(encoding="utf-8"))
+    manifest = (
+        json.loads(args.manifest.read_text(encoding="utf-8"))
+        if args.manifest
+        else None
+    )
+    if args.pilot_manifest:
+        pilot = json.loads(args.pilot_manifest.read_text(encoding="utf-8"))
+        case_list = cases.get("cases", cases) if isinstance(cases, dict) else cases
+        manifest = build_evaluation_manifest(pilot, case_list, best, candidate)
+    report = compare_paired_specialist_evaluations(
+        cases,
+        best,
+        candidate,
+        packets={} if args.packets is None else args.packets,
+        manifest=manifest,
+    )
+    if args.output:
+        args.output.write_text(
+            json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+    print(format_evaluation_report(report["best_tier_report"]))
+    print(format_evaluation_report(report["candidate_tier_report"]))
 
 
 def _cmd_check_agent_readiness(args):

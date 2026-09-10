@@ -379,6 +379,7 @@ class ShadowSpecialistRunner:
             SpecialistAgentName.SELL_CONDITIONS,
             upstream_outputs=upstream_results,
             deterministic_scenario_data=scenario_data,
+            packet=packet,
         )
         reuse_found = reused is not None
         if reused is not None:
@@ -452,6 +453,7 @@ class ShadowSpecialistRunner:
                 agent_name,
                 upstream_outputs=upstream_outputs,
                 deterministic_scenario_data=deterministic_scenario_data,
+                packet=packet,
             )
             if reused is not None:
                 return reused
@@ -749,6 +751,7 @@ class ShadowSpecialistRunner:
         *,
         upstream_outputs=None,
         deterministic_scenario_data=None,
+        packet=None,
     ):
         getter = getattr(
             self.raw_response_repository, "get_specialist_artifacts_for_run", None
@@ -784,7 +787,7 @@ class ShadowSpecialistRunner:
                 parsed = parse_specialist_output(artifact["content"])
                 self._validate_identity(
                     parsed,
-                    {"company_id": company_id, "ticker": parsed.ticker},
+                    packet or {"company_id": company_id, "ticker": parsed.ticker},
                     run_id,
                     packet_hash,
                     agent_name,

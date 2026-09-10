@@ -114,6 +114,23 @@ class AnalysisRepository(BaseRepository):
                 rows = cur.fetchall()
         return [dict(row) for row in rows]
 
+    def get_shadow_artifacts_for_run(self, company_id: int, run_id: str) -> list[dict]:
+        """Return all persisted specialist and aggregator artifacts for evaluation."""
+        query = """
+            SELECT id, company_id, content, created_by, metadata
+            FROM analysis
+            WHERE company_id = %s
+              AND analysis_type = 'stock_analysis_raw'
+              AND metadata->>'run_id' = %s
+              AND metadata->>'analysis_mode' IN ('specialist', 'aggregator')
+            ORDER BY id ASC
+        """
+        with self._get_conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, (company_id, run_id))
+                rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
     def get_specialist_artifact(self, analysis_id: int) -> dict | None:
         """Read a raw artifact only when it is marked as specialist output."""
         artifact = self.get_stock_analysis_raw(analysis_id)
