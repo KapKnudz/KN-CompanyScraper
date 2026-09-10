@@ -645,6 +645,27 @@ def test_top_level_ownership_claim_is_traced():
     assert manifest.evidence_trace[0].upstream_claim_ids == ("insider_ownership:insider.event",)
 
 
+def test_insider_ownership_evidence_cannot_support_balance_sheet_claim():
+    items = list(bundle())
+    items[3].output.insider_ownership.event_claims = [
+        claim("insider.event", "insider")
+    ]
+    items[3].output.insider_ownership.event_claims[0].source_ids = [OWNERSHIP_SOURCE]
+    candidate = make_candidate()
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "balance_sheet_claim",
+            "domain": "balance_sheet",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": [OWNERSHIP_SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, inputs(tuple(items)))
+
+
 def test_ownership_binding_cannot_bypass_packet_value_or_specialist_linkage():
     candidate = make_candidate()
     candidate.structured_conclusions = {}

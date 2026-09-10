@@ -1123,7 +1123,7 @@ _UPSTREAM_DOMAIN_ALIASES = {
     "margin_sustainability": {"margin", "valuation"},
     "cash_conversion": {"balance_sheet", "risk", "valuation"},
     "insider": {"timing"},
-    "insider_ownership": {"balance_sheet", "insider", "timing"},
+    "insider_ownership": {"insider", "timing"},
     "ownership": {"insider", "timing"},
     "liquidity": {"insider", "timing"},
 }
