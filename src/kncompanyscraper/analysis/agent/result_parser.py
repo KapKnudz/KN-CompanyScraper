@@ -520,8 +520,12 @@ def _normalize_specialist_quarter(value: str) -> str | None:
     if quarter:
         return f"{quarter.group(1)}-Q{quarter.group(2)}"
     period_end = re.fullmatch(r"(\d{4})-(\d{2})-\d{2}", value)
-    if period_end and 1 <= int(period_end.group(2)) <= 12:
-        quarter_number = (int(period_end.group(2)) - 1) // 3 + 1
+    if period_end:
+        try:
+            period_end_date = date.fromisoformat(value)
+        except ValueError:
+            return None
+        quarter_number = (period_end_date.month - 1) // 3 + 1
         return f"{period_end.group(1)}-Q{quarter_number}"
     return None
 

@@ -227,6 +227,60 @@ def test_genuine_run_identity_mismatch_is_still_rejected():
     assert artifacts.validation[-1][1] == "rejected"
 
 
+def test_nested_specialist_source_ids_are_validated_against_frozen_packet():
+    artifacts = Artifacts()
+    frozen = packet()
+    frozen.research_evidence["documents"] = [{"source_id": "financial:margin"}]
+    run_id = "company-analysis-source-validation"
+    frozen_hash = sha256(serialize_packet(frozen).encode()).hexdigest()
+    model = Model(
+        lambda prompt: json.dumps(
+            {
+                "schema_version": "specialist-output-v1",
+                "run_id": run_id,
+                "agent_name": "margin",
+                "company_id": frozen.company_id,
+                "ticker": frozen.ticker,
+                "evidence_as_of": "2026-08-16",
+                "status": "complete",
+                "confidence": "low",
+                "confidence_cap": "low",
+                "claims": [
+                    {
+                        "claim_id": "margin.state",
+                        "domain": "margin",
+                        "predicate": "assessment",
+                        "value": None,
+                        "direction": "positive",
+                        "source_ids": ["financial:margin"],
+                        "limitation_codes": [],
+                        "depends_on_claim_ids": [],
+                    }
+                ],
+                "missing_information": [],
+                "packet_hash": frozen_hash,
+                "margin": {
+                    "margin_state": "early_evidence",
+                    "current_ebit_margin": 0.08,
+                    "defensible_peak_ebit_margin": 0.12,
+                    "mechanism": "fixed-cost absorption",
+                    "supporting_source_ids": ["invented:margin"],
+                    "contrary_source_ids": [],
+                    "margin_dependency": "secondary",
+                },
+            }
+        )
+    )
+
+    result = ShadowSpecialistRunner(
+        model, artifacts, specialists=("margin",)
+    ).run(frozen, run_id=run_id)
+
+    assert result.results[0].status == "failed"
+    assert "unknown frozen-packet source IDs" in result.results[0].validation_errors[-1]
+    assert artifacts.validation[-1][1] == "rejected"
+
+
 def test_parse_failure_is_recorded_and_does_not_raise():
     artifacts = Artifacts()
     runner = ShadowSpecialistRunner(

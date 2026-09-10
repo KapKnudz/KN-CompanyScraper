@@ -1025,9 +1025,11 @@ def _validate_specialist_sources(output, packet):
 
     def visit(value):
         if isinstance(value, dict):
-            if isinstance(value.get("source_ids"), list):
-                source_ids.extend(value["source_ids"])
-            for child in value.values():
+            for key, child in value.items():
+                if isinstance(key, str) and key.endswith("source_ids") and isinstance(
+                    child, list
+                ):
+                    source_ids.extend(child)
                 visit(child)
         elif isinstance(value, list):
             for child in value:

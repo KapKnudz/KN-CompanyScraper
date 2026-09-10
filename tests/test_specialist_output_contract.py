@@ -182,6 +182,22 @@ def test_specialist_normalizes_management_quarter_formatting():
     assert underscored.management_credibility.ledger[0].quarter == "2026-Q1"
 
 
+@pytest.mark.parametrize("period_end", ["2026-02-31", "2026-02-99"])
+def test_specialist_rejects_invalid_management_period_end_dates(period_end):
+    payload = _management_payload()
+    row = _management_ledger_row(result="kept", observed_outcome="Improved.")
+    row["quarter"] = period_end
+    payload["management_credibility"]["ledger"] = [row]
+    payload["management_credibility"]["coverage"].update(
+        eligible_claim_count=1, assessed_claim_count=1
+    )
+
+    with pytest.raises(
+        StockAnalysisValidationError, match="invalid management ledger quarter"
+    ):
+        parse_specialist_output(json.dumps(payload))
+
+
 def test_specialist_rejects_ambiguous_claim_id_normalization():
     payload = _management_payload()
     payload["claims"] = [_claim(claim_id="BM-1"), _claim(claim_id="bm_1")]
