@@ -71,6 +71,19 @@ def packet():
     )
 
 
+def make_candidate(verdict="watch", confidence="medium", packet_hash=None):
+    return StockAnalysisResult(
+        42,
+        "TEST",
+        "Test",
+        verdict,
+        confidence,
+        "",
+        packet_hash=packet_hash
+        or sha256(serialize_packet(packet()).encode()).hexdigest(),
+    )
+
+
 def output(agent, domain, *, confidence="high", cap="high"):
     return SpecialistOutput(
         schema_version="specialist-output-v1", run_id="run", agent_name=agent,
@@ -229,7 +242,7 @@ def test_management_cap_and_sell_break_are_deterministic_and_flow_cannot_rescue(
 
 
 def test_numeric_valuation_claim_is_rejected_with_generic_identifiers():
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "claim": {
             "claim_id": "generic",
@@ -244,10 +257,10 @@ def test_numeric_valuation_claim_is_rejected_with_generic_identifiers():
         validate_aggregator_output(candidate, inputs(bundle()))
 
 
-def test_candidate_packet_hash_must_match_frozen_packet():
-    candidate = StockAnalysisResult(
-        42, "TEST", "Test", "watch", "medium", "", packet_hash="wrong"
-    )
+@pytest.mark.parametrize("packet_hash", ["wrong", None])
+def test_candidate_packet_hash_must_match_frozen_packet(packet_hash):
+    candidate = make_candidate()
+    candidate.packet_hash = packet_hash
 
     with pytest.raises(AggregatorValidationError, match="identity"):
         validate_aggregator_output(candidate, inputs(bundle()))
@@ -276,7 +289,7 @@ def test_execution_boundary_round_trip_preserves_candidate_packet_hash():
 
 
 def test_numeric_valuation_domain_variant_is_rejected():
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "claim": {
             "claim_id": "generic",
@@ -292,7 +305,7 @@ def test_numeric_valuation_domain_variant_is_rejected():
 
 
 def test_final_claim_requires_upstream_specialist_linkage():
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "claim": {
             "claim_id": "unlinked",
@@ -309,7 +322,7 @@ def test_final_claim_requires_upstream_specialist_linkage():
 
 def test_expectation_and_baseline_references_are_traced():
     aggregation_inputs = inputs(bundle())
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "headline_case": {"expectation_refs": [DETERMINISTIC_SOURCE]},
         "falsifiable_case": {"baseline_refs": [SOURCE]},
@@ -333,7 +346,7 @@ def test_sourced_scenario_assumption_is_an_upstream_trace_record():
         "revenue_cagr": {"value": 0.1, "source_ids": [SCENARIO_SOURCE]},
     }]
     aggregation_inputs = inputs(tuple(items))
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "evidence_claims": [{
             "claim_id": "scenario.final", "domain": "revenue",
@@ -351,7 +364,7 @@ def test_sourced_scenario_assumption_is_an_upstream_trace_record():
 
 
 def test_every_cited_source_requires_complete_trace_linkage():
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "claim": {
             "claim_id": "partially_traced", "domain": "revenue",
@@ -387,7 +400,7 @@ def test_management_ledger_is_an_upstream_trace_record():
         )
     ]
     aggregation_inputs = inputs(tuple(items))
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "management_claims": [{
             "claim_id": "management.final", "domain": "management",
@@ -407,7 +420,7 @@ def test_specialist_missing_information_reaches_final_trace():
         SpecialistMissingInformation("missing_history", "supplemental", "case_limited")
     ]
     aggregation_inputs = inputs(tuple(items))
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "claim": {
             "claim_id": "limited_support", "domain": "business_model",
@@ -425,7 +438,7 @@ def test_unassessable_sell_test_cannot_support_final_claim():
     items = list(bundle())
     items[-1].output.sell_conditions.tests[0].source_ids = [SELL_SOURCE]
     items[-1].output.sell_conditions.tests[0].current_break_status = "unassessable"
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "claim": {
             "claim_id": "sell_gap", "domain": "revenue",
@@ -444,7 +457,7 @@ def test_top_level_ownership_claim_is_traced():
     ]
     items[3].output.insider_ownership.event_claims[0].source_ids = [OWNERSHIP_SOURCE]
     aggregation_inputs = inputs(tuple(items))
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {}
     candidate.ownership_claims = [
         OwnershipClaim(
@@ -465,7 +478,7 @@ def test_top_level_ownership_claim_is_traced():
 
 def test_source_empty_unassessable_claim_remains_limited():
     aggregation_inputs = inputs(bundle())
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "claim": {
             "claim_id": "limited", "domain": "evidence",
@@ -485,7 +498,7 @@ def test_source_empty_unassessable_claim_remains_limited():
 def test_source_bearing_break_test_is_traced_and_preserves_limitations():
     items = list(bundle())
     items[0].output.business_model.claims[0].limitation_codes = ["limited_history"]
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "thesis_break_tests": [{"break_type": "revenue_or_demand", "source_ids": [SOURCE]}]
     }
@@ -502,7 +515,7 @@ def test_unassessable_specialist_claim_cannot_support_final_claim():
     items = list(bundle())
     items[0].output.business_model.claims[0].source_ids = ["news:unassessable"]
     items[0].output.business_model.claims[0].direction = SpecialistClaimDirection.UNASSESSABLE
-    candidate = StockAnalysisResult(42, "TEST", "Test", "watch", "medium", "")
+    candidate = make_candidate()
     candidate.structured_conclusions = {
         "claim": {
             "claim_id": "unsupported",
@@ -531,7 +544,7 @@ def test_core_specialist_missing_information_blocks_activation():
 
 
 def test_core_candidate_missing_information_blocks_and_is_manifested():
-    candidate = StockAnalysisResult(42, "TEST", "Test", "activated_case", "high", "")
+    candidate = make_candidate("activated_case", "high")
     aggregation_inputs = inputs(bundle())
     candidate.structured_conclusions = {
         "missing_information_details": [{

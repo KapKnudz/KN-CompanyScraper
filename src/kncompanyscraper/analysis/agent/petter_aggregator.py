@@ -455,10 +455,7 @@ def validate_aggregator_output(
     if (
         candidate.company_id != inputs.company_id
         or candidate.ticker != _packet_value(inputs.packet, "ticker")
-        or (
-            candidate.packet_hash is not None
-            and candidate.packet_hash != inputs.packet_hash
-        )
+        or candidate.packet_hash != inputs.packet_hash
     ):
         raise AggregatorValidationError(
             "aggregator candidate identity does not match frozen packet"
