@@ -35,7 +35,9 @@ from kncompanyscraper.analysis.agent.petter_aggregator import (
     _validate_with_boundary,
 )
 from kncompanyscraper.analysis.agent.output_schema import StockAnalysisResult
-from kncompanyscraper.analysis.agent.specialist_conflicts import SpecialistConflict
+from kncompanyscraper.analysis.agent.specialist_conflicts import (
+    evaluate_specialist_conflicts,
+)
 
 
 SOURCE = "financial:fixture"
@@ -205,22 +207,21 @@ def test_prompt_contains_typed_inputs_and_precedence_without_prose_reports():
 def test_conflict_claim_ids_are_qualified_in_handoff_and_manifest():
     items = list(bundle())
     items[2].output.claims = [claim("margin_claim", "margin")]
-    items[-1].output.sell_conditions.tests[0].claim_ids = ["sell.margin"]
-    conflict = SpecialistConflict(
-        rule_id="margin_vs_sell_condition",
-        severity="high",
-        trigger_fields=("margin.margin_state",),
-        trigger_claim_ids=("margin_claim", "sell.margin"),
-        explanation="margin break",
-        source_ids=(SOURCE,),
-        action="block_activation",
+    items[2].output.margin.margin_state = "stalled"
+    items[2].output.margin.margin_dependency = "primary"
+    sell_test = items[-1].output.sell_conditions.tests[0]
+    sell_test.break_type = "margin_or_execution"
+    sell_test.current_break_status = "triggered"
+    sell_test.source_ids = [SOURCE]
+    sell_test.claim_ids = ["margin:margin_claim"]
+    conflict = evaluate_specialist_conflicts(
+        [item.output for item in items], final_direction="watch"
     )
-    aggregation_inputs = inputs(tuple(items), conflict_records=(conflict,))
+    aggregation_inputs = inputs(tuple(items), conflict_records=conflict)
 
     handoff = aggregation_inputs.to_dict()
     assert handoff["conflict_records"][0]["trigger_claim_ids"] == [
         "margin:margin_claim",
-        "sell_conditions:sell.margin",
     ]
 
     candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
@@ -229,7 +230,6 @@ def test_conflict_claim_ids_are_qualified_in_handoff_and_manifest():
     manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
     assert manifest.must_surface_conflicts[0]["trigger_claim_ids"] == [
         "margin:margin_claim",
-        "sell_conditions:sell.margin",
     ]
 
 

@@ -1336,20 +1336,22 @@ def _effective_conflicts(inputs: AggregatorInput, candidate: StockAnalysisResult
 
 def _namespace_conflict_records(conflicts, inputs):
     claim_ids = _upstream_claim_id_index(inputs)
-    return tuple(
-        {
+    records = []
+    for conflict in conflicts:
+        data = {
             **(
                 conflict.to_dict()
                 if hasattr(conflict, "to_dict")
                 else _json_value(conflict)
-            ),
-            "trigger_claim_ids": [
-                claim_ids.get(claim_id, claim_id)
-                for claim_id in (_field(conflict, "trigger_claim_ids") or ())
-            ],
+            )
         }
-        for conflict in conflicts
-    )
+        trigger_claim_ids = [
+            claim_ids.get(claim_id, claim_id)
+            for claim_id in (_field(conflict, "trigger_claim_ids") or ())
+        ]
+        data["trigger_claim_ids"] = list(dict.fromkeys(trigger_claim_ids))
+        records.append(data)
+    return tuple(records)
 
 
 def _upstream_claim_id_index(inputs):
@@ -1364,25 +1366,29 @@ def _upstream_claim_id_index(inputs):
         for claim, _, _ in _specialist_evidence_records(output):
             claim_id = _field(claim, "claim_id")
             if claim_id:
-                qualified = (
-                    claim_id
-                    if str(claim_id).startswith(f"{agent}:")
-                    else f"{agent}:{claim_id}"
-                )
-                result[claim_id] = qualified
-                result[qualified] = qualified
+                qualified = _qualify_conflict_claim_id(claim_id, agent, result)
+                result.setdefault(claim_id, qualified)
+                result.setdefault(qualified, qualified)
         sell = _field(output, "sell_conditions")
         for assessment in (_field(sell, "tests") or ()):
             for claim_id in (_field(assessment, "claim_ids") or ()):
-                qualified = f"{agent}:{claim_id}"
-                result[claim_id] = qualified
-                result[qualified] = qualified
+                qualified = _qualify_conflict_claim_id(claim_id, agent, result)
+                result.setdefault(claim_id, qualified)
+                result.setdefault(qualified, qualified)
         for blocker in (_field(sell, "activation_blockers") or ()):
             for claim_id in (_field(blocker, "claim_ids") or ()):
-                qualified = f"{agent}:{claim_id}"
-                result[claim_id] = qualified
-                result[qualified] = qualified
+                qualified = _qualify_conflict_claim_id(claim_id, agent, result)
+                result.setdefault(claim_id, qualified)
+                result.setdefault(qualified, qualified)
     return result
+
+
+def _qualify_conflict_claim_id(claim_id, agent, known_ids):
+    if claim_id in known_ids:
+        return known_ids[claim_id]
+    if ":" in str(claim_id):
+        return claim_id
+    return f"{agent}:{claim_id}"
 
 
 def _outputs_by_name(items):
