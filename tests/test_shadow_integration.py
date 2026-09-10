@@ -13,6 +13,7 @@ from kncompanyscraper.analysis.agent.shadow_integration import (
     ShadowIntegrationRunner,
     ShadowOptInRequired,
 )
+from kncompanyscraper.cli.agent import _cmd_run_shadow_analysis
 
 
 class SpecialistSpy:
@@ -118,6 +119,26 @@ def test_shadow_rejects_mixed_packet_identity_before_execution():
     with pytest.raises(ValueError, match="packet_hash"):
         runner.run(packet(), run_id="run-7", packet_hash="bad", allow_model_calls=True)
     assert specialists.calls == 0
+
+
+def test_shadow_cli_rejects_non_pilot_packet_count(tmp_path):
+    second_packet = copy.deepcopy(packet())
+    second_packet.update(company_id=8, ticker="ALT")
+    packets_path = tmp_path / "packets.json"
+    packets_path.write_text(json.dumps({"packets": [packet(), second_packet]}))
+
+    with pytest.raises(SystemExit, match="exactly three packets"):
+        _cmd_run_shadow_analysis(
+            SimpleNamespace(
+                packets=packets_path,
+                output=tmp_path / "shadow.json",
+                provider="local",
+                model=None,
+                reasoning_effort=None,
+                run_id_prefix="shadow-pilot",
+                allow_model_calls=True,
+            )
+        )
 
 
 def test_pilot_manifest_requires_three_distinct_labeled_packet_bindings():

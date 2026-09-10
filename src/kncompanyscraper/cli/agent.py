@@ -294,6 +294,8 @@ def _cmd_run_shadow_analysis(args):
         validate_frozen_packets(packets)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
+    if len(packets) != 3:
+        raise SystemExit("--packets must contain exactly three packets for the shadow pilot")
     summary = ShadowIntegrationRunner.expected_work_summary(len(packets))
     print(
         f"Shadow work plan: {summary['company_count']} companies, "
