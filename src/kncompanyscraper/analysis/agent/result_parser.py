@@ -539,12 +539,14 @@ def _normalize_management_coverage_counts(payload: dict, changes: list[dict]) ->
     assessed_results = {"kept", "delayed", "missed", "external_shock"}
     pending_results = {"unverifiable", "too_vague_to_test"}
     assessed = sum(
-        row.get("result") in assessed_results
+        isinstance(row.get("result"), str)
+        and row.get("result") in assessed_results
         for row in ledger
         if isinstance(row, dict)
     )
     pending = sum(
-        row.get("result") in pending_results
+        isinstance(row.get("result"), str)
+        and row.get("result") in pending_results
         for row in ledger
         if isinstance(row, dict)
     )
