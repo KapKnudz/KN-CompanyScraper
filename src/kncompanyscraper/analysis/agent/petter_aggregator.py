@@ -23,6 +23,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
     parse_qualitative_stock_analysis_result,
+    qualitative_output_normalizations,
 )
 from kncompanyscraper.analysis.agent.specialist_conflicts import (
     SpecialistConflict,
@@ -333,6 +334,7 @@ class ShadowPetterAggregatorRunner:
             except Exception as exc:
                 errors.append(str(exc))
                 break
+            normalizations = qualitative_output_normalizations(raw)
             raw_id = _save_aggregator_artifact(
                 self.raw_response_repository,
                 inputs,
@@ -347,6 +349,7 @@ class ShadowPetterAggregatorRunner:
                     "upstream_outputs_sha256": upstream_outputs_hash,
                     "deterministic_scenario_sha256": deterministic_scenario_hash,
                     "reverse_dcf_sha256": reverse_dcf_hash,
+                    **({"normalizations": normalizations} if normalizations else {}),
                 },
             )
             if raw_id is not None:

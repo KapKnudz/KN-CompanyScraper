@@ -100,6 +100,17 @@ def test_parser_accepts_v3_persisted_result():
     assert parsed.structured_conclusions is not None
 
 
+def test_parser_preserves_valid_hyphenated_limitation_codes():
+    result = valid_result()
+    result.thesis_card_version = "individual-thesis-card-v3-structured-conclusions"
+    payload = json.loads(_v3_qualitative_response(result))
+    payload["structured_conclusions"]["limitation_codes"] = ["cost-driver"]
+
+    parsed = parse_qualitative_stock_analysis_result(json.dumps(payload))
+
+    assert parsed.structured_conclusions.limitation_codes == ("cost-driver",)
+
+
 def test_parser_builds_falsifiable_case_decisive_evidence_and_break_tests():
     payload = valid_result()
     payload.case_horizon_months = 36

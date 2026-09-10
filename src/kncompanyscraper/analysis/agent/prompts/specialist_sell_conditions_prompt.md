@@ -7,7 +7,7 @@ one of `not_triggered`, `triggered`, or `unassessable`, one prescribed response
 (`reassess`, `reduce`, or `sell`), a `causal_basis` of `fundamental_break`,
 `valuation_overshoot_with_fundamental_link`, `price_only`, or `unassessable`,
 and the exact source IDs and relevant upstream claim IDs supporting it.
-Preserve the upstream claim IDs; do not rewrite or launder upstream claims.
+Preserve the upstream claim IDs; do not rewrite or launder upstream claims. Never invent a source ID or claim ID, and do not cite a source unless it supports one of the cited upstream claims.
 
 For a triggered test, use `fundamental_break` for an operating causal break
 and `valuation_overshoot_with_fundamental_link` for valuation overshoot. Use
@@ -28,10 +28,17 @@ condition is `not_triggered`; a currently evidenced causal break is `triggered`;
 an evidence gap or failed upstream specialist is `unassessable`.
 
 Use `activation_blockers` for evidence that prevents activation. Every blocker
-has a stable snake_case code and source and upstream claim references. Do not
+has a stable snake_case code and source and upstream claim references. Only
+use `upstream_specialist_unavailable` and `deterministic_scenario_unavailable`
+as uncited dependency blockers; every other blocker must include both exact
+supporting source_ids and exact upstream claim_ids. Do not
 invent claims when an upstream output failed or deterministic scenario data is
 unavailable: mark affected tests `unassessable`, use low confidence, and expose
-the limitation through a blocker and `missing_information`. The deterministic
+the limitation through a blocker and `missing_information`. When all five
+first-wave outputs are marked complete and deterministic scenario data is
+available in the hand-off, do not emit an unavailable blocker. If a specific
+causal claim is absent, use `missing_information` without inventing a cited
+blocker claim. The deterministic
 scenario data is authoritative; do not calculate prices, returns, fair value,
 required return, or position size. This output is shadow-only and must not
 change the production verdict.

@@ -101,6 +101,7 @@ def _normalize_missing_scenario_fields(raw_response: str) -> str:
 def parse_qualitative_stock_analysis_result(
     raw_response: str,
 ) -> StockAnalysisResult:
+    raw_response, _ = _normalize_qualitative_formatting(raw_response)
     raw_response = _normalize_qualitative_response(raw_response)
     contract = _contract_for_payload(raw_response, qualitative=True)
     payload = _parse_contract(
@@ -110,6 +111,75 @@ def parse_qualitative_stock_analysis_result(
     )
     payload["scenario_bundles"] = []
     return _stock_analysis_from_payload(payload)
+
+
+def qualitative_output_normalizations(raw_response: str) -> list[dict]:
+    """Return deterministic formatting repairs applied to structured output codes."""
+    try:
+        _, changes = _normalize_qualitative_formatting(raw_response)
+    except StockAnalysisValidationError:
+        return []
+    return changes
+
+
+def _normalize_qualitative_formatting(raw_response: str) -> tuple[str, list[dict]]:
+    try:
+        payload = json.loads(
+            raw_response, object_pairs_hook=_object_without_duplicates
+        )
+    except (json.JSONDecodeError, StockAnalysisValidationError):
+        return raw_response, []
+    if not isinstance(payload, dict):
+        return raw_response, []
+    changes = []
+
+    def visit(value, path="$"):
+        if isinstance(value, dict):
+            codes = value.get("limitation_codes")
+            if isinstance(codes, list):
+                seen = {}
+                normalized_codes = []
+                for index, code in enumerate(codes):
+                    if not isinstance(code, str):
+                        normalized_codes.append(code)
+                        continue
+                    stripped = code.strip()
+                    normalized = (
+                        stripped
+                        if _STRUCTURED_CLAIM_ID.fullmatch(stripped)
+                        and stripped == stripped.casefold()
+                        else stripped.casefold()
+                        .replace("-", "_")
+                        .replace(".", "_")
+                        .replace(" ", "_")
+                    )
+                    previous = seen.get(normalized)
+                    if previous is not None and previous != code:
+                        raise StockAnalysisValidationError(
+                            "structured limitation code normalization collision: "
+                            f"{previous!r} and {code!r} both normalize to {normalized!r}"
+                        )
+                    seen[normalized] = code
+                    normalized_codes.append(normalized)
+                    if normalized != code:
+                        changes.append(
+                            {
+                                "path": f"{path}.limitation_codes[{index}]",
+                                "from": code,
+                                "to": normalized,
+                                "reason": "structured_code_format",
+                            }
+                        )
+                value["limitation_codes"] = normalized_codes
+            for key, child in value.items():
+                if key != "limitation_codes":
+                    visit(child, f"{path}.{key}")
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                visit(child, f"{path}[{index}]")
+
+    visit(payload)
+    return json.dumps(payload, ensure_ascii=False), changes
 
 
 def _normalize_qualitative_response(raw_response: str) -> str:
@@ -223,6 +293,7 @@ def parse_scenario_authoring_result(raw_response: str):
 
 def parse_specialist_output(raw_response: str) -> SpecialistOutput:
     """Parse and semantically validate one non-authoritative specialist output."""
+    raw_response, _ = _normalize_specialist_formatting(raw_response)
     raw_response = _normalize_specialist_causal_basis(raw_response)
     try:
         initial = json.loads(
@@ -347,6 +418,128 @@ def parse_specialist_output(raw_response: str) -> SpecialistOutput:
         packet_hash=payload["packet_hash"],
         **domain,
     )
+
+
+def specialist_output_normalizations(raw_response: str) -> list[dict]:
+    """Return deterministic formatting repairs applied at the specialist boundary."""
+    try:
+        _, changes = _normalize_specialist_formatting(raw_response)
+    except StockAnalysisValidationError:
+        return []
+    return changes
+
+
+def _normalize_specialist_formatting(raw_response: str) -> tuple[str, list[dict]]:
+    try:
+        payload = json.loads(
+            raw_response, object_pairs_hook=_object_without_duplicates
+        )
+    except (json.JSONDecodeError, StockAnalysisValidationError):
+        return raw_response, []
+    if not isinstance(payload, dict):
+        return raw_response, []
+
+    changes = []
+    defined_ids = {}
+
+    def normalize_claim_id(value, path, *, definition=False):
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        normalized = (
+            stripped
+            if _SPECIALIST_CLAIM_ID.fullmatch(stripped)
+            and stripped == stripped.casefold()
+            else stripped.casefold().replace("-", "_")
+        )
+        if definition and _SPECIALIST_CLAIM_ID.fullmatch(normalized):
+            previous = defined_ids.get(normalized)
+            if previous is not None and previous[0] != value:
+                raise StockAnalysisValidationError(
+                    "specialist claim ID normalization collision: "
+                    f"{previous[0]!r} and {value!r} both normalize to {normalized!r}"
+                )
+            defined_ids[normalized] = (value, path)
+        if normalized != value:
+            changes.append(
+                {
+                    "path": path,
+                    "from": value,
+                    "to": normalized,
+                    "reason": "claim_id_format",
+                }
+            )
+        return normalized
+
+    def visit(value, path="$"):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                child_path = f"{path}.{key}"
+                if key == "claim_id":
+                    value[key] = normalize_claim_id(
+                        child, child_path, definition=True
+                    )
+                elif key in {"claim_ids", "depends_on_claim_ids"} and isinstance(
+                    child, list
+                ):
+                    value[key] = [
+                        normalize_claim_id(item, f"{child_path}[{index}]")
+                        for index, item in enumerate(child)
+                    ]
+                elif key == "coverage_tier" and isinstance(child, str):
+                    normalized = (
+                        child.strip().casefold().replace("-", "_").replace(" ", "_")
+                    )
+                    if normalized in {
+                        "no_ledger",
+                        "partial_coverage",
+                        "full_coverage",
+                    } and normalized != child:
+                        changes.append(
+                            {
+                                "path": child_path,
+                                "from": child,
+                                "to": normalized,
+                                "reason": "coverage_tier_format",
+                            }
+                        )
+                        value[key] = normalized
+                elif key == "quarter" and isinstance(child, str):
+                    normalized = _normalize_specialist_quarter(child)
+                    if normalized is not None and normalized != child:
+                        changes.append(
+                            {
+                                "path": child_path,
+                                "from": child,
+                                "to": normalized,
+                                "reason": "management_quarter_format",
+                            }
+                        )
+                        value[key] = normalized
+                else:
+                    visit(child, child_path)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                visit(child, f"{path}[{index}]")
+
+    visit(payload)
+    return json.dumps(payload, ensure_ascii=False), changes
+
+
+def _normalize_specialist_quarter(value: str) -> str | None:
+    value = value.strip()
+    quarter = re.fullmatch(r"(\d{4})[-_][qQ]([1-4])", value)
+    if quarter:
+        return f"{quarter.group(1)}-Q{quarter.group(2)}"
+    period_end = re.fullmatch(r"(\d{4})-(\d{2})-\d{2}", value)
+    if period_end:
+        try:
+            period_end_date = date.fromisoformat(value)
+        except ValueError:
+            return None
+        quarter_number = (period_end_date.month - 1) // 3 + 1
+        return f"{period_end.group(1)}-Q{quarter_number}"
+    return None
 
 
 def _normalize_specialist_causal_basis(raw_response: str) -> str:

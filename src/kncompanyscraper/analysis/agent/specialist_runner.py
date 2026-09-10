@@ -37,6 +37,7 @@ from kncompanyscraper.analysis.agent.prompt_builder import (
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
     parse_specialist_output,
+    specialist_output_normalizations,
 )
 from kncompanyscraper.analysis.agent.specialist_conflicts import (
     SpecialistConflict,
@@ -194,6 +195,8 @@ class SpecialistPromptBuilder:
         *,
         upstream_outputs=None,
         deterministic_scenario_data=None,
+        run_id=None,
+        packet_hash=None,
     ) -> AgentPrompt:
         agent_name = SpecialistAgentName(agent_name)
         try:
@@ -216,6 +219,13 @@ class SpecialistPromptBuilder:
         )
         schema = specialist_output_json_schema(agent_name.value)
         measurement = asdict(measure_packet(packet, pretty=False))
+        identity = (
+            "Requested output identity (copy exactly; do not invent or alter):\n"
+            f"run_id: {run_id}\n"
+            f"packet_hash: {packet_hash}\n\n"
+            if run_id is not None and packet_hash is not None
+            else ""
+        )
         if agent_name is SpecialistAgentName.SELL_CONDITIONS:
             instructions = instructions.replace(
                 "{thesis_break_types}",
@@ -236,7 +246,8 @@ class SpecialistPromptBuilder:
             )
             catalog = _packet_evidence_catalog(packet)
             user = (
-                "Agent name: sell_conditions\n"
+                identity
+                + "Agent name: sell_conditions\n"
                 "Domain payload: sell_conditions\n\n"
                 "Typed first-wave specialist outputs (not free-form reports):\n"
                 f"{upstream_json}\n\n"
@@ -253,12 +264,15 @@ class SpecialistPromptBuilder:
                 "include only the sell_conditions domain payload. Do not emit markdown, "
                 "prose outside JSON, a verdict, activation decision, or position size.\n\n"
                 f"{instructions}\n"
-                "Use only the typed inputs supplied below and mark gaps explicitly."
+                "Use lowercase snake_case claim IDs for new IDs, preserve qualified "
+                "upstream IDs exactly, and mark gaps explicitly. Copy the requested "
+                "run_id and packet_hash exactly."
             )
         else:
             packet_json = serialize_packet(packet)
             user = (
-                f"Agent name: {agent_name.value}\n"
+                identity
+                + f"Agent name: {agent_name.value}\n"
                 f"Domain payload: {agent_name.value}\n\n"
                 "Frozen AgentCandidatePacket:\n"
                 f"{packet_json}\n\n"
@@ -273,7 +287,13 @@ class SpecialistPromptBuilder:
                 f"{agent_name.value!r} domain payload. Do not emit markdown, prose "
                 "outside JSON, a verdict, activation decision, or position size.\n\n"
                 f"{instructions}\n"
-                "Use exact source IDs from the frozen packet and mark missing evidence explicitly."
+                "Use lowercase snake_case claim IDs only (for example, margin_engine_1); "
+                "every claim ID must be unique across the envelope, domain payload, and "
+                "management ledger; preserve those IDs exactly in references. A claim "
+                "with a direction other than unassessable must include source_ids; do "
+                "not duplicate a claim merely to restate it. Use exact source IDs from "
+                "the frozen packet and mark missing evidence explicitly. "
+                "Copy the requested run_id and packet_hash exactly."
             )
         return AgentPrompt(
             system=system,
@@ -464,9 +484,13 @@ class ShadowSpecialistRunner:
                 agent_name,
                 upstream_outputs=upstream_outputs,
                 deterministic_scenario_data=deterministic_scenario_data,
+                run_id=run_id,
+                packet_hash=packet_hash,
             )
             if agent_name is SpecialistAgentName.SELL_CONDITIONS
-            else self.prompt_builder.build(packet, agent_name)
+            else self.prompt_builder.build(
+                packet, agent_name, run_id=run_id, packet_hash=packet_hash
+            )
         )
         prompt_artifact = serialize_prompt(prompt)
         prompt_hash = sha256(prompt_artifact.encode("utf-8")).hexdigest()
@@ -487,6 +511,7 @@ class ShadowSpecialistRunner:
                 break
 
             raw_response = response.output_text
+            normalizations = specialist_output_normalizations(raw_response)
             metadata = {
                 "analysis_stage": (
                     "sell_conditions"
@@ -500,6 +525,8 @@ class ShadowSpecialistRunner:
                 "prompt_contract_version": prompt.contract_version,
                 "packet_measurement": prompt.packet_measurement,
             }
+            if normalizations:
+                metadata["normalizations"] = normalizations
             if agent_name is SpecialistAgentName.SELL_CONDITIONS:
                 metadata.update(
                     {
@@ -528,6 +555,7 @@ class ShadowSpecialistRunner:
             try:
                 parsed = parse_specialist_output(raw_response)
                 self._validate_identity(parsed, packet, run_id, packet_hash, agent_name)
+                _validate_specialist_sources(parsed, packet)
                 if agent_name is SpecialistAgentName.SELL_CONDITIONS:
                     _validate_sell_traceability(
                         parsed, upstream_outputs or (), packet
@@ -785,13 +813,15 @@ class ShadowSpecialistRunner:
                 continue
             try:
                 parsed = parse_specialist_output(artifact["content"])
+                reuse_packet = packet or {"company_id": company_id, "ticker": parsed.ticker}
                 self._validate_identity(
                     parsed,
-                    packet or {"company_id": company_id, "ticker": parsed.ticker},
+                    reuse_packet,
                     run_id,
                     packet_hash,
                     agent_name,
                 )
+                _validate_specialist_sources(parsed, reuse_packet)
             except (KeyError, StockAnalysisValidationError, ValueError, TypeError):
                 continue
             candidate = SpecialistArtifactResult(
@@ -988,6 +1018,36 @@ def _sell_inputs_available(upstream_results, scenario_data):
         for result in upstream_results
         )
     )
+
+
+def _validate_specialist_sources(output, packet):
+    source_ids = []
+
+    def visit(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if isinstance(key, str) and key.endswith("source_ids") and isinstance(
+                    child, list
+                ):
+                    source_ids.extend(child)
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(output.to_dict())
+    unknown = sorted(
+        {
+            source_id
+            for source_id in source_ids
+            if not _source_ids_are_permitted(packet, [source_id])
+        }
+    )
+    if unknown:
+        raise ValueError(
+            "specialist output references unknown frozen-packet source IDs: "
+            + ", ".join(unknown)
+        )
 
 
 def _domain_claims(output):
