@@ -184,9 +184,9 @@ class ShadowSpecialistRun:
 class SpecialistPromptBuilder:
     """Build a narrow prompt while preserving the normal adapter seam."""
 
-    CONTRACT_VERSION = "specialist-shadow-prompt-v2-first-wave"
+    CONTRACT_VERSION = "specialist-shadow-prompt-v3-first-wave-contract-repairs"
     POLICY_NAME = "specialist-shadow-analysis"
-    POLICY_VERSION = "1.0.0"
+    POLICY_VERSION = "1.1.0-contract-repairs"
 
     def build(
         self,
@@ -291,9 +291,15 @@ class SpecialistPromptBuilder:
                 "every claim ID must be unique across the envelope, domain payload, and "
                 "management ledger; preserve those IDs exactly in references. A claim "
                 "with a direction other than unassessable must include source_ids; do "
-                "not duplicate a claim merely to restate it. Use exact source IDs from "
-                "the frozen packet and mark missing evidence explicitly. "
-                "Copy the requested run_id and packet_hash exactly."
+                "not duplicate a claim merely to restate it. Copy source IDs verbatim "
+                "from the frozen packet/evidence catalog; never construct one from a "
+                "date, company name, or document text. If an exact ID is unavailable, "
+                "omit the claim and mark missing evidence explicitly. For management "
+                "ledger rows, use only canonical YYYY-Qn quarter values (a fiscal-year "
+                "period such as 2024_fy is the year-end 2024-Q4); pending rows "
+                "must have null observed_outcome and no outcome_source_ids; derive all "
+                "coverage counts from the ledger result categories. Copy the requested run_id "
+                "and packet_hash exactly."
             )
         return AgentPrompt(
             system=system,
@@ -766,9 +772,14 @@ class ShadowSpecialistRunner:
         if parsed.company_id != company_id or parsed.ticker != ticker:
             raise ValueError("specialist identity does not match frozen packet")
         if parsed.run_id != run_id:
-            raise ValueError("specialist run_id does not match shadow run")
+            raise ValueError(
+                f"specialist run_id does not match shadow run; expected {run_id!r}"
+            )
         if parsed.packet_hash != packet_hash:
-            raise ValueError("specialist packet_hash does not match frozen packet")
+            raise ValueError(
+                "specialist packet_hash does not match frozen packet; "
+                f"expected {packet_hash!r}"
+            )
 
     def _reuse_completed(
         self,
@@ -885,7 +896,9 @@ def _serialize_upstream_output(item):
 
 
 def _qualified_claim_id(agent_name, claim_id):
-    return f"{agent_name}:{claim_id}"
+    prefix = f"{agent_name}:"
+    claim_id = str(claim_id)
+    return claim_id if claim_id.startswith(prefix) else prefix + claim_id
 
 
 def _namespace_upstream_output(item):
@@ -1047,6 +1060,7 @@ def _validate_specialist_sources(output, packet):
         raise ValueError(
             "specialist output references unknown frozen-packet source IDs: "
             + ", ".join(unknown)
+            + "; copy exact IDs from the frozen evidence catalog or omit the unsupported claim"
         )
 
 

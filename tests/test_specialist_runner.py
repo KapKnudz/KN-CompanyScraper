@@ -171,7 +171,7 @@ def test_first_wave_prompt_selection_targets_one_closed_domain_per_agent():
         assert domain in prompt.output_schema["required"]
         assert prompt.output_schema["additionalProperties"] is False
         assert prompt.output_schema["properties"][domain]["type"] == "object"
-        assert prompt.contract_version == "specialist-shadow-prompt-v2-first-wave"
+        assert prompt.contract_version == "specialist-shadow-prompt-v3-first-wave-contract-repairs"
         assert domain in prompt.output_schema["properties"]["agent_name"]["enum"]
 
 

@@ -192,6 +192,30 @@ def test_specialist_normalizes_management_quarter_formatting():
     assert underscored.management_credibility.ledger[0].quarter == "2026-Q1"
 
 
+@pytest.mark.parametrize("fiscal_year", ["2024_fy", "2025-FY"])
+def test_specialist_normalizes_fiscal_year_management_period_to_q4(fiscal_year):
+    payload = _management_payload(quarters=8, confidence_cap="high")
+    row = _management_ledger_row(result="kept", observed_outcome="Improved.")
+    row["quarter"] = fiscal_year
+    payload["management_credibility"]["ledger"] = [row]
+    payload["management_credibility"]["coverage"].update(
+        eligible_claim_count=1, assessed_claim_count=1
+    )
+
+    raw = json.dumps(payload)
+    parsed = parse_specialist_output(raw)
+    normalizations = specialist_output_normalizations(raw)
+
+    assert parsed.management_credibility.ledger[0].quarter == (
+        f"{fiscal_year[:4]}-Q4"
+    )
+    assert any(
+        change["reason"] == "management_quarter_format"
+        and change["to"] == f"{fiscal_year[:4]}-Q4"
+        for change in normalizations
+    )
+
+
 @pytest.mark.parametrize("period_end", ["2026-02-31", "2026-02-99"])
 def test_specialist_rejects_invalid_management_period_end_dates(period_end):
     payload = _management_payload()
@@ -526,7 +550,7 @@ def test_management_ledger_requires_outcome_for_assessed_rows():
         parse_specialist_output(json.dumps(payload))
 
 
-def test_management_ledger_rejects_outcome_for_non_assessable_rows():
+def test_management_ledger_normalizes_fields_for_non_assessable_rows():
     payload = _management_payload()
     payload["management_credibility"]["ledger"] = [
         _management_ledger_row(
@@ -538,14 +562,15 @@ def test_management_ledger_rejects_outcome_for_non_assessable_rows():
         pending_claim_count=1,
     )
 
-    with pytest.raises(
-        StockAnalysisValidationError,
-        match="cannot retain observed_outcome",
-    ):
-        parse_specialist_output(json.dumps(payload))
+    parsed = parse_specialist_output(json.dumps(payload))
+    row = parsed.management_credibility.ledger[0]
+
+    assert row.observed_outcome is None
+    assert row.outcome_source_ids == []
+    assert row.source_ids == row.claim_source_ids
 
 
-def test_management_ledger_rejects_outcome_sources_for_non_assessable_rows():
+def test_management_ledger_drops_outcome_sources_for_non_assessable_rows():
     payload = _management_payload()
     payload["management_credibility"]["ledger"] = [
         _management_ledger_row(result="too_vague_to_test", observed_outcome=None)
@@ -555,11 +580,9 @@ def test_management_ledger_rejects_outcome_sources_for_non_assessable_rows():
         pending_claim_count=1,
     )
 
-    with pytest.raises(
-        StockAnalysisValidationError,
-        match="cannot retain outcome_source_ids",
-    ):
-        parse_specialist_output(json.dumps(payload))
+    parsed = parse_specialist_output(json.dumps(payload))
+
+    assert parsed.management_credibility.ledger[0].outcome_source_ids == []
 
 
 def test_management_coverage_rejects_blank_omission_reasons():

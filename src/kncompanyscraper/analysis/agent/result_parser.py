@@ -523,8 +523,55 @@ def _normalize_specialist_formatting(raw_response: str) -> tuple[str, list[dict]
                 visit(child, f"{path}[{index}]")
 
     visit(payload)
+    _normalize_management_pending_fields(payload, changes)
     _normalize_management_coverage_counts(payload, changes)
     return json.dumps(payload, ensure_ascii=False), changes
+
+
+def _normalize_management_pending_fields(
+    payload: dict, changes: list[dict]
+) -> None:
+    management = payload.get("management_credibility")
+    if not isinstance(management, dict):
+        return
+    ledger = management.get("ledger")
+    if not isinstance(ledger, list):
+        return
+    pending_results = {"unverifiable", "too_vague_to_test"}
+    for index, row in enumerate(ledger):
+        if (
+            not isinstance(row, dict)
+            or not isinstance(row.get("result"), str)
+            or row.get("result") not in pending_results
+        ):
+            continue
+        path = f"$.management_credibility.ledger[{index}]"
+        if row.get("observed_outcome") is not None:
+            changes.append({
+                "path": f"{path}.observed_outcome",
+                "from": row["observed_outcome"],
+                "to": None,
+                "reason": "management_pending_ledger_fields",
+            })
+            row["observed_outcome"] = None
+        if row.get("outcome_source_ids"):
+            changes.append({
+                "path": f"{path}.outcome_source_ids",
+                "from": list(row["outcome_source_ids"]),
+                "to": [],
+                "reason": "management_pending_ledger_fields",
+            })
+            row["outcome_source_ids"] = []
+        if isinstance(row.get("claim_source_ids"), list):
+            expected_source_ids = list(dict.fromkeys(row["claim_source_ids"]))
+            if row.get("source_ids") != expected_source_ids:
+                changes.append({
+                    "path": f"{path}.source_ids",
+                    "from": row.get("source_ids"),
+                    "to": expected_source_ids,
+                    "reason": "management_pending_ledger_fields",
+                })
+                row["source_ids"] = expected_source_ids
 
 
 def _normalize_management_coverage_counts(payload: dict, changes: list[dict]) -> None:
@@ -577,6 +624,9 @@ def _normalize_specialist_quarter(value: str) -> str | None:
     quarter = re.fullmatch(r"(\d{4})[-_][qQ]([1-4])", value)
     if quarter:
         return f"{quarter.group(1)}-Q{quarter.group(2)}"
+    fiscal_year = re.fullmatch(r"(\d{4})[-_][fF][yY]", value)
+    if fiscal_year:
+        return f"{fiscal_year.group(1)}-Q4"
     period_end = re.fullmatch(r"(\d{4})-(\d{2})-\d{2}", value)
     if period_end:
         try:

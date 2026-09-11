@@ -23,15 +23,17 @@ Each specialist response must copy the requested `run_id` and frozen-packet
 `packet_hash` exactly. The specialist boundary validates source IDs in all
 `*_source_ids` fields against that packet and rejects unknown references,
 including when reusing stored artifacts. Formatting repairs such as lowercase
-claim IDs, canonical coverage tiers, and valid management period-end dates are
-applied deterministically. Management coverage counts are also repaired
+claim IDs, canonical coverage tiers, canonical `YYYY-Qn` management quarters
+(including fiscal-year-end labels mapped to `YYYY-Q4`), and valid management
+period-end dates are applied deterministically. Management coverage counts are also repaired
 deterministically from the ledger result categories; accepted raw artifacts
 record these repairs in `metadata.normalizations`. Genuine identity mismatches,
 ambiguous claim-ID repairs, invalid dates, and unknown source IDs remain
 rejected. The Petter hand-off preserves qualified upstream claim IDs as
 `agent_name:claim_id` and keeps source-ID fields as exact packet source IDs;
-source-less limited-evidence or future-break entries carry no fabricated
-upstream linkage.
+its ownership-binding hand-off also exposes the exact packet value and ordered
+source set for each available measure. Source-less limited-evidence or
+future-break entries carry no fabricated upstream linkage.
 
 `forward-scenario-results.json` is a JSON object keyed by company ID. Each value
 is a validated `forward_scenario_analysis` object from the current deterministic
