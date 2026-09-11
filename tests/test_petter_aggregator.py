@@ -35,6 +35,9 @@ from kncompanyscraper.analysis.agent.petter_aggregator import (
     _validate_with_boundary,
 )
 from kncompanyscraper.analysis.agent.output_schema import StockAnalysisResult
+from kncompanyscraper.analysis.agent.specialist_conflicts import (
+    evaluate_specialist_conflicts,
+)
 
 
 SOURCE = "financial:fixture"
@@ -67,6 +70,15 @@ def packet():
                 {"source_id": SELL_SOURCE},
                 {"source_id": OWNERSHIP_SOURCE},
             ],
+            "ownership_liquidity": {
+                "source_ids": [OWNERSHIP_SOURCE],
+                "flow_signals": {
+                    "buybacks": {"latest_event_date": "2026-08-16"}
+                },
+                "source_ids_by_measure": {
+                    "latest_event_date": [OWNERSHIP_SOURCE]
+                },
+            },
         },
     )
 
@@ -164,8 +176,8 @@ def bundle(*, management_cap="high", business_circle="inside", sell_break=False)
     return tuple(SimpleNamespace(output=item, agent_name=item.agent_name.value, status="accepted", artifact_ids=(1,)) for item in items)
 
 
-def inputs(items):
-    p = packet()
+def inputs(items, p=None, conflict_records=()):
+    p = p or packet()
     packet_hash = sha256(serialize_packet(p).encode()).hexdigest()
     for item in items:
         item.output.packet_hash = packet_hash
@@ -180,15 +192,141 @@ def inputs(items):
         reverse_dcf_results={
             "status": "available", "required_return": {"required_return": 0.10}
         },
+        conflict_records=tuple(conflict_records),
     )
 
 
 def test_prompt_contains_typed_inputs_and_precedence_without_prose_reports():
     prompt = PetterAggregatorPromptBuilder().build(inputs(bundle()))
-    assert "business.engine" in prompt.user
+    assert "business_model:business.engine" in prompt.user
     assert "evidence_readiness" in prompt.user
     assert "company.engine" not in prompt.user
     assert prompt.schema_name == "petter_aggregator_v3"
+
+
+def test_conflict_claim_ids_are_qualified_in_handoff_and_manifest():
+    items = list(bundle())
+    items[2].output.claims = [claim("margin_claim", "margin")]
+    items[2].output.margin.margin_state = "stalled"
+    items[2].output.margin.margin_dependency = "primary"
+    sell_test = items[-1].output.sell_conditions.tests[0]
+    sell_test.break_type = "margin_or_execution"
+    sell_test.current_break_status = "triggered"
+    sell_test.source_ids = [SOURCE]
+    sell_test.claim_ids = ["margin:margin_claim"]
+    conflict = evaluate_specialist_conflicts(
+        [item.output for item in items], final_direction="watch"
+    )
+    aggregation_inputs = inputs(tuple(items), conflict_records=conflict)
+
+    handoff = aggregation_inputs.to_dict()
+    assert handoff["conflict_records"][0]["trigger_claim_ids"] == [
+        "margin:margin_claim",
+    ]
+
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {}
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+    assert manifest.must_surface_conflicts[0]["trigger_claim_ids"] == [
+        "margin:margin_claim",
+    ]
+
+
+def test_conflict_local_id_collisions_are_rejected():
+    items = list(bundle())
+    items[0].output.business_model.claims = [claim("engine", "business_model")]
+    items[2].output.claims = [claim("engine", "margin")]
+    items[2].output.margin.margin_state = "stalled"
+    items[2].output.margin.margin_dependency = "primary"
+    sell_test = items[-1].output.sell_conditions.tests[0]
+    sell_test.break_type = "margin_or_execution"
+    sell_test.current_break_status = "triggered"
+    sell_test.source_ids = [SOURCE]
+    sell_test.claim_ids = ["margin:engine"]
+    conflicts = evaluate_specialist_conflicts(
+        [item.output for item in items], final_direction="watch"
+    )
+    aggregation_inputs = inputs(tuple(items), conflict_records=conflicts)
+
+    with pytest.raises(AggregatorValidationError, match="ambiguous"):
+        aggregation_inputs.to_dict()
+
+
+@pytest.mark.parametrize(
+    ("upstream_domain", "final_domain", "upstream_claim_id"),
+    [
+        ("growth_state", "revenue", "growth_valuation_2"),
+        ("growth_valuation", "valuation", "growth_valuation_7"),
+    ],
+)
+def test_final_claim_traces_exact_growth_claim_and_all_sources(
+    upstream_domain, final_domain, upstream_claim_id
+):
+    items = list(bundle())
+    growth_claim = items[4].output.growth_valuation.claims[0]
+    growth_claim.claim_id = upstream_claim_id
+    growth_claim.domain = upstream_domain
+    growth_claim.source_ids = [SOURCE, SCENARIO_SOURCE]
+    aggregation_inputs = inputs(tuple(items))
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": (
+                "revenue_or_demand_break_1"
+                if final_domain == "revenue"
+                else "valuation_expectations_unsupported"
+            ),
+            "domain": final_domain,
+            "predicate": "assessment",
+            "value": "unsupported",
+            "source_ids": [SOURCE, SCENARIO_SOURCE],
+        }
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].upstream_claim_ids == (
+        f"growth_valuation:{upstream_claim_id}",
+    )
+    assert manifest.evidence_trace[0].source_ids == (SOURCE, SCENARIO_SOURCE)
+
+
+def test_handoff_qualifies_upstream_claim_ids_and_keeps_source_ids_separate():
+    items = list(bundle())
+    growth_claim = items[4].output.growth_valuation.claims[0]
+    growth_claim.claim_id = "growth_valuation_2"
+    growth_claim.source_ids = [SOURCE, SCENARIO_SOURCE]
+
+    prompt = PetterAggregatorPromptBuilder().build(inputs(tuple(items)))
+
+    assert "growth_valuation:growth_valuation_2" in prompt.user
+    assert SOURCE in prompt.user
+    assert SCENARIO_SOURCE in prompt.user
+    assert "are source-ID fields: never put a claim ID in them" in prompt.system
+
+
+def test_source_less_future_break_test_is_audited_without_fabricated_linkage():
+    aggregation_inputs = inputs(bundle())
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "thesis_break_tests": [{
+            "break_type": "revenue_or_demand",
+            "condition_code": "demand_loss",
+            "observable_metric_code": "revenue",
+            "threshold_code": "declines",
+            "response": "reassess",
+            "source_ids": [],
+            "limitation_codes": [],
+        }]
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].source_ids == ()
+    assert manifest.evidence_trace[0].upstream_claim_ids == ()
 
 
 def test_activation_is_blocked_by_missing_inputs_and_deterministic_hurdle():
@@ -318,6 +456,69 @@ def test_final_claim_requires_upstream_specialist_linkage():
 
     with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
         validate_aggregator_output(candidate, inputs(bundle()))
+
+
+def test_source_less_limited_code_cannot_support_value_claim():
+    candidate = make_candidate()
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "limited_support",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": [],
+            "limitation_codes": ["missing_history"],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="requires source_ids"):
+        validate_aggregator_output(candidate, inputs(bundle()))
+
+
+def test_source_less_null_value_is_a_typed_absence():
+    aggregation_inputs = inputs(bundle())
+    candidate = make_candidate()
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "unavailable_value",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": None,
+            "source_ids": [],
+            "limitation_codes": [],
+        }
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].source_ids == ()
+    assert manifest.evidence_trace[0].upstream_claim_ids == ()
+
+
+def test_financial_annual_source_ids_must_match_the_packet_exactly():
+    p = packet()
+    p.research_evidence["documents"].append(
+        {"source_id": "financial:annual:2025-12-30"}
+    )
+    items = list(bundle())
+    items[0].output.business_model.claims[0].source_ids = [
+        "financial:annual:2025-12-30"
+    ]
+    aggregation_inputs = inputs(tuple(items), p)
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "annual_period_claim",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": ["financial:annual:2025-12-31"],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="unknown source ID"):
+        validate_aggregator_output(candidate, aggregation_inputs)
 
 
 def test_expectation_and_baseline_references_are_traced():
@@ -450,6 +651,46 @@ def test_unassessable_sell_test_cannot_support_final_claim():
         validate_aggregator_output(candidate, inputs(tuple(items)))
 
 
+def test_limited_claim_trace_deduplicates_upstream_claim_ids():
+    aggregation_inputs = inputs(bundle())
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "limited_support",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": "unassessable",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].upstream_claim_ids == (
+        "business_model:business.engine",
+    )
+
+
+def test_limited_exact_claim_id_still_requires_matching_domain():
+    items = list(bundle())
+    items[2].output.claims = [claim("margin_claim", "margin")]
+    aggregation_inputs = inputs(tuple(items))
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "margin:margin_claim",
+            "domain": "balance_sheet",
+            "predicate": "assessment",
+            "value": "unassessable",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, aggregation_inputs)
+
+
 def test_top_level_ownership_claim_is_traced():
     items = list(bundle())
     items[3].output.insider_ownership.event_claims = [
@@ -474,6 +715,99 @@ def test_top_level_ownership_claim_is_traced():
     manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
 
     assert manifest.evidence_trace[0].upstream_claim_ids == ("insider_ownership:insider.event",)
+
+
+def test_insider_ownership_evidence_cannot_support_balance_sheet_claim():
+    items = list(bundle())
+    items[3].output.insider_ownership.event_claims = [
+        claim("insider.event", "insider")
+    ]
+    items[3].output.insider_ownership.event_claims[0].source_ids = [OWNERSHIP_SOURCE]
+    candidate = make_candidate()
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "balance_sheet_claim",
+            "domain": "balance_sheet",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": [OWNERSHIP_SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, inputs(tuple(items)))
+
+
+def test_ownership_binding_cannot_bypass_packet_value_or_specialist_linkage():
+    candidate = make_candidate()
+    candidate.structured_conclusions = {}
+    candidate.ownership_claims = [
+        OwnershipClaim(
+            claim_kind="buyback",
+            subject_role="company",
+            measure="latest_event_date",
+            binding=OwnershipBinding(
+                source_ids=[OWNERSHIP_SOURCE],
+                deterministic_field=(
+                    "research_evidence.ownership_liquidity.flow_signals.buybacks."
+                    "latest_event_date"
+                ),
+                asserted_value="2026-08-15",
+                asserted_unit="date",
+            ),
+        )
+    ]
+
+    with pytest.raises(AggregatorValidationError, match="supplied packet value"):
+        validate_aggregator_output(candidate, inputs(bundle()))
+
+
+def test_ownership_binding_must_use_exact_packet_source_set():
+    candidate = make_candidate()
+    candidate.structured_conclusions = {}
+    candidate.ownership_claims = [
+        OwnershipClaim(
+            claim_kind="buyback",
+            subject_role="company",
+            measure="latest_event_date",
+            binding=OwnershipBinding(
+                source_ids=[SOURCE],
+                deterministic_field=(
+                    "research_evidence.ownership_liquidity.flow_signals.buybacks."
+                    "latest_event_date"
+                ),
+                asserted_value="2026-08-16",
+                asserted_unit="date",
+            ),
+        )
+    ]
+
+    with pytest.raises(AggregatorValidationError, match="exact packet source set"):
+        validate_aggregator_output(candidate, inputs(bundle()))
+
+
+def test_valid_ownership_binding_still_requires_specialist_linkage():
+    candidate = make_candidate()
+    candidate.structured_conclusions = {}
+    candidate.ownership_claims = [
+        OwnershipClaim(
+            claim_kind="buyback",
+            subject_role="company",
+            measure="latest_event_date",
+            binding=OwnershipBinding(
+                source_ids=[OWNERSHIP_SOURCE],
+                deterministic_field=(
+                    "research_evidence.ownership_liquidity.flow_signals.buybacks."
+                    "latest_event_date"
+                ),
+                asserted_value="2026-08-16",
+                asserted_unit="date",
+            ),
+        )
+    ]
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, inputs(bundle()))
 
 
 def test_source_empty_unassessable_claim_remains_limited():

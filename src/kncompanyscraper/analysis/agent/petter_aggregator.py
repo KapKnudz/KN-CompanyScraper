@@ -29,6 +29,14 @@ from kncompanyscraper.analysis.agent.specialist_conflicts import (
     SpecialistConflict,
     evaluate_specialist_conflicts,
 )
+from kncompanyscraper.analysis.agent.specialist_runner import (
+    _namespace_upstream_output,
+)
+from kncompanyscraper.analysis.agent.conclusion_contract import (
+    ownership_field,
+    ownership_source_ids_for_measure,
+    packet_value,
+)
 from kncompanyscraper.analysis.agent.prompt_builder import AgentPrompt, AgentPromptBuilder
 from kncompanyscraper.analysis.agent.packet_measurement import measure_packet
 from kncompanyscraper.analysis.agent.output_schema import (
@@ -263,8 +271,11 @@ class PetterAggregatorPromptBuilder:
         system = (
             "You are the non-authoritative Petter Hedborg shadow aggregator. "
             "Use only typed specialist claims, IDs, source references, limitations, "
-            "and deterministic valuation values in the hand-off. Apply precedence in "
-            "the supplied order: evidence/readiness; understandability/circle of "
+            "and deterministic valuation values in the hand-off. The hand-off uses "
+            "qualified upstream claim IDs (`agent_name:claim_id`) and exact source "
+            "IDs. `source_ids`, `baseline_refs`, and `expectation_refs` are source-ID "
+            "fields: never put a claim ID in them. Apply precedence in the supplied "
+            "order: evidence/readiness; understandability/circle of "
             "competence; fundamental business, growth and margin case; deterministic "
             "valuation/reverse DCF; management as a confidence adjustment; flows only "
             "for timing/research priority; and causal sell discipline. Do not calculate "
@@ -675,8 +686,10 @@ def _aggregator_payload(inputs: AggregatorInput) -> dict:
         "deterministic_scenario_results": _json_value(inputs.deterministic_scenario_results),
         "reverse_dcf_results": _json_value(inputs.reverse_dcf_results),
         "conflict_records": [
-            item.to_dict() if hasattr(item, "to_dict") else _json_value(item)
-            for item in inputs.conflict_records
+            conflict
+            for conflict in _namespace_conflict_records(
+                inputs.conflict_records, inputs
+            )
         ],
         "precedence": list(PRECEDENCE_APPLIED),
         "sell_condition_types": list(THESIS_BREAK_TYPES),
@@ -685,11 +698,19 @@ def _aggregator_payload(inputs: AggregatorInput) -> dict:
 
 def _typed_output_payload(item: Any) -> Any:
     output = _output(item)
+    output_payload = output.to_dict() if output else None
+    if output_payload is not None:
+        output_payload = _namespace_upstream_output(
+            {
+                "agent_name": _enum(_field(output, "agent_name")),
+                "output": output_payload,
+            }
+        )["output"]
     payload = {
         "agent_name": _field(output, "agent_name") if output else _field(item, "agent_name"),
         "status": _output_status(item),
         "artifact_ids": list(_field(item, "artifact_ids") or ()),
-        "output": output.to_dict() if output else None,
+        "output": output_payload,
     }
     return _json_value(payload)
 
@@ -707,7 +728,10 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
     references = _specialist_claim_references(
         inputs, full_results, research, catalog
     )
+    limited_references = None
     for claim, claim_id in _candidate_evidence_entries(candidate):
+        if claim.get("__ownership_claim__"):
+            _validate_ownership_binding(claim, research, claim_id)
         source_ids = claim.get("source_ids", [])
         if not source_ids:
             if _is_limited_evidence_entry(claim):
@@ -729,6 +753,21 @@ def _validate_aggregator_sources(candidate: StockAnalysisResult, inputs: Aggrega
                 )
             continue
         matching = _matching_references(claim, normalized, references)
+        if _is_limited_evidence_entry(claim):
+            if limited_references is None:
+                limited_references = _specialist_claim_references(
+                    inputs, full_results, research, catalog,
+                    include_unassessable=True,
+                )
+            matching = matching + _matching_references(
+                claim, normalized, limited_references
+            )
+            matching = matching + tuple(
+                reference for reference in limited_references
+                if reference[0] == claim_id
+                and _reference_matches_domain(claim, reference[3])
+            )
+            matching = _deduplicate_references(matching)
         matched_sources = {
             source_id
             for _, sources, _, _ in matching
@@ -842,9 +881,12 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
     references = _specialist_claim_references(
         inputs, full_results, research, catalog
     )
+    limited_references = None
     traces = []
     for claim, claim_id in _candidate_evidence_entries(candidate):
         limitations = tuple(dict.fromkeys(claim.get("limitation_codes", [])))
+        if claim.get("__ownership_claim__"):
+            _validate_ownership_binding(claim, research, claim_id)
         if not claim.get("source_ids") and _is_limited_evidence_entry(claim):
             traces.append(EvidenceTrace(claim_id, (), (), limitations))
             continue
@@ -880,6 +922,21 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
             claim_id,
         )
         matching_references = _matching_references(claim, source_ids, references)
+        if _is_limited_evidence_entry(claim):
+            if limited_references is None:
+                limited_references = _specialist_claim_references(
+                    inputs, full_results, research, catalog,
+                    include_unassessable=True,
+                )
+            matching_references = matching_references + _matching_references(
+                claim, source_ids, limited_references
+            )
+            matching_references = matching_references + tuple(
+                reference for reference in limited_references
+                if reference[0] == claim_id
+                and _reference_matches_domain(claim, reference[3])
+            )
+            matching_references = _deduplicate_references(matching_references)
         matching = tuple(reference[0] for reference in matching_references)
         if not matching:
             raise AggregatorValidationError(
@@ -912,7 +969,9 @@ def _evidence_traces(candidate, inputs) -> tuple[EvidenceTrace, ...]:
     return tuple(traces)
 
 
-def _specialist_claim_references(inputs, full_results, research, catalog):
+def _specialist_claim_references(
+    inputs, full_results, research, catalog, *, include_unassessable=False
+):
     references = []
     for item in inputs.specialist_outputs:
         output = _output(item)
@@ -925,7 +984,10 @@ def _specialist_claim_references(inputs, full_results, research, catalog):
         )
         for claim, upstream_id, domains in _specialist_evidence_records(output):
             source_ids = _field(claim, "source_ids") or ()
-            if not source_ids or not _specialist_claim_is_assessable(claim):
+            if not source_ids or (
+                not include_unassessable
+                and not _specialist_claim_is_assessable(claim)
+            ):
                 continue
             normalized = _normalized_source_ids(
                 source_ids,
@@ -1035,9 +1097,50 @@ def _specialist_evidence_records(output):
     return tuple(records)
 
 
+_UPSTREAM_DOMAIN_ALIASES = {
+    "offering": {"business_model"},
+    "customer_need": {"business_model"},
+    "revenue_mechanics": {"business_model", "revenue"},
+    "recurring_revenue": {"business_model", "revenue"},
+    "distribution": {"business_model"},
+    "cost_structure": {"business_model", "margin"},
+    "reinvestment": {"business_model", "balance_sheet"},
+    "reinvestment_requirements": {"business_model", "balance_sheet"},
+    "operating_leverage": {"business_model", "valuation"},
+    "profitability": {"business_model", "valuation"},
+    "business_understandability": {"business_model"},
+    "management_credibility": {"management"},
+    "management_ledger_result": {"management"},
+    "evidence": {
+        "business_model", "revenue", "margin", "balance_sheet", "management",
+        "insider", "valuation", "risk", "timing",
+    },
+    "growth": {"revenue"},
+    "growth_mechanism": {"revenue"},
+    "growth_state": {"revenue"},
+    "revenue_quality": {"revenue"},
+    "growth_evidence": {"revenue"},
+    "growth_valuation": {"revenue", "valuation"},
+    "reverse_dcf": {"valuation"},
+    "valuation_dependency": {"valuation"},
+    "engine_dependency": {"valuation"},
+    "margin_sustainability": {"margin", "valuation"},
+    "cash_conversion": {"balance_sheet", "risk", "valuation"},
+    "insider": {"timing"},
+    "insider_ownership": {"insider", "timing"},
+    "ownership": {"insider", "timing"},
+    "liquidity": {"insider", "timing"},
+}
+
+
 def _reference_matches_domain(claim, domains):
     final_domain = _enum(claim.get("domain"))
-    return not final_domain or final_domain in domains
+    if not final_domain or final_domain == "evidence":
+        return True
+    return final_domain in domains or any(
+        final_domain in _UPSTREAM_DOMAIN_ALIASES.get(domain, ())
+        for domain in domains
+    )
 
 
 def _matching_references(claim, source_ids, references):
@@ -1049,19 +1152,89 @@ def _matching_references(claim, source_ids, references):
     )
 
 
+def _deduplicate_references(references):
+    merged = {}
+    for upstream_id, sources, limitations, domains in references:
+        if upstream_id not in merged:
+            merged[upstream_id] = [
+                upstream_id, set(sources), tuple(limitations), set(domains)
+            ]
+            continue
+        current = merged[upstream_id]
+        current[1].update(sources)
+        current[2] = tuple(dict.fromkeys((*current[2], *limitations)))
+        current[3].update(domains)
+    return tuple(
+        (upstream_id, sources, limitations, domains)
+        for upstream_id, sources, limitations, domains in merged.values()
+    )
+
+
 def _is_limited_evidence_entry(claim):
     value = _enum(claim.get("value"))
-    return value in ("unassessable", "unavailable") or claim.get("predicate") == "source_gap"
+    if "value" in claim and value is None:
+        return True
+    if value in ("unassessable", "unavailable") or claim.get("predicate") == "source_gap":
+        return True
+    if claim.get("trigger_code") and not claim.get("source_ids"):
+        return True
+    if claim.get("trigger_type") and not claim.get("source_ids"):
+        return True
+    return bool(
+        claim.get("break_type")
+        and claim.get("condition_code")
+        and not claim.get("source_ids")
+    )
+
+
+def _validate_ownership_binding(claim, research, claim_id):
+    try:
+        field = ownership_field(claim["measure"])
+    except (KeyError, ValueError) as exc:
+        raise AggregatorValidationError(
+            f"aggregator ownership claim has invalid measure: {claim_id}"
+        ) from exc
+    if (
+        claim.get("claim_kind") != field.claim_kind
+        or claim.get("subject_role") != field.subject_role
+        or claim.get("deterministic_field") != field.deterministic_field
+        or claim.get("asserted_unit") != field.asserted_unit
+    ):
+        raise AggregatorValidationError(
+            "aggregator ownership claim does not match the canonical packet binding: "
+            + claim_id
+        )
+    ownership = research.get("ownership_liquidity") or {}
+    expected = packet_value(
+        {"research_evidence": {"ownership_liquidity": ownership}}, field
+    )
+    if expected is None:
+        raise AggregatorValidationError(
+            "aggregator ownership claim has no supplied deterministic value: "
+            + claim_id
+        )
+    asserted = claim.get("asserted_value")
+    if isinstance(expected, bool) != isinstance(asserted, bool) or asserted != expected:
+        raise AggregatorValidationError(
+            "aggregator ownership claim does not equal the supplied packet value: "
+            + claim_id
+        )
+    expected_sources = ownership_source_ids_for_measure(ownership, claim["measure"])
+    if tuple(claim.get("source_ids", ())) != expected_sources:
+        raise AggregatorValidationError(
+            "aggregator ownership claim does not use the exact packet source set: "
+            + claim_id
+        )
 
 
 def _normalized_source_ids(source_ids, full_results, research, catalog, claim_id):
     normalized = []
+    canonical = set(catalog.get("canonical_source_ids", ()))
     for source_id in source_ids:
         try:
             resolved = resolve_source_id(
                 source_id, full_results, research, catalog=catalog
             )
-            canonical = set(catalog.get("canonical_source_ids", ()))
             if (
                 resolved not in canonical
                 and not source_id.startswith(("full_results.", "deterministic:"))
@@ -1118,6 +1291,13 @@ def _candidate_evidence_entries(candidate):
                 "domain": "insider",
                 "limitation_codes": ownership.get("limitation_codes", []),
                 "source_ids": binding.get("source_ids", []),
+                "deterministic_field": binding.get("deterministic_field"),
+                "__ownership_claim__": "binding" in ownership,
+                "claim_kind": ownership.get("claim_kind"),
+                "subject_role": ownership.get("subject_role"),
+                "measure": ownership.get("measure"),
+                "asserted_value": binding.get("asserted_value"),
+                "asserted_unit": binding.get("asserted_unit"),
             },
             f"ownership_claims.{index}",
         ))
@@ -1144,7 +1324,8 @@ def _is_deterministic_source(source_id, resolved):
 def _effective_conflicts(inputs: AggregatorInput, candidate: StockAnalysisResult):
     outputs = [output for item in inputs.specialist_outputs if (output := _output(item))]
     computed = evaluate_specialist_conflicts(outputs, final_direction=candidate.verdict)
-    existing = list(inputs.conflict_records)
+    existing = list(_namespace_conflict_records(inputs.conflict_records, inputs))
+    computed = list(_namespace_conflict_records(computed, inputs))
     keys = {
         (_field(item, "rule_id"), tuple(_field(item, "trigger_claim_ids") or ()))
         for item in existing
@@ -1153,6 +1334,80 @@ def _effective_conflicts(inputs: AggregatorInput, candidate: StockAnalysisResult
         item for item in computed
         if (_field(item, "rule_id"), tuple(_field(item, "trigger_claim_ids") or ())) not in keys
     ])
+
+
+def _namespace_conflict_records(conflicts, inputs):
+    claim_ids = _upstream_claim_id_index(inputs)
+    records = []
+    for conflict in conflicts:
+        data = {
+            **(
+                conflict.to_dict()
+                if hasattr(conflict, "to_dict")
+                else _json_value(conflict)
+            )
+        }
+        trigger_claim_ids = [
+            _resolve_conflict_claim_id(claim_id, claim_ids)
+            for claim_id in (_field(conflict, "trigger_claim_ids") or ())
+        ]
+        data["trigger_claim_ids"] = list(dict.fromkeys(trigger_claim_ids))
+        records.append(data)
+    return tuple(records)
+
+
+def _upstream_claim_id_index(inputs):
+    result = {}
+    for item in inputs.specialist_outputs:
+        output = _output(item)
+        if output is None:
+            continue
+        agent = _enum(_field(output, "agent_name"))
+        if not agent:
+            continue
+        for claim, _, _ in _specialist_evidence_records(output):
+            claim_id = _field(claim, "claim_id")
+            if claim_id:
+                qualified = _qualify_conflict_claim_id(claim_id, agent)
+                result.setdefault(claim_id, set()).add(qualified)
+                result.setdefault(qualified, set()).add(qualified)
+        sell = _field(output, "sell_conditions")
+        for assessment in (_field(sell, "tests") or ()):
+            for claim_id in (_field(assessment, "claim_ids") or ()):
+                qualified = _qualify_conflict_claim_id(claim_id, agent)
+                result.setdefault(claim_id, set()).add(qualified)
+                result.setdefault(qualified, set()).add(qualified)
+        for blocker in (_field(sell, "activation_blockers") or ()):
+            for claim_id in (_field(blocker, "claim_ids") or ()):
+                qualified = _qualify_conflict_claim_id(claim_id, agent)
+                result.setdefault(claim_id, set()).add(qualified)
+                result.setdefault(qualified, set()).add(qualified)
+    return result
+
+
+def _qualify_conflict_claim_id(claim_id, agent):
+    if _is_qualified_claim_id(claim_id):
+        return claim_id
+    return f"{agent}:{claim_id}"
+
+
+def _resolve_conflict_claim_id(claim_id, known_ids):
+    candidates = known_ids.get(claim_id, ())
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    if len(candidates) > 1:
+        raise AggregatorValidationError(
+            "ambiguous unqualified conflict trigger claim ID: " + str(claim_id)
+        )
+    if _is_qualified_claim_id(claim_id):
+        return claim_id
+    raise AggregatorValidationError(
+        "unresolved unqualified conflict trigger claim ID: " + str(claim_id)
+    )
+
+
+def _is_qualified_claim_id(claim_id):
+    return str(claim_id).split(":", 1)[0] in ALL_SPECIALIST_NAMES
 
 
 def _outputs_by_name(items):

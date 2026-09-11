@@ -15,6 +15,7 @@ from kncompanyscraper.analysis.agent.output_schema import (
 from kncompanyscraper.analysis.agent.result_parser import (
     StockAnalysisValidationError,
     parse_specialist_output,
+    specialist_output_normalizations,
 )
 from kncompanyscraper.repositories.analysis_repository import AnalysisRepository
 
@@ -465,17 +466,30 @@ def test_specialist_parser_rejects_nested_closed_enum_values():
         parse_specialist_output(json.dumps(payload))
 
 
-def test_management_coverage_counts_must_match_ledger_rows():
+def test_management_coverage_counts_are_repaired_from_ledger_rows():
     payload = _management_payload()
     payload["management_credibility"]["ledger"] = [
         _management_ledger_row(result="kept", observed_outcome="Margins improved.")
     ]
 
-    with pytest.raises(
-        StockAnalysisValidationError,
-        match="assessed_claim_count must match ledger rows",
-    ):
-        parse_specialist_output(json.dumps(payload))
+    parsed = parse_specialist_output(json.dumps(payload))
+
+    coverage = parsed.management_credibility.coverage
+    assert coverage.eligible_claim_count == 1
+    assert coverage.assessed_claim_count == 1
+    assert coverage.pending_claim_count == 0
+
+
+def test_malformed_management_result_reaches_normal_validation():
+    payload = _management_payload()
+    payload["management_credibility"]["ledger"] = [
+        _management_ledger_row(result=[], observed_outcome=None)
+    ]
+    raw_response = json.dumps(payload)
+
+    assert specialist_output_normalizations(raw_response) == []
+    with pytest.raises(StockAnalysisValidationError):
+        parse_specialist_output(raw_response)
 
 
 def test_management_ledger_rejects_blank_claims():

@@ -523,7 +523,53 @@ def _normalize_specialist_formatting(raw_response: str) -> tuple[str, list[dict]
                 visit(child, f"{path}[{index}]")
 
     visit(payload)
+    _normalize_management_coverage_counts(payload, changes)
     return json.dumps(payload, ensure_ascii=False), changes
+
+
+def _normalize_management_coverage_counts(payload: dict, changes: list[dict]) -> None:
+    management = payload.get("management_credibility")
+    if not isinstance(management, dict):
+        return
+    coverage = management.get("coverage")
+    ledger = management.get("ledger")
+    if not isinstance(coverage, dict) or not isinstance(ledger, list):
+        return
+
+    assessed_results = {"kept", "delayed", "missed", "external_shock"}
+    pending_results = {"unverifiable", "too_vague_to_test"}
+    assessed = sum(
+        isinstance(row.get("result"), str)
+        and row.get("result") in assessed_results
+        for row in ledger
+        if isinstance(row, dict)
+    )
+    pending = sum(
+        isinstance(row.get("result"), str)
+        and row.get("result") in pending_results
+        for row in ledger
+        if isinstance(row, dict)
+    )
+    omitted = coverage.get("omitted_claim_count", 0)
+    if not isinstance(omitted, int) or isinstance(omitted, bool):
+        return
+    expected = {
+        "eligible_claim_count": assessed + pending + omitted,
+        "assessed_claim_count": assessed,
+        "pending_claim_count": pending,
+    }
+    for field_name, value in expected.items():
+        if coverage.get(field_name) == value:
+            continue
+        changes.append(
+            {
+                "path": f"$.management_credibility.coverage.{field_name}",
+                "from": coverage.get(field_name),
+                "to": value,
+                "reason": "management_ledger_count",
+            }
+        )
+        coverage[field_name] = value
 
 
 def _normalize_specialist_quarter(value: str) -> str | None:
