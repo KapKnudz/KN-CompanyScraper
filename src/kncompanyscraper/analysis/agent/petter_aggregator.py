@@ -1014,6 +1014,8 @@ def _specialist_claim_references(
         output = _output(item)
         if output is None:
             continue
+        if not include_unassessable and _output_status(item) != "complete":
+            continue
         agent = _enum(_field(output, "agent_name"))
         output_limitations = tuple(
             _field(missing, "item_code")
@@ -1171,10 +1173,14 @@ _UPSTREAM_DOMAIN_ALIASES = {
 
 
 def _claim_reference_domains(claim):
-    domains = {_enum(_field(claim, "domain"))}
+    domain = _enum(_field(claim, "domain"))
+    domains = {domain}
     predicate = _enum(_field(claim, "predicate"))
-    if predicate in _UPSTREAM_DOMAIN_ALIASES:
-        domains.add(predicate)
+    if domain == "business_model" and predicate in {
+        "reinvestment",
+        "reinvestment_requirements",
+    }:
+        domains.update(_UPSTREAM_DOMAIN_ALIASES[predicate])
     return {domain for domain in domains if domain}
 
 
@@ -1189,10 +1195,14 @@ def _reference_matches_domain(claim, domains):
 
 
 def _matching_references(claim, source_ids, references):
+    claim_id = claim.get("claim_id")
     return tuple(
         reference
         for reference in references
-        if set(source_ids).intersection(reference[1])
+        if (
+            (claim_id is None or claim.get("__ownership_claim__") or reference[0] == claim_id)
+            and set(source_ids).intersection(reference[1])
+        )
         and _reference_matches_domain(claim, reference[3])
     )
 
@@ -1216,6 +1226,9 @@ def _deduplicate_references(references):
 
 
 def _is_limited_evidence_entry(claim):
+    direction = _enum(claim.get("direction"))
+    if direction is not None and direction != "unassessable":
+        return False
     value = _enum(claim.get("value"))
     if "value" in claim and value is None:
         return True
@@ -1472,7 +1485,9 @@ def _output(item):
 
 def _output_status(item):
     output = _output(item)
-    status = _field(item, "status") if not isinstance(item, SpecialistOutput) else _field(output, "status")
+    status = _field(output, "status") if output is not None else None
+    if status is None:
+        status = _field(item, "status")
     status = _enum(status)
     if isinstance(item, SpecialistOutput):
         return status

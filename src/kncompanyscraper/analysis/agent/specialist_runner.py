@@ -559,9 +559,9 @@ class ShadowSpecialistRunner:
             if artifact_id is not None:
                 artifact_ids.append(artifact_id)
             try:
+                _validate_raw_specialist_sources(raw_response, packet)
                 parsed = parse_specialist_output(raw_response)
                 self._validate_identity(parsed, packet, run_id, packet_hash, agent_name)
-                _validate_specialist_sources(parsed, packet)
                 if agent_name is SpecialistAgentName.SELL_CONDITIONS:
                     _validate_sell_traceability(
                         parsed, upstream_outputs or (), packet
@@ -823,6 +823,8 @@ class ShadowSpecialistRunner:
             ):
                 continue
             try:
+                if packet is not None:
+                    _validate_raw_specialist_sources(artifact["content"], packet)
                 parsed = parse_specialist_output(artifact["content"])
                 reuse_packet = packet or {"company_id": company_id, "ticker": parsed.ticker}
                 self._validate_identity(
@@ -832,7 +834,8 @@ class ShadowSpecialistRunner:
                     packet_hash,
                     agent_name,
                 )
-                _validate_specialist_sources(parsed, reuse_packet)
+                if packet is None:
+                    _validate_specialist_sources(parsed, reuse_packet)
             except (KeyError, StockAnalysisValidationError, ValueError, TypeError):
                 continue
             candidate = SpecialistArtifactResult(
@@ -1033,6 +1036,15 @@ def _sell_inputs_available(upstream_results, scenario_data):
     )
 
 
+def _validate_raw_specialist_sources(raw_response, packet):
+    try:
+        payload = json.loads(raw_response)
+    except (json.JSONDecodeError, TypeError):
+        return
+    if isinstance(payload, dict):
+        _validate_specialist_sources(payload, packet)
+
+
 def _validate_specialist_sources(output, packet):
     source_ids = []
 
@@ -1048,11 +1060,12 @@ def _validate_specialist_sources(output, packet):
             for child in value:
                 visit(child)
 
-    visit(output.to_dict())
+    visit(output.to_dict() if hasattr(output, "to_dict") else output)
     unknown = sorted(
         {
             source_id
             for source_id in source_ids
+            if isinstance(source_id, str)
             if not _source_ids_are_permitted(packet, [source_id])
         }
     )

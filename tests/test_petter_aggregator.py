@@ -274,9 +274,7 @@ def test_final_claim_traces_exact_growth_claim_and_all_sources(
     candidate.structured_conclusions = {
         "claim": {
             "claim_id": (
-                "revenue_or_demand_break_1"
-                if final_domain == "revenue"
-                else "valuation_expectations_unsupported"
+                f"growth_valuation:{upstream_claim_id}"
             ),
             "domain": final_domain,
             "predicate": "assessment",
@@ -337,6 +335,23 @@ def test_triple_qualified_claim_with_incompatible_domain_is_rejected():
     }
 
     with pytest.raises(AggregatorValidationError, match="complete source linkage"):
+        validate_aggregator_output(candidate, aggregation_inputs)
+
+
+def test_final_claim_id_must_match_qualified_upstream_claim_id():
+    aggregation_inputs = inputs(bundle())
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "invented_claim",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
         validate_aggregator_output(candidate, aggregation_inputs)
 
 
@@ -583,7 +598,7 @@ def test_sourced_scenario_assumption_is_an_upstream_trace_record():
     candidate = make_candidate()
     candidate.structured_conclusions = {
         "evidence_claims": [{
-            "claim_id": "scenario.final", "domain": "revenue",
+            "claim_id": "growth_valuation:scenario_bundle:0:revenue_cagr", "domain": "revenue",
             "predicate": "assessment", "value": "supported",
             "source_ids": [SCENARIO_SOURCE],
         }]
@@ -637,7 +652,7 @@ def test_management_ledger_is_an_upstream_trace_record():
     candidate = make_candidate()
     candidate.structured_conclusions = {
         "management_claims": [{
-            "claim_id": "management.final", "domain": "management",
+            "claim_id": "management_credibility:management.row", "domain": "management",
             "predicate": "outcome", "value": "confirmed", "source_ids": [SOURCE],
         }]
     }
@@ -657,7 +672,7 @@ def test_specialist_missing_information_reaches_final_trace():
     candidate = make_candidate()
     candidate.structured_conclusions = {
         "claim": {
-            "claim_id": "limited_support", "domain": "business_model",
+            "claim_id": "business_model:business.engine", "domain": "business_model",
             "predicate": "assessment", "value": "supported", "source_ids": [SOURCE],
         }
     }
@@ -689,7 +704,7 @@ def test_limited_claim_trace_deduplicates_upstream_claim_ids():
     candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
     candidate.structured_conclusions = {
         "claim": {
-            "claim_id": "limited_support",
+            "claim_id": "business_model:business.engine",
             "domain": "business_model",
             "predicate": "assessment",
             "value": "unassessable",
@@ -734,7 +749,7 @@ def test_business_model_reinvestment_claim_keeps_compatible_domain_linkage():
     candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
     candidate.structured_conclusions = {
         "claim": {
-            "claim_id": "balance_sheet:reinvestment_1",
+            "claim_id": "business_model:reinvestment_1",
             "domain": "balance_sheet",
             "predicate": "reinvestment",
             "value": "supported",
@@ -748,6 +763,45 @@ def test_business_model_reinvestment_claim_keeps_compatible_domain_linkage():
     assert manifest.evidence_trace[0].upstream_claim_ids == (
         "business_model:reinvestment_1",
     )
+
+
+def test_reinvestment_predicate_on_unrelated_upstream_domain_is_rejected():
+    items = list(bundle())
+    items[2].output.claims = [claim("margin_reinvestment", "margin")]
+    items[2].output.claims[0].predicate = "reinvestment"
+    aggregation_inputs = inputs(tuple(items))
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "margin:margin_reinvestment",
+            "domain": "balance_sheet",
+            "predicate": "reinvestment",
+            "value": "supported",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, aggregation_inputs)
+
+
+def test_insufficient_evidence_output_cannot_support_positive_final_claim():
+    items = list(bundle())
+    items[0].output.status = SpecialistStatus.INSUFFICIENT_EVIDENCE
+    aggregation_inputs = inputs(tuple(items))
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "business_model:business.engine",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, aggregation_inputs)
 
 
 def test_ownership_binding_prompt_exposes_exact_packet_source_set():
