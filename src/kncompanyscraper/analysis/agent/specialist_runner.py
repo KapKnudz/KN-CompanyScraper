@@ -298,7 +298,8 @@ class SpecialistPromptBuilder:
                 "ledger rows, use only canonical YYYY-Qn quarter values (a fiscal-year "
                 "period such as 2024_fy is the year-end 2024-Q4); pending rows "
                 "must have null observed_outcome and no outcome_source_ids; derive all "
-                "coverage counts from the ledger result categories. Copy the requested run_id "
+                "coverage counts from the ledger result categories. Copy the requested "
+                "run_id "
                 "and packet_hash exactly."
             )
         return AgentPrompt(
@@ -1073,7 +1074,8 @@ def _validate_specialist_sources(output, packet):
         raise ValueError(
             "specialist output references unknown frozen-packet source IDs: "
             + ", ".join(unknown)
-            + "; copy exact IDs from the frozen evidence catalog or omit the unsupported claim"
+            + "; copy exact IDs from the frozen evidence catalog or omit the "
+            + "unsupported claim"
         )
 
 

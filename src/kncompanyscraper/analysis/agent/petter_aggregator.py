@@ -1065,7 +1065,11 @@ def _specialist_evidence_records(output):
     agent = _enum(_field(output, "agent_name"))
     domain = _field(output, agent) if agent else None
     records = [
-        (claim, _qualified_claim_id(agent, _field(claim, "claim_id")), _claim_reference_domains(claim))
+        (
+            claim,
+            _qualified_claim_id(agent, _field(claim, "claim_id")),
+            _claim_reference_domains(claim),
+        )
         for claim in [
             *(_field(output, "claims") or ()),
             *(_field(domain, "claims") or ()),
@@ -1200,7 +1204,11 @@ def _matching_references(claim, source_ids, references):
         reference
         for reference in references
         if (
-            (claim_id is None or claim.get("__ownership_claim__") or reference[0] == claim_id)
+            (
+                claim_id is None
+                or claim.get("__ownership_claim__")
+                or reference[0] == claim_id
+            )
             and set(source_ids).intersection(reference[1])
         )
         and _reference_matches_domain(claim, reference[3])
