@@ -1226,9 +1226,6 @@ def _deduplicate_references(references):
 
 
 def _is_limited_evidence_entry(claim):
-    direction = _enum(claim.get("direction"))
-    if direction is not None and direction != "unassessable":
-        return False
     value = _enum(claim.get("value"))
     if "value" in claim and value is None:
         return True
