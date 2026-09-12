@@ -6,6 +6,7 @@ venv/
 __pycache__/
 *.pyc
 logs/
+.pilot-scratch/
 agent-prompts*/
 analysis-results/
 .local_runs/

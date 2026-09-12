@@ -200,6 +200,7 @@ def test_prompt_contains_typed_inputs_and_precedence_without_prose_reports():
     prompt = PetterAggregatorPromptBuilder().build(inputs(bundle()))
     assert "business_model:business.engine" in prompt.user
     assert "evidence_readiness" in prompt.user
+    assert "insufficient_evidence" in prompt.system
     assert "company.engine" not in prompt.user
     assert prompt.schema_name == "petter_aggregator_v3"
 
@@ -273,9 +274,7 @@ def test_final_claim_traces_exact_growth_claim_and_all_sources(
     candidate.structured_conclusions = {
         "claim": {
             "claim_id": (
-                "revenue_or_demand_break_1"
-                if final_domain == "revenue"
-                else "valuation_expectations_unsupported"
+                f"growth_valuation:{upstream_claim_id}"
             ),
             "domain": final_domain,
             "predicate": "assessment",
@@ -305,6 +304,55 @@ def test_handoff_qualifies_upstream_claim_ids_and_keeps_source_ids_separate():
     assert SOURCE in prompt.user
     assert SCENARIO_SOURCE in prompt.user
     assert "are source-ID fields: never put a claim ID in them" in prompt.system
+
+
+def test_handoff_does_not_double_qualify_an_already_qualified_claim_id():
+    items = list(bundle())
+    growth_claim = items[4].output.growth_valuation.claims[0]
+    growth_claim.claim_id = "growth_valuation:growth_valuation_7"
+
+    prompt = PetterAggregatorPromptBuilder().build(inputs(tuple(items)))
+
+    assert "growth_valuation:growth_valuation_7" in prompt.user
+    assert "growth_valuation:growth_valuation:growth_valuation_7" not in prompt.user
+
+
+def test_triple_qualified_claim_with_incompatible_domain_is_rejected():
+    items = list(bundle())
+    growth_claim = items[4].output.growth_valuation.claims[0]
+    growth_claim.claim_id = "growth_valuation_7"
+    growth_claim.domain = "growth_valuation"
+    aggregation_inputs = inputs(tuple(items))
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "growth_valuation:growth_valuation:growth_valuation_7",
+            "domain": "risk",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="complete source linkage"):
+        validate_aggregator_output(candidate, aggregation_inputs)
+
+
+def test_final_claim_id_must_match_qualified_upstream_claim_id():
+    aggregation_inputs = inputs(bundle())
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "invented_claim",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, aggregation_inputs)
 
 
 def test_source_less_future_break_test_is_audited_without_fabricated_linkage():
@@ -550,7 +598,7 @@ def test_sourced_scenario_assumption_is_an_upstream_trace_record():
     candidate = make_candidate()
     candidate.structured_conclusions = {
         "evidence_claims": [{
-            "claim_id": "scenario.final", "domain": "revenue",
+            "claim_id": "growth_valuation:scenario_bundle:0:revenue_cagr", "domain": "revenue",
             "predicate": "assessment", "value": "supported",
             "source_ids": [SCENARIO_SOURCE],
         }]
@@ -604,7 +652,7 @@ def test_management_ledger_is_an_upstream_trace_record():
     candidate = make_candidate()
     candidate.structured_conclusions = {
         "management_claims": [{
-            "claim_id": "management.final", "domain": "management",
+            "claim_id": "management_credibility:management.row", "domain": "management",
             "predicate": "outcome", "value": "confirmed", "source_ids": [SOURCE],
         }]
     }
@@ -624,7 +672,7 @@ def test_specialist_missing_information_reaches_final_trace():
     candidate = make_candidate()
     candidate.structured_conclusions = {
         "claim": {
-            "claim_id": "limited_support", "domain": "business_model",
+            "claim_id": "business_model:business.engine", "domain": "business_model",
             "predicate": "assessment", "value": "supported", "source_ids": [SOURCE],
         }
     }
@@ -656,7 +704,7 @@ def test_limited_claim_trace_deduplicates_upstream_claim_ids():
     candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
     candidate.structured_conclusions = {
         "claim": {
-            "claim_id": "limited_support",
+            "claim_id": "business_model:business.engine",
             "domain": "business_model",
             "predicate": "assessment",
             "value": "unassessable",
@@ -689,6 +737,80 @@ def test_limited_exact_claim_id_still_requires_matching_domain():
 
     with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
         validate_aggregator_output(candidate, aggregation_inputs)
+
+
+def test_business_model_reinvestment_claim_keeps_compatible_domain_linkage():
+    items = list(bundle())
+    items[0].output.business_model.claims = [
+        claim("reinvestment_1", "business_model")
+    ]
+    items[0].output.business_model.claims[0].predicate = "reinvestment"
+    aggregation_inputs = inputs(tuple(items))
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "business_model:reinvestment_1",
+            "domain": "balance_sheet",
+            "predicate": "reinvestment",
+            "value": "supported",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    candidate, decision = validate_aggregator_output(candidate, aggregation_inputs)
+    manifest = build_aggregation_manifest(aggregation_inputs, candidate, decision)
+
+    assert manifest.evidence_trace[0].upstream_claim_ids == (
+        "business_model:reinvestment_1",
+    )
+
+
+def test_reinvestment_predicate_on_unrelated_upstream_domain_is_rejected():
+    items = list(bundle())
+    items[2].output.claims = [claim("margin_reinvestment", "margin")]
+    items[2].output.claims[0].predicate = "reinvestment"
+    aggregation_inputs = inputs(tuple(items))
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "margin:margin_reinvestment",
+            "domain": "balance_sheet",
+            "predicate": "reinvestment",
+            "value": "supported",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, aggregation_inputs)
+
+
+def test_insufficient_evidence_output_cannot_support_positive_final_claim():
+    items = list(bundle())
+    items[0].output.status = SpecialistStatus.INSUFFICIENT_EVIDENCE
+    aggregation_inputs = inputs(tuple(items))
+    candidate = make_candidate(packet_hash=aggregation_inputs.packet_hash)
+    candidate.structured_conclusions = {
+        "claim": {
+            "claim_id": "business_model:business.engine",
+            "domain": "business_model",
+            "predicate": "assessment",
+            "value": "supported",
+            "source_ids": [SOURCE],
+        }
+    }
+
+    with pytest.raises(AggregatorValidationError, match="upstream specialist claim"):
+        validate_aggregator_output(candidate, aggregation_inputs)
+
+
+def test_ownership_binding_prompt_exposes_exact_packet_source_set():
+    prompt = PetterAggregatorPromptBuilder().build(inputs(bundle()))
+
+    assert '"ownership_bindings"' in prompt.user
+    assert '"latest_event_date"' in prompt.user
+    assert f'"{OWNERSHIP_SOURCE}"' in prompt.user
+    assert "copy the complete source set exactly" in prompt.system
 
 
 def test_top_level_ownership_claim_is_traced():

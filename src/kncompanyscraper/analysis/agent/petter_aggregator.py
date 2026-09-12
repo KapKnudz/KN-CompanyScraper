@@ -31,8 +31,10 @@ from kncompanyscraper.analysis.agent.specialist_conflicts import (
 )
 from kncompanyscraper.analysis.agent.specialist_runner import (
     _namespace_upstream_output,
+    _qualified_claim_id,
 )
 from kncompanyscraper.analysis.agent.conclusion_contract import (
+    OWNERSHIP_FIELD_REGISTRY,
     ownership_field,
     ownership_source_ids_for_measure,
     packet_value,
@@ -254,9 +256,9 @@ class AggregatorValidationError(ValueError):
 class PetterAggregatorPromptBuilder:
     """Build an aggregator prompt from typed claims and deterministic values."""
 
-    CONTRACT_VERSION = "petter-aggregator-shadow-prompt-v1"
+    CONTRACT_VERSION = "petter-aggregator-shadow-prompt-v2-contract-repairs"
     POLICY_NAME = "petter-hedborg-aggregator-shadow"
-    POLICY_VERSION = "1.0.0"
+    POLICY_VERSION = "1.1.0-contract-repairs"
 
     def build(self, inputs: AggregatorInput) -> AgentPrompt:
         payload = _aggregator_payload(inputs)
@@ -274,14 +276,26 @@ class PetterAggregatorPromptBuilder:
             "and deterministic valuation values in the hand-off. The hand-off uses "
             "qualified upstream claim IDs (`agent_name:claim_id`) and exact source "
             "IDs. `source_ids`, `baseline_refs`, and `expectation_refs` are source-ID "
-            "fields: never put a claim ID in them. Apply precedence in the supplied "
-            "order: evidence/readiness; understandability/circle of "
-            "competence; fundamental business, growth and margin case; deterministic "
-            "valuation/reverse DCF; management as a confidence adjustment; flows only "
-            "for timing/research priority; and causal sell discipline. Do not calculate "
-            "prices, returns, fair value, or required-return hurdles. Do not invent or "
-            "smooth missing evidence. Keep this result shadow-only and do not provide "
-            "position sizing.\n\n"
+            "fields: never put a claim ID in them. Qualified upstream claim IDs in the "
+            "hand-off are already complete: copy `agent_name:claim_id` exactly and "
+            "never prepend an agent name a second time. A final claim domain must "
+            "match the cited upstream domain or an explicitly compatible predicate; "
+            "business-model `reinvestment`/`reinvestment_requirements` may support "
+            "a balance-sheet conclusion, but unrelated domains remain invalid. For "
+            "ownership bindings, use the exact `ownership_bindings[measure]` entry: "
+            "copy its deterministic field, value, unit, and complete source set in "
+            "the supplied order; copy the complete source set exactly, never select "
+            "a subset or add a source. Apply "
+            "precedence in the supplied order: evidence/readiness; "
+            "understandability/circle of competence; fundamental business, growth and "
+            "margin case; deterministic valuation/reverse DCF; management as a "
+            "confidence adjustment; flows only for timing/research priority; and "
+            "causal sell discipline. Do not calculate prices, returns, fair value, or "
+            "required-return hurdles. Do not invent or smooth missing evidence. A "
+            "specialist output with status `insufficient_evidence` cannot support a "
+            "positive or directional final claim; omit that linkage or mark the final "
+            "claim unassessable with its limitation. Keep this result shadow-only and "
+            "do not provide position sizing.\n\n"
             "Emit only the closed v3 structured-conclusions contract.\n\n"
             + instructions
         )
@@ -682,6 +696,7 @@ def _aggregator_payload(inputs: AggregatorInput) -> dict:
             _packet_value(inputs.packet, "full_results") or {},
             _packet_value(inputs.packet, "research_evidence") or {},
         ),
+        "ownership_bindings": _ownership_binding_payload(inputs.packet),
         "specialist_outputs": [_typed_output_payload(item) for item in inputs.specialist_outputs],
         "deterministic_scenario_results": _json_value(inputs.deterministic_scenario_results),
         "reverse_dcf_results": _json_value(inputs.reverse_dcf_results),
@@ -694,6 +709,28 @@ def _aggregator_payload(inputs: AggregatorInput) -> dict:
         "precedence": list(PRECEDENCE_APPLIED),
         "sell_condition_types": list(THESIS_BREAK_TYPES),
     }
+
+
+def _ownership_binding_payload(packet) -> dict:
+    research = _packet_value(packet, "research_evidence") or {}
+    ownership = research.get("ownership_liquidity") or {}
+    bindings = {}
+    for measure, field in OWNERSHIP_FIELD_REGISTRY.items():
+        asserted_value = packet_value(
+            {"research_evidence": {"ownership_liquidity": ownership}}, field
+        )
+        source_ids = ownership_source_ids_for_measure(ownership, measure)
+        if asserted_value is None or not source_ids:
+            continue
+        bindings[measure] = {
+            "claim_kind": field.claim_kind,
+            "subject_role": field.subject_role,
+            "deterministic_field": field.deterministic_field,
+            "asserted_value": asserted_value,
+            "asserted_unit": field.asserted_unit,
+            "source_ids": list(source_ids),
+        }
+    return bindings
 
 
 def _typed_output_payload(item: Any) -> Any:
@@ -977,6 +1014,8 @@ def _specialist_claim_references(
         output = _output(item)
         if output is None:
             continue
+        if not include_unassessable and _output_status(item) != "complete":
+            continue
         agent = _enum(_field(output, "agent_name"))
         output_limitations = tuple(
             _field(missing, "item_code")
@@ -1026,7 +1065,11 @@ def _specialist_evidence_records(output):
     agent = _enum(_field(output, "agent_name"))
     domain = _field(output, agent) if agent else None
     records = [
-        (claim, f"{agent}:{_field(claim, 'claim_id')}", {_field(claim, "domain")})
+        (
+            claim,
+            _qualified_claim_id(agent, _field(claim, "claim_id")),
+            _claim_reference_domains(claim),
+        )
         for claim in [
             *(_field(output, "claims") or ()),
             *(_field(domain, "claims") or ()),
@@ -1037,7 +1080,7 @@ def _specialist_evidence_records(output):
     records.extend(
         (
             row,
-            f"{agent}:{_field(row, 'claim_id')}",
+            _qualified_claim_id(agent, _field(row, "claim_id")),
             {"management"},
         )
         for row in (_field(management, "ledger") or ())
@@ -1133,6 +1176,18 @@ _UPSTREAM_DOMAIN_ALIASES = {
 }
 
 
+def _claim_reference_domains(claim):
+    domain = _enum(_field(claim, "domain"))
+    domains = {domain}
+    predicate = _enum(_field(claim, "predicate"))
+    if domain == "business_model" and predicate in {
+        "reinvestment",
+        "reinvestment_requirements",
+    }:
+        domains.update(_UPSTREAM_DOMAIN_ALIASES[predicate])
+    return {domain for domain in domains if domain}
+
+
 def _reference_matches_domain(claim, domains):
     final_domain = _enum(claim.get("domain"))
     if not final_domain or final_domain == "evidence":
@@ -1144,10 +1199,18 @@ def _reference_matches_domain(claim, domains):
 
 
 def _matching_references(claim, source_ids, references):
+    claim_id = claim.get("claim_id")
     return tuple(
         reference
         for reference in references
-        if set(source_ids).intersection(reference[1])
+        if (
+            (
+                claim_id is None
+                or claim.get("__ownership_claim__")
+                or reference[0] == claim_id
+            )
+            and set(source_ids).intersection(reference[1])
+        )
         and _reference_matches_domain(claim, reference[3])
     )
 
@@ -1427,7 +1490,9 @@ def _output(item):
 
 def _output_status(item):
     output = _output(item)
-    status = _field(item, "status") if not isinstance(item, SpecialistOutput) else _field(output, "status")
+    status = _field(output, "status") if output is not None else None
+    if status is None:
+        status = _field(item, "status")
     status = _enum(status)
     if isinstance(item, SpecialistOutput):
         return status

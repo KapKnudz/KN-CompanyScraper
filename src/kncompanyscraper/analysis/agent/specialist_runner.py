@@ -184,9 +184,9 @@ class ShadowSpecialistRun:
 class SpecialistPromptBuilder:
     """Build a narrow prompt while preserving the normal adapter seam."""
 
-    CONTRACT_VERSION = "specialist-shadow-prompt-v2-first-wave"
+    CONTRACT_VERSION = "specialist-shadow-prompt-v3-first-wave-contract-repairs"
     POLICY_NAME = "specialist-shadow-analysis"
-    POLICY_VERSION = "1.0.0"
+    POLICY_VERSION = "1.1.0-contract-repairs"
 
     def build(
         self,
@@ -291,9 +291,16 @@ class SpecialistPromptBuilder:
                 "every claim ID must be unique across the envelope, domain payload, and "
                 "management ledger; preserve those IDs exactly in references. A claim "
                 "with a direction other than unassessable must include source_ids; do "
-                "not duplicate a claim merely to restate it. Use exact source IDs from "
-                "the frozen packet and mark missing evidence explicitly. "
-                "Copy the requested run_id and packet_hash exactly."
+                "not duplicate a claim merely to restate it. Copy source IDs verbatim "
+                "from the frozen packet/evidence catalog; never construct one from a "
+                "date, company name, or document text. If an exact ID is unavailable, "
+                "omit the claim and mark missing evidence explicitly. For management "
+                "ledger rows, use only canonical YYYY-Qn quarter values (a fiscal-year "
+                "period such as 2024_fy is the year-end 2024-Q4); pending rows "
+                "must have null observed_outcome and no outcome_source_ids; derive all "
+                "coverage counts from the ledger result categories. Copy the requested "
+                "run_id "
+                "and packet_hash exactly."
             )
         return AgentPrompt(
             system=system,
@@ -553,9 +560,9 @@ class ShadowSpecialistRunner:
             if artifact_id is not None:
                 artifact_ids.append(artifact_id)
             try:
+                _validate_raw_specialist_sources(raw_response, packet)
                 parsed = parse_specialist_output(raw_response)
                 self._validate_identity(parsed, packet, run_id, packet_hash, agent_name)
-                _validate_specialist_sources(parsed, packet)
                 if agent_name is SpecialistAgentName.SELL_CONDITIONS:
                     _validate_sell_traceability(
                         parsed, upstream_outputs or (), packet
@@ -766,9 +773,14 @@ class ShadowSpecialistRunner:
         if parsed.company_id != company_id or parsed.ticker != ticker:
             raise ValueError("specialist identity does not match frozen packet")
         if parsed.run_id != run_id:
-            raise ValueError("specialist run_id does not match shadow run")
+            raise ValueError(
+                f"specialist run_id does not match shadow run; expected {run_id!r}"
+            )
         if parsed.packet_hash != packet_hash:
-            raise ValueError("specialist packet_hash does not match frozen packet")
+            raise ValueError(
+                "specialist packet_hash does not match frozen packet; "
+                f"expected {packet_hash!r}"
+            )
 
     def _reuse_completed(
         self,
@@ -812,6 +824,8 @@ class ShadowSpecialistRunner:
             ):
                 continue
             try:
+                if packet is not None:
+                    _validate_raw_specialist_sources(artifact["content"], packet)
                 parsed = parse_specialist_output(artifact["content"])
                 reuse_packet = packet or {"company_id": company_id, "ticker": parsed.ticker}
                 self._validate_identity(
@@ -821,7 +835,8 @@ class ShadowSpecialistRunner:
                     packet_hash,
                     agent_name,
                 )
-                _validate_specialist_sources(parsed, reuse_packet)
+                if packet is None:
+                    _validate_specialist_sources(parsed, reuse_packet)
             except (KeyError, StockAnalysisValidationError, ValueError, TypeError):
                 continue
             candidate = SpecialistArtifactResult(
@@ -885,7 +900,9 @@ def _serialize_upstream_output(item):
 
 
 def _qualified_claim_id(agent_name, claim_id):
-    return f"{agent_name}:{claim_id}"
+    prefix = f"{agent_name}:"
+    claim_id = str(claim_id)
+    return claim_id if claim_id.startswith(prefix) else prefix + claim_id
 
 
 def _namespace_upstream_output(item):
@@ -1020,6 +1037,15 @@ def _sell_inputs_available(upstream_results, scenario_data):
     )
 
 
+def _validate_raw_specialist_sources(raw_response, packet):
+    try:
+        payload = json.loads(raw_response)
+    except (json.JSONDecodeError, TypeError):
+        return
+    if isinstance(payload, dict):
+        _validate_specialist_sources(payload, packet)
+
+
 def _validate_specialist_sources(output, packet):
     source_ids = []
 
@@ -1035,11 +1061,12 @@ def _validate_specialist_sources(output, packet):
             for child in value:
                 visit(child)
 
-    visit(output.to_dict())
+    visit(output.to_dict() if hasattr(output, "to_dict") else output)
     unknown = sorted(
         {
             source_id
             for source_id in source_ids
+            if isinstance(source_id, str)
             if not _source_ids_are_permitted(packet, [source_id])
         }
     )
@@ -1047,6 +1074,8 @@ def _validate_specialist_sources(output, packet):
         raise ValueError(
             "specialist output references unknown frozen-packet source IDs: "
             + ", ".join(unknown)
+            + "; copy exact IDs from the frozen evidence catalog or omit the "
+            + "unsupported claim"
         )
 
 
